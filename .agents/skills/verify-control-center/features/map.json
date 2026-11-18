@@ -619,7 +619,7 @@
             {
               "id": "private-key-refused",
               "kind": "failure",
-              "does": "Use extended public keys (xpub), not private keys"
+              "does": "An xprv gets the same invalid-input message as any other bad text, and Track Wallet stays disabled"
             },
             {
               "id": "pending-to-tracked",
@@ -635,6 +635,7 @@
                 "parsed-hint",
                 "plain-xpub-script-type",
                 "invalid-input",
+                "private-key-refused",
                 "track-existing",
                 "pending-to-tracked"
               ]

@@ -4,9 +4,7 @@ A user tracks a wallet's balance without proving they own it. They name it and p
 
 ## Sub-features
 
-Proves: `track-new`, `parsed-hint`, `plain-xpub-script-type`, `invalid-input`, `track-existing`, `pending-to-tracked`
-
-`private-key-refused` is not claimed: the form shows the generic invalid message for an `xprv`, so Sentinel's private-key message never reaches the screen.
+Proves: `track-new`, `parsed-hint`, `plain-xpub-script-type`, `invalid-input`, `private-key-refused`, `track-existing`, `pending-to-tracked`
 
 ## How to get to it (user POV)
 
@@ -17,10 +15,11 @@ This recipe drives the first entry point. It also uses Manually Sign once, to ma
 
 ## Driving it with the browser
 
-Preconditions: the baseline. All keys below are public test keys from `packages/testing/wallets.ts`.
+Preconditions: the baseline. All keys below are public test keys: the `xprv` is BIP32 test vector 1, and the rest come from `packages/testing/wallets.ts`.
 
 - **Open the form**: Accounts, link `Add Account`, tile `Track Balance, ETF, or xpub`, then `xpub or Descriptor`. The URL is `/accounts/verify/track`; button `Track Wallet` is disabled.
 - **Invalid input**: type `Verify Track Legacy` in `Display Name` and `not-a-key` in `xpub or Descriptor`. The message `Enter an xpub, or a single-sig or multisig descriptor` shows and `Track Wallet` stays disabled.
+- **Private key**: replace the key with the BIP32 test vector `xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi`. The same message shows and `Track Wallet` stays disabled.
 - **Multisig hint**: replace the key with `wsh(sortedmulti(2,[98950b2a/48h/0h/0h/2h]xpub6FF4wJMrZjWwm8PpJhJJcD3uircG7QKMaijiZhiFmBoaNX2MJiyqZmQ1aYAu59VawDppV25P7PVwtFsnynPjMFq8DNwo1sPyNdher6jFEug/<0;1>/*,[1d25c06f/48h/0h/0h/2h]xpub6DfQuReLSBLxpNjNJsTFDKsA3FpoiRVuymrkmKYG7j7sFxdJdnC3DWZg9bahkxQoNqzq6CmYDZPeQhgpL63sBhMFZPvH2CuR6mnaaSiseNJ/<0;1>/*,[1d177351/48h/0h/0h/2h]xpub6F5dv5ncJreUTNJ89xwAfuzLGJ17CfuQeo9jPwQ5CLqyGoAnkN6QZMWtoMi73MREyJbWh4o521Ye3DFuRDhkigf8ocJtW4DadaSszNieAgr/<0;1>/*))#asdthwfj`. The hint `Multisig, 2 of 3` shows and `Track Wallet` is enabled.
 - **Plain xpub**: replace the key with `xpub6BqN8FZQhMmbuUehywWNTkRjMAYpTNhqvu6fMiYx4dw9Bagf8218mXwD8QGMswfcAAiqxfUoiHiGcV1iE3oDG9rFBoyDBw1a6FJAFVQhc1j`. A `Script Type` radio group appears with `Legacy (P2PKH)`, `Nested SegWit (P2SH)`, `Native SegWit (P2WPKH)` and `Taproot (P2TR)`; Legacy is checked and the hint reads `Single-sig, Legacy (P2PKH)`. Pick `Native SegWit (P2WPKH)`: the hint changes to match. Pick `Legacy (P2PKH)` again.
 - **Track it**: click `Track Wallet`. Toast `Wallet added`; the URL becomes `/accounts/<id>` with the heading `Verify Track Legacy`, Amount `0.00000000 BTC`, Status `Unverified` and Script Type `Legacy (P2PKH)`.
@@ -32,7 +31,7 @@ Preconditions: the baseline. All keys below are public test keys from `packages/
 
 ## Gotchas
 
-- An `xprv` gets the same invalid message as any other bad text; don't wait for the private-key message.
+- An `xprv` gets the same invalid message as any other bad text, by design; there is no private-key message.
 - The script type radio only appears for a plain xpub. A descriptor carries its own.
 - Tracking an existing wallet keeps its name; the name typed in the form is dropped.
 - The `xpub6CQr…` wallet holds 0.1 BTC from the seeded chain's payment on 2026-03-01, which tells it apart from an empty account.
