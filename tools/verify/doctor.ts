@@ -137,7 +137,11 @@ if (state.status === 'missing') {
 } else if (state.status === 'invalid') {
   check('run', false, `${state.file} does not parse. Clean up and relaunch.`)
 } else {
-  check('run', true, `${state.value.runId} launched ${state.value.launchedAt}${state.value.fresh ? ' (fresh)' : ''}`)
+  check(
+    'run',
+    true,
+    `${state.value.runId} launched ${state.value.launchedAt}${state.value.fresh ? ' (fresh)' : ''}${state.value.desktop ? ' (desktop)' : ''}`,
+  )
   if (checkProcesses(state.value)) {
     await checkApp(state.value)
   } else {

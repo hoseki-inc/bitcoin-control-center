@@ -27,6 +27,8 @@ What to verify, and what each feature needs before it can be driven, is in [feat
 
 For journeys that need an empty app, such as onboarding, launch with `helpers/verify launch --fresh` and skip the seed. The doctor then expects no accounts.
 
+For features the map marks `desktop-web`, such as Electrum settings, launch with `helpers/verify launch --desktop`. Sentinel and the web app then run as the desktop app does, in your browser with no Electron shell, so features the map marks `electron` or `packaged` stay unreachable. `--desktop` combines with `--fresh`.
+
 Launching a run that is already up does nothing. Seeding a seeded run does nothing; a half-seeded run is refused: launch a new one.
 
 PINs are off in every run. A journey that needs PINs is unreachable until a PIN launch option exists.
@@ -97,7 +99,7 @@ Proof standards:
 
 | Command                                                        | Does                                                                    |
 | -------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `launch [--run <id>] [--fresh]`                                | Builds the UI, starts the fakes and Sentinel, waits until usable.       |
+| `launch [--run <id>] [--fresh] [--desktop]`                    | Builds the UI, starts the fakes and Sentinel, waits until usable.       |
 | `seed`                                                         | Adds the baseline accounts and statement.                               |
 | `doctor`                                                       | The read-only checks above.                                             |
 | `query --sql "SELECT ..."`                                     | Prints rows from the run's database as JSON, read-only.                 |

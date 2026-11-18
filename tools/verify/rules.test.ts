@@ -33,6 +33,7 @@ function runState(startedAt: string): RunState {
     runId: 'test',
     launchedAt: '',
     fresh: false,
+    desktop: false,
     build,
     url: 'http://127.0.0.1:1',
     sentinel: { name: 'sentinel', pid: 1, startedAt, port: 1 },
@@ -249,14 +250,23 @@ describe('withOutcome and latestRecorded', () => {
 
 describe('launchDecision', () => {
   it('starts a new run', () => {
-    assert.deepEqual(launchDecision({ alive: null, folderExists: false, evidenceExists: false, fresh: false }), {
-      action: 'start',
-    })
+    assert.deepEqual(
+      launchDecision({ alive: null, folderExists: false, evidenceExists: false, fresh: false, desktop: false }),
+      {
+        action: 'start',
+      },
+    )
   })
 
   it('leaves a live run of the same kind running', () => {
     assert.deepEqual(
-      launchDecision({ alive: { fresh: true }, folderExists: true, evidenceExists: true, fresh: true }),
+      launchDecision({
+        alive: { fresh: true, desktop: false },
+        folderExists: true,
+        evidenceExists: true,
+        fresh: true,
+        desktop: false,
+      }),
       {
         action: 'running',
       },
@@ -264,13 +274,38 @@ describe('launchDecision', () => {
   })
 
   it('refuses --fresh for a live seeded run', () => {
-    const decision = launchDecision({ alive: { fresh: false }, folderExists: true, evidenceExists: false, fresh: true })
+    const decision = launchDecision({
+      alive: { fresh: false, desktop: false },
+      folderExists: true,
+      evidenceExists: false,
+      fresh: true,
+      desktop: false,
+    })
     assert.equal(decision.action, 'refuse')
   })
 
   it('refuses a run ID that already has evidence from an earlier run', () => {
-    const decision = launchDecision({ alive: null, folderExists: false, evidenceExists: true, fresh: false })
+    const decision = launchDecision({
+      alive: null,
+      folderExists: false,
+      evidenceExists: true,
+      fresh: false,
+      desktop: false,
+    })
     assert.equal(decision.action, 'refuse')
+  })
+
+  it('refuses to switch a live run between the desktop and standalone apps', () => {
+    for (const desktop of [true, false]) {
+      const decision = launchDecision({
+        alive: { fresh: false, desktop: !desktop },
+        folderExists: true,
+        evidenceExists: false,
+        fresh: false,
+        desktop,
+      })
+      assert.equal(decision.action, 'refuse')
+    }
   })
 })
 
