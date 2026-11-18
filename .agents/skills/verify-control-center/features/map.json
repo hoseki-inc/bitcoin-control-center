@@ -577,6 +577,12 @@
               "kind": "happy",
               "does": "Track Balance, ETF, or xpub offers Bitcoin Holdings, Bitcoin ETF Holdings and xpub or Descriptor"
             }
+          ],
+          "recipes": [
+            {
+              "file": "add-account-chooser.md",
+              "proves": ["tiles", "back", "track-types"]
+            }
           ]
         },
         {
@@ -619,6 +625,19 @@
               "id": "pending-to-tracked",
               "kind": "edge",
               "does": "Tracking a pending account's descriptor turns it unverified"
+            }
+          ],
+          "recipes": [
+            {
+              "file": "add-track-xpub.md",
+              "proves": [
+                "track-new",
+                "parsed-hint",
+                "plain-xpub-script-type",
+                "invalid-input",
+                "track-existing",
+                "pending-to-tracked"
+              ]
             }
           ]
         },
@@ -678,6 +697,23 @@
               "kind": "failure",
               "does": "Clearing any date field (add, update balance, add transaction) never sends a broken date or shows Invalid time value"
             }
+          ],
+          "recipes": [
+            {
+              "file": "add-manual-holding.md",
+              "proves": [
+                "add",
+                "add-disabled",
+                "detail",
+                "update-balance",
+                "update-below-transactions",
+                "add-transaction",
+                "transaction-exceeds",
+                "delete-transaction",
+                "remove-account",
+                "cleared-date"
+              ]
+            }
           ]
         },
         {
@@ -725,6 +761,21 @@
               "id": "remove-account",
               "kind": "happy",
               "does": "Remove Account deletes at once, with no confirmation"
+            }
+          ],
+          "recipes": [
+            {
+              "file": "add-etf-holding.md",
+              "proves": [
+                "add",
+                "rows",
+                "estimate",
+                "invalid",
+                "detail",
+                "add-holding",
+                "remove-holding",
+                "remove-account"
+              ]
             }
           ]
         },
@@ -827,6 +878,20 @@
               "kind": "edge",
               "does": "The account never offers verification"
             }
+          ],
+          "recipes": [
+            {
+              "file": "add-bitkey.md",
+              "proves": [
+                "guide",
+                "step-in-url",
+                "import",
+                "name-validation",
+                "connected",
+                "already-connected",
+                "cannot-verify"
+              ]
+            }
           ]
         },
         {
@@ -859,6 +924,12 @@
               "id": "archive-pending",
               "kind": "edge",
               "does": "Archive Account also works on a pending account"
+            }
+          ],
+          "recipes": [
+            {
+              "file": "pending-claim-resume.md",
+              "proves": ["pending-card", "resume-screen", "continue", "abandon", "archive-pending"]
             }
           ]
         },
