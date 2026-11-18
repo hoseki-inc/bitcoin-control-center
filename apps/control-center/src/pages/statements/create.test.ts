@@ -54,7 +54,7 @@ it.each(StatementQuoteCurrencySchema.options)(
     }
     const rpc = createTestTrpcClient(async (operation) => {
       requests.push(operation)
-      if (operation.path === 'portalProve.statement.initiateGeneration') {
+      if (operation.path === 'portalProve.statements.initiateGeneration') {
         return statement
       }
       throw new Error(`Unexpected request: ${operation.path}`)
@@ -83,7 +83,7 @@ it.each(StatementQuoteCurrencySchema.options)(
     )
     client.setQueryData(['local-settings', 'user_name'], null)
     // The statements list a visit to Statements left behind.
-    const listKey = getQueryKey(trpc.portalProve.statement.list, undefined, 'query')
+    const listKey = getQueryKey(trpc.portalProve.statements.list, undefined, 'query')
     client.setQueryData(listKey, [])
     const container = await renderCreatePage(client, rpc)
     expect(container.textContent).not.toMatch(/coinbase/i)
@@ -103,7 +103,7 @@ it.each(StatementQuoteCurrencySchema.options)(
       generate.click()
     })
     await vi.waitFor(() => {
-      const input = requests.find((request) => request.path === 'portalProve.statement.initiateGeneration')?.input
+      const input = requests.find((request) => request.path === 'portalProve.statements.initiateGeneration')?.input
       expect(input).toEqual(expect.objectContaining({ quoteCurrency: currency, claimIds: [claimId] }))
       expect(input).not.toHaveProperty('exchangeAccountIds')
       expect(container.textContent).toBe('Statement new-statement')

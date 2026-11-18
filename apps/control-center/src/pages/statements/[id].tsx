@@ -60,7 +60,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
     isLoading,
     isFetchedAfterMount,
     error,
-  } = trpc.portalProve.statement.retrieve.useQuery(statementId, {
+  } = trpc.portalProve.statements.retrieve.useQuery(statementId, {
     // Check until it's done, unless it turned out to be deleted.
     refetchInterval: (data, query) =>
       data?.status === 'pending' && query.state.error?.data?.code !== 'NOT_FOUND' ? GENERATION_POLL_MS : false,
@@ -70,7 +70,7 @@ function StatementDetailsPageContent({ statementId }: { statementId: StatementId
   const [statementFormat, setStatementFormat] = useState<StatementDocumentFormat>('custom')
   const isCompleted = statement?.status === 'completed'
   // Loaded and built here, while generation may still be open, so its last step can follow the build.
-  const documentQuery = trpc.portalProve.statement.retrieveDocumentData.useQuery(
+  const documentQuery = trpc.portalProve.statements.retrieveDocumentData.useQuery(
     { statementId, format: statementFormat },
     { enabled: isCompleted, refetchOnWindowFocus: false },
   )
@@ -232,7 +232,7 @@ function StatementSummary({
 
 async function triggerPdfDownload(args: { statement: StatementDto; format: StatementDocumentFormat }): Promise<void> {
   // Fetch the PdfStatement data via tRPC (same data the viewer uses)
-  const statementData = await baseTrpc.portalProve.statement.retrieveDocumentData.query({
+  const statementData = await baseTrpc.portalProve.statements.retrieveDocumentData.query({
     statementId: args.statement.id,
     format: args.format,
   })

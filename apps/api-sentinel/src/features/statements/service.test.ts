@@ -16,12 +16,12 @@ import { EtfService } from '../../features/etf'
 import { DailyRatesService } from '../../features/price'
 import { PriceHistoryService } from '../../features/price'
 import { PriceService } from '../../features/price'
-import { AuthService } from '../auth/service'
-import { ControlCenterService } from '../control_center/service'
-import { ExchangeService } from '../exchange/service'
-import { ManualService } from '../manual/service'
-import { appRouter } from '../trpc/router'
-import { WalletBalanceService } from '../wallet_balances/service'
+import { AuthService } from '../../modules/auth/service'
+import { ControlCenterService } from '../../modules/control_center/service'
+import { ExchangeService } from '../../modules/exchange/service'
+import { ManualService } from '../../modules/manual/service'
+import { appRouter } from '../../modules/trpc/router'
+import { WalletBalanceService } from '../../modules/wallet_balances/service'
 import type { AggregatedTransaction } from './mapper'
 import { StatementMapper } from './mapper'
 import { PriceLoadError, getRequiredRateDates, getStatementPeriods } from './rate_dates'
@@ -380,7 +380,7 @@ function statementCaller(service: StatementService, appLogger: Logger = logger) 
     connectionProfiles: undefined,
     connectProfile: async () => Ok(undefined),
   }
-  return appRouter.createCaller({ app }).portalProve.statement
+  return appRouter.createCaller({ app }).portalProve.statements
 }
 
 describe('statement API currency contract', () => {

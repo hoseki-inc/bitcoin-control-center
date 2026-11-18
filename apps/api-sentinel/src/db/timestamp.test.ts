@@ -90,7 +90,7 @@ describe('database timestamps outside UTC', () => {
       createdAt: sqliteNow,
     })
 
-    const statement = await caller.portalProve.statement.retrieve('st_created_time')
+    const statement = await caller.portalProve.statements.retrieve('st_created_time')
     const claim = await caller.portalProve.registry.claims.get.byId({ id: 'acct_created_time' })
     const message = await caller.portalProve.registry.challengeMessages.get({ signedMessageId })
     const [exchange] = await caller.portalProve.exchange.list()

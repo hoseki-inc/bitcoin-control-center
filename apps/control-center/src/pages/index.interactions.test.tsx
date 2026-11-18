@@ -158,7 +158,7 @@ it('keeps a generating recent statement current on its own until it is done', { 
     undefined,
     createTestTrpcClient(async (operation) => {
       switch (operation.path) {
-        case 'portalProve.statement.list':
+        case 'portalProve.statements.list':
           return [statementFixture({ id: 'generating', status })]
         case 'portalProve.controlCenter.getData':
           return new Promise<never>(() => undefined)

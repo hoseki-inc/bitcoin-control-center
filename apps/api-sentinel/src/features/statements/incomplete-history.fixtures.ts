@@ -15,7 +15,7 @@ import { expect, onTestFinished, vi } from 'vitest'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
 import { accounts } from '../../db/schema'
 import { DailyRatesService } from '../../features/price'
-import { ExchangeService } from '../exchange/service'
+import { ExchangeService } from '../../modules/exchange/service'
 import { StatementMapper } from './mapper'
 import { type GenerateStatementInput, StatementService } from './service'
 

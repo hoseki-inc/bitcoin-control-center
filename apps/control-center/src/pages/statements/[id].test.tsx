@@ -85,7 +85,7 @@ async function renderStatementPage(
   const rpc = createTestTrpcClient(async (operation) => {
     requests.push(operation)
     switch (operation.path) {
-      case 'portalProve.statement.retrieve':
+      case 'portalProve.statements.retrieve':
         await server.answers
         if (server.isDown) {
           throw new Error('Sentinel is restarting')
@@ -95,7 +95,7 @@ async function renderStatementPage(
         }
         // Any other statement opened during the test has already finished.
         return operation.input === id ? server.statement : statementFixture({ id: String(operation.input) })
-      case 'portalProve.statement.delete':
+      case 'portalProve.statements.delete':
         if (server.isDown) {
           throw new Error('Sentinel is restarting')
         }
@@ -116,7 +116,7 @@ async function renderStatementPage(
     logger: { log: console.log, warn: console.warn, error: () => undefined },
   })
   if (cached !== undefined) {
-    client.setQueryData(getQueryKey(trpc.portalProve.statement.retrieve, id, 'query'), {
+    client.setQueryData(getQueryKey(trpc.portalProve.statements.retrieve, id, 'query'), {
       ...server.statement,
       status: cached,
     })
@@ -231,7 +231,7 @@ it('keeps showing generation when a status check fails', async () => {
   const { container, server, refresh, client } = await renderStatementPage('pending')
   server.isDown = true
   await refresh()
-  const retrieveKey = getQueryKey(trpc.portalProve.statement.retrieve, id, 'query')
+  const retrieveKey = getQueryKey(trpc.portalProve.statements.retrieve, id, 'query')
   await act(async () => {
     await vi.waitFor(() => {
       expect(client.getQueryState(retrieveKey)?.status).toBe('error')
@@ -306,7 +306,7 @@ it.each(['completed', 'failed'] as const)(
     await vi.waitFor(() => {
       expect(container.textContent).toBe('Statements list')
     })
-    expect(requests.find((request) => request.path === 'portalProve.statement.delete')?.input).toBe(id)
+    expect(requests.find((request) => request.path === 'portalProve.statements.delete')?.input).toBe(id)
   },
 )
 
@@ -338,7 +338,7 @@ it('reveals the statement, with focus on its heading, when the finished screen i
 
 it('does not open generation for a cached status that could not be confirmed', async () => {
   const { container, client } = await renderStatementPage('pending', 'pending', { isDown: true })
-  const retrieveKey = getQueryKey(trpc.portalProve.statement.retrieve, id, 'query')
+  const retrieveKey = getQueryKey(trpc.portalProve.statements.retrieve, id, 'query')
   await act(async () => {
     await vi.waitFor(() => {
       expect(client.getQueryState(retrieveKey)?.status).toBe('error')
@@ -361,7 +361,9 @@ it('shows that a statement deleted elsewhere is gone, even though it was on scre
   })
   expect(container.textContent).not.toContain('Statuscompleted')
   // It won't come back, so it isn't checked again.
-  expect(requests.slice(checked).filter((request) => request.path === 'portalProve.statement.retrieve')).toHaveLength(1)
+  expect(requests.slice(checked).filter((request) => request.path === 'portalProve.statements.retrieve')).toHaveLength(
+    1,
+  )
 })
 
 it('does not show a deleted statement again when going Back to it', async () => {
@@ -406,7 +408,7 @@ it('keeps the statement when a delete fails for another reason', async () => {
   await click('Delete')
   await confirmDelete()
   await vi.waitFor(() => {
-    expect(requests.some((request) => request.path === 'portalProve.statement.delete')).toBe(true)
+    expect(requests.some((request) => request.path === 'portalProve.statements.delete')).toBe(true)
     expect(document.querySelector('footer button[data-loading]')).toBeNull()
   })
   expect(container.textContent).toContain('Statement Details')
@@ -417,7 +419,7 @@ it('confirms a generating status again on return, even after an earlier check fa
   const { container, server, refresh, client, open } = await renderStatementPage('pending')
   server.isDown = true
   await refresh()
-  const retrieveKey = getQueryKey(trpc.portalProve.statement.retrieve, id, 'query')
+  const retrieveKey = getQueryKey(trpc.portalProve.statements.retrieve, id, 'query')
   await vi.waitFor(() => {
     expect(client.getQueryState(retrieveKey)?.status).toBe('error')
   })

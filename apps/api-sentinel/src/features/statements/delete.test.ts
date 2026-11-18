@@ -2,7 +2,7 @@ import { asc } from 'drizzle-orm'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { SentinelDb } from '../../db/drizzle'
 import { statements } from '../../db/schema'
-import { setupAppCaller } from '../trpc/ownership.fixtures'
+import { setupAppCaller } from '../../modules/trpc/ownership.fixtures'
 
 const input = {
   claimIds: [],
@@ -29,7 +29,7 @@ async function insertStatement(db: SentinelDb, id: string, status: 'pending' | '
 describe('statement deletion', () => {
   it('never reuses the number of a deleted statement', async () => {
     const { caller, db } = await setup()
-    const api = caller.portalProve.statement
+    const api = caller.portalProve.statements
     // With no accounts selected, generation fails, so each statement can be deleted.
     const generate = async (): Promise<{ id: string; counter: number }> => {
       const statement = await api.initiateGeneration(input)
@@ -53,7 +53,7 @@ describe('statement deletion', () => {
     const { caller, db } = await setup()
     await insertStatement(db, 'st_stmt_done', status)
 
-    await caller.portalProve.statement.delete('st_stmt_done')
+    await caller.portalProve.statements.delete('st_stmt_done')
 
     await expect(db.select().from(statements)).resolves.toEqual([])
   })
@@ -62,13 +62,13 @@ describe('statement deletion', () => {
     const { caller, db } = await setup()
     await insertStatement(db, 'st_stmt_pending', 'pending')
 
-    await expect(caller.portalProve.statement.delete('st_stmt_pending')).rejects.toMatchObject({ code: 'CONFLICT' })
+    await expect(caller.portalProve.statements.delete('st_stmt_pending')).rejects.toMatchObject({ code: 'CONFLICT' })
     await expect(db.select({ status: statements.status }).from(statements)).resolves.toEqual([{ status: 'pending' }])
   })
 
   it('reports an unknown statement as not found', async () => {
     const { caller } = await setup()
 
-    await expect(caller.portalProve.statement.delete('st_stmt_missing')).rejects.toMatchObject({ code: 'NOT_FOUND' })
+    await expect(caller.portalProve.statements.delete('st_stmt_missing')).rejects.toMatchObject({ code: 'NOT_FOUND' })
   })
 })
