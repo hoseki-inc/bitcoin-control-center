@@ -214,8 +214,8 @@ it('shows an account in Bitcoin and dollars, with a total matching the rows', as
     async () => {
       const text = await renderSelectedAccount()
       expect(text).toContain('0.12345678 BTC')
-      // The row rounds down, and the total adds up what the rows show.
-      expect(text.match(/\$[\d,]+\.\d\d/g)).toEqual(['$6,172.83', '$6,172.83'])
+      // The row rounds to the nearest cent, and the total adds up what the rows show.
+      expect(text.match(/\$[\d,]+\.\d\d/g)).toEqual(['$6,172.84', '$6,172.84'])
     },
     { price: new Decimal(50_000), balances: new Map([[claimId, new Decimal(12_345_678)]]) },
   )
@@ -254,7 +254,7 @@ it('totals only the selected accounts', async () => {
   await withTestSetup(
     async () => {
       await renderSelectedAccount([claimId, 're_clmx_spending'])
-      expect(container.querySelector('tfoot')?.textContent).toBe('Total$6,172.83')
+      expect(container.querySelector('tfoot')?.textContent).toBe('Total$6,172.85')
     },
     {
       claims,

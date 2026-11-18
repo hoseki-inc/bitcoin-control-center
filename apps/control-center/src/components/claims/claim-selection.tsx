@@ -224,11 +224,11 @@ function renderTotalUsd(balances: BalanceWithStatus[]) {
         </Text>
       )
     }
-    total = total.plus(balance.value.usd.toFixed(2))
+    total = total.plus(balance.value.usd.toDecimalPlaces(2, Decimal.ROUND_HALF_UP))
   }
   return (
     <Text textStyle="text/md" fontWeight="medium" color="success.700">
-      {formatUsd(total.toFixed(2))}
+      {formatUsd(total)}
     </Text>
   )
 }
@@ -250,7 +250,7 @@ function renderUsdAmount(balance: BalanceWithStatus) {
   }
   return (
     <Text textStyle="text/sm" fontWeight="medium" color="success.700" whiteSpace="nowrap">
-      {formatUsd(balance.value.usd.toFixed(2))}
+      {formatUsd(balance.value.usd)}
     </Text>
   )
 }

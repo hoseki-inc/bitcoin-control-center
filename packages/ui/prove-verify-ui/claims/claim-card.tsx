@@ -114,7 +114,7 @@ function renderUsdAmount(balance: BalanceWithStatus): React.ReactNode {
   if (balance.status === 'fail' || balance.value.usd === null) {
     return null
   }
-  return formatUsd(balance.value.usd.toFixed(2))
+  return formatUsd(balance.value.usd)
 }
 
 /** Names a known device's logo; a watch-only or unidentified key shows a generic picture, so it stays decorative. */

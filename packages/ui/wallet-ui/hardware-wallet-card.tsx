@@ -131,7 +131,7 @@ export function HardwareWalletCard({
           )}
           {wallet.usdBalance && (
             <Text textStyle="label/md" fontWeight="medium" color="success.600">
-              {formatUsd(wallet.usdBalance.toFixed(2))}
+              {formatUsd(wallet.usdBalance)}
             </Text>
           )}
         </Stack>

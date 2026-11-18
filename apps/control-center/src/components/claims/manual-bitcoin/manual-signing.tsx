@@ -147,7 +147,7 @@ function ManualSigningAccountAccordion({
     return {
       noBalance: null,
       btc: toBitcoinAmountDisplayValue(accountBalance.current.toString()),
-      usd: accountBalance.usd ? formatUsd(accountBalance.usd.toFixed(2)) : 'n/a',
+      usd: accountBalance.usd ? formatUsd(accountBalance.usd) : 'n/a',
     }
   }, [networkAccount, balancesQuery])
 
