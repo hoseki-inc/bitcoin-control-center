@@ -62,6 +62,12 @@
               "does": "Couldn't reach Control Center with Try again when Sentinel is down at load",
               "needs": "fault"
             }
+          ],
+          "recipes": [
+            {
+              "file": "app-shell.md",
+              "proves": ["nav-links", "logo-home", "settings-button", "root-redirect", "no-lock-without-pin"]
+            }
           ]
         },
         {
@@ -91,7 +97,8 @@
               "kind": "edge",
               "does": "Pages without the header (not found, hardware test) have no Help"
             }
-          ]
+          ],
+          "recipes": [{ "file": "help-link.md", "proves": ["help-platform", "help-screen", "help-not-on-404"] }]
         },
         {
           "id": "not-found",
@@ -109,7 +116,8 @@
               "kind": "edge",
               "does": "Unknown IDs under /accounts, /statements and /multisig hit their detail pages instead"
             }
-          ]
+          ],
+          "recipes": [{ "file": "not-found.md", "proves": ["nf-page", "nf-which-paths"] }]
         },
         {
           "id": "hardware-test-page",
@@ -184,6 +192,12 @@
               "does": "Some holdings data is unavailable with Try Again, keeping the last overview",
               "needs": "fault"
             }
+          ],
+          "recipes": [
+            {
+              "file": "home-summary.md",
+              "proves": ["total", "open-portfolio", "chart-30d", "change-30d", "account-count"]
+            }
           ]
         },
         {
@@ -249,7 +263,8 @@
               "does": "Recent statements could not be loaded with View Statements",
               "needs": "fault"
             }
-          ]
+          ],
+          "recipes": [{ "file": "home-recent-statements.md", "proves": ["recent-cards", "recent-open"] }]
         },
         {
           "id": "home-empty-states",
@@ -278,7 +293,8 @@
               "kind": "edge",
               "does": "Portfolio shows Watch your Bitcoin grow with Add Your First Account"
             }
-          ]
+          ],
+          "recipes": [{ "file": "home-empty-states.md", "proves": ["no-accounts", "no-statements", "portfolio-empty"] }]
         }
       ]
     },
@@ -333,7 +349,8 @@
               "does": "Couldn't save that toast when the choice cannot be saved",
               "needs": "fault"
             }
-          ]
+          ],
+          "recipes": [{ "file": "onboarding.md", "proves": ["opens-first-run", "steps", "escape", "does-not-return"] }]
         },
         {
           "id": "onboarding-server-step",
@@ -434,6 +451,13 @@
               "does": "Some accounts couldn't be loaded, totals hidden, Try Again",
               "needs": "fault"
             }
+          ],
+          "recipes": [
+            {
+              "file": "accounts-list.md",
+              "proves": ["header-totals", "wallet-card", "open-card", "add-account-entry"]
+            },
+            { "file": "accounts-empty.md", "proves": ["empty"] }
           ]
         },
         {
@@ -475,7 +499,10 @@
               "does": "An archived account's address redirects to /accounts#archived"
             }
           ],
-          "recipes": [{ "file": "account-detail.md", "proves": ["singlesig-detail"] }]
+          "recipes": [
+            { "file": "account-detail.md", "proves": ["singlesig-detail"] },
+            { "file": "account-detail-more.md", "proves": ["xpub-reveal", "unknown-id", "archived-redirect"] }
+          ]
         },
         {
           "id": "accounts-archive",
@@ -525,6 +552,19 @@
               "does": "Failed to archive account toast",
               "needs": "fault"
             }
+          ],
+          "recipes": [
+            {
+              "file": "accounts-archive.md",
+              "proves": [
+                "archive",
+                "balance-warning",
+                "archived-section",
+                "restore",
+                "delete-permanently",
+                "re-add-archived"
+              ]
+            }
           ]
         },
         {
@@ -554,6 +594,9 @@
               "does": "Rename a multisig key from Key Details; only identified or signed keys",
               "needs": "emulator"
             }
+          ],
+          "recipes": [
+            { "file": "accounts-rename.md", "proves": ["rename-account", "rename-validation", "rename-cancel"] }
           ]
         },
         {
@@ -1242,6 +1285,22 @@
               "kind": "failure",
               "does": "This account is archived, then /accounts#archived"
             }
+          ],
+          "recipes": [
+            {
+              "file": "multisig-create.md",
+              "proves": [
+                "intro",
+                "paste",
+                "invalid",
+                "detected",
+                "name-validation",
+                "hub",
+                "abandon",
+                "already-exists",
+                "archived"
+              ]
+            }
           ]
         },
         {
@@ -1347,6 +1406,19 @@
               "does": "Couldn't load this date range with Try again",
               "needs": "fault"
             }
+          ],
+          "recipes": [
+            {
+              "file": "portfolio-history.md",
+              "proves": [
+                "balance",
+                "range-presets",
+                "period-change",
+                "custom-range",
+                "custom-validation",
+                "generate-statement"
+              ]
+            }
           ]
         },
         {
@@ -1396,6 +1468,9 @@
               "does": "Exchange rows that need reconnecting can't be selected",
               "needs": "exchange-fake"
             }
+          ],
+          "recipes": [
+            { "file": "portfolio-filter.md", "proves": ["all-accounts", "toggle-account", "search", "clear", "manage"] }
           ]
         },
         {
@@ -1424,6 +1499,9 @@
               "kind": "edge",
               "does": "No net change in this date range"
             }
+          ],
+          "recipes": [
+            { "file": "portfolio-monthly.md", "proves": ["net-accumulated", "in-out-bar", "bar-chart", "no-change"] }
           ]
         }
       ]
@@ -1477,7 +1555,7 @@
             {
               "id": "other-currency",
               "kind": "edge",
-              "does": "EUR, GBP or CAD adds approximate values and a rate column"
+              "does": "EUR, GBP or CAD shows approximate values in that currency and names the rate source"
             },
             {
               "id": "address",
@@ -1552,7 +1630,24 @@
             {
               "file": "statements.md",
               "proves": ["generate", "watch-only-excluded", "listed", "details", "pdf-content"]
-            }
+            },
+            {
+              "file": "statement-form.md",
+              "proves": [
+                "name-prefill",
+                "end-date-clamp",
+                "start-after-end",
+                "too-early",
+                "too-long",
+                "none-selected",
+                "cancel"
+              ]
+            },
+            {
+              "file": "statement-generate-options.md",
+              "proves": ["other-currency", "address", "empty-period"]
+            },
+            { "file": "statements-empty.md", "proves": ["no-eligible-accounts"] }
           ]
         },
         {
@@ -1597,6 +1692,10 @@
               "does": "Error fetching your statements with Try Again",
               "needs": "fault"
             }
+          ],
+          "recipes": [
+            { "file": "statements-list.md", "proves": ["card-view", "list-view", "view-resets", "delete"] },
+            { "file": "statements-list-empty.md", "proves": ["empty"] }
           ]
         },
         {
@@ -1645,6 +1744,12 @@
               "kind": "failure",
               "does": "Failed badge, error banner, Download disabled",
               "needs": "fault"
+            }
+          ],
+          "recipes": [
+            {
+              "file": "statement-details.md",
+              "proves": ["format-switch", "delete", "close", "contact-na", "unknown-id"]
             }
           ]
         }
