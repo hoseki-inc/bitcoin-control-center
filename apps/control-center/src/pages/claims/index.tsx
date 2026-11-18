@@ -97,7 +97,8 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
   const verifiedCount =
     claims.filter((c) => ensureClaimStatusNotExpired(c) === 'verified').length + connectedExchangeAccounts.length
   const pendingCount = claims.filter((c) => c.status === 'pending').length
-  const unverifiedCount = claims.filter((c) => c.status === 'unverified').length
+  // A manual holding can't prove ownership, so its card always says Unverified.
+  const unverifiedCount = claims.filter((c) => c.status === 'unverified').length + manualAccounts.length
 
   const wallets = summarizeWalletBalances(claimIds, walletBalances.rows)
   const otherAccountsSats = [...exchangeAccounts, ...manualAccounts, ...etfAccounts].reduce(

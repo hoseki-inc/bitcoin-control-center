@@ -4,7 +4,7 @@ import { authRouter } from '../auth/router'
 import { appRouter } from './router'
 
 // New endpoints belong in a feature folder. When a move out of router.ts lowers the count, lower this number with it.
-const ROUTER_TS_PROCEDURES = 52
+const ROUTER_TS_PROCEDURES = 43
 
 it('adds no endpoint to router.ts', () => {
   const elsewhere = [authRouter, ...Object.values(featureRouters)].reduce(
