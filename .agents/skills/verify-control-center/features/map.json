@@ -474,7 +474,8 @@
               "kind": "edge",
               "does": "An archived account's address redirects to /accounts#archived"
             }
-          ]
+          ],
+          "recipes": [{ "file": "account-detail.md", "proves": ["singlesig-detail"] }]
         },
         {
           "id": "accounts-archive",
