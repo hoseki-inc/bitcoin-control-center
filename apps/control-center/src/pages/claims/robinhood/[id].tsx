@@ -76,7 +76,7 @@ export function RobinhoodAccountDetailsPage(): JSX.Element {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.exchange.robinhood.list.invalidate()
       await utils.portalProve.exchange.list.invalidate()
-      await utils.portalProve.controlCenter.invalidate()
+      await utils.portalProve.portfolio.invalidate()
       void navigate('/accounts')
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to remove account'

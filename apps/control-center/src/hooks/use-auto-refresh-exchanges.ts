@@ -14,7 +14,7 @@ export function useAutoRefreshExchanges(): void {
   const refreshMutation = trpc.portalProve.exchange.refreshAllBalances.useMutation({
     onSuccess: () => {
       void utils.portalProve.exchange.list.invalidate()
-      void utils.portalProve.controlCenter.getData.invalidate()
+      void utils.portalProve.portfolio.getData.invalidate()
     },
   })
   const hasTriggered = useRef(false)

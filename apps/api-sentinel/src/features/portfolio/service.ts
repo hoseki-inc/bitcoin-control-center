@@ -15,12 +15,12 @@ import {
   balanceSnapshots,
   exchangeBalanceSnapshots,
 } from '../../db/schema'
-import type { EtfService } from '../../features/etf'
-import type { ManualService } from '../../features/manual'
-import type { PriceService } from '../../features/price'
-import type { ExchangeService } from '../exchange/service'
-import type { WalletBalanceService } from '../wallet_balances/service'
-import { isWalletActive, upsertWalletSnapshot } from '../wallet_balances/snapshots'
+import type { ExchangeService } from '../../modules/exchange/service'
+import type { WalletBalanceService } from '../../modules/wallet_balances/service'
+import { isWalletActive, upsertWalletSnapshot } from '../../modules/wallet_balances/snapshots'
+import type { EtfService } from '../etf'
+import type { ManualService } from '../manual'
+import type { PriceService } from '../price'
 import {
   type BalanceDataPoint,
   type BalanceEntry,

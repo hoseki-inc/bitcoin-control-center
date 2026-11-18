@@ -13,7 +13,7 @@ const snapshotAsOf = '2026-10-25T09:00:00.000Z'
 const scannedAsOf = '2026-10-25T12:00:00.000Z'
 
 function Portfolio(): null {
-  trpc.portalProve.controlCenter.getData.useQuery({ timeRange: '30d' })
+  trpc.portalProve.portfolio.getData.useQuery({ timeRange: '30d' })
   useWalletBalances(['a'], { enabled: true })
   return null
 }
@@ -21,11 +21,11 @@ function Portfolio(): null {
 it('reads the portfolio again when a wallet scan finishes during its first read', async () => {
   const portfolioReads: Array<(walletBalancesAsOf: Record<string, string>) => void> = []
   const rpc = createTestTrpcClient(async ({ path }) => {
-    if (path === 'portalProve.controlCenter.walletBalances') {
+    if (path === 'portalProve.onchain.walletBalances') {
       // The scan already finished: the wallet's balance is newer than the snapshot the read counts.
       return [{ accountId: 'a', balanceSats: '200', asOf: scannedAsOf, syncing: false, failed: false }]
     }
-    if (path === 'portalProve.controlCenter.getData') {
+    if (path === 'portalProve.portfolio.getData') {
       return new Promise((resolve) => {
         portfolioReads.push((walletBalancesAsOf) => {
           resolve({ currentTotalBalance: '100', walletBalancesAsOf })

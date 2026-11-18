@@ -66,7 +66,7 @@ export function ConnectCoinbase(): JSX.Element {
       setConnectedAccount(account)
       setStep('success')
       // Invalidate cached control center data so charts refresh with new exchange data
-      void utils.portalProve.controlCenter.getData.invalidate()
+      void utils.portalProve.portfolio.getData.invalidate()
       void utils.portalProve.exchange.list.invalidate()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect Coinbase account'

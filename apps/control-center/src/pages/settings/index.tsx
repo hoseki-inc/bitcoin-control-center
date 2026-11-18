@@ -132,7 +132,7 @@ interface PriceChange {
 const PRICE_SOURCE_QUERY_KEY = ['price-source']
 const PRICE_STATUS_QUERY_KEY = ['price-status']
 // Queries showing USD values from the current price, refreshed after a change.
-const USD_QUERY_KEYS = [getQueryKey(trpc.portalProve.controlCenter.getData)]
+const USD_QUERY_KEYS = [getQueryKey(trpc.portalProve.portfolio.getData)]
 // Reset rather than refreshed: a failed price request would otherwise keep showing a price from a source
 // the change no longer allows, and account balances never refetch on mount.
 const RESET_USD_QUERY_KEYS = [

@@ -673,7 +673,7 @@ it.each([
 ])('refreshes the USD values and forgets the old price after %s', async (_label, makeChange) => {
   await withTestSetup(async () => {
     new PriceServer()
-    const refreshed = getQueryKey(trpc.portalProve.controlCenter.getData)
+    const refreshed = getQueryKey(trpc.portalProve.portfolio.getData)
     // A failed request for the current price must not leave a price from a source no longer allowed.
     const forgotten = [
       getQueryKey(trpc.portalProve.price.current),

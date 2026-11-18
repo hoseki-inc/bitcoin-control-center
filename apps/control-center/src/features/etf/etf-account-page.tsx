@@ -81,7 +81,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
     await utils.portalProve.etf.get.invalidate({ accountId })
     await utils.portalProve.etf.list.invalidate()
     await utils.portalProve.etf.holdings.list.invalidate({ accountId })
-    await utils.portalProve.controlCenter.invalidate()
+    await utils.portalProve.portfolio.invalidate()
   }
 
   const today = new Date()
@@ -127,7 +127,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.etf.list.invalidate()
-      await utils.portalProve.controlCenter.invalidate()
+      await utils.portalProve.portfolio.invalidate()
       void navigate('/accounts')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove account')

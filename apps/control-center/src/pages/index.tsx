@@ -22,7 +22,7 @@ import { type RouterOutput, trpc } from '../trpc'
 import type { StatementDto } from '../trpc/server-types'
 import { getBrowserTimezone } from '../utils/timezone'
 
-type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
+type PortfolioData = RouterOutput['portalProve']['portfolio']['getData']
 
 export function HomePage({
   dataSource = homeDataSource,
@@ -189,7 +189,7 @@ export interface HomeDataSource {
 const homeDataSource: HomeDataSource = {
   useStatements: () =>
     trpc.portalProve.statements.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating }),
-  usePortfolio: (input) => trpc.portalProve.controlCenter.getData.useQuery(input),
+  usePortfolio: (input) => trpc.portalProve.portfolio.getData.useQuery(input),
   useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
   useExchanges: () => trpc.portalProve.exchange.list.useQuery(),
   useManual: () => trpc.portalProve.manual.list.useQuery(),

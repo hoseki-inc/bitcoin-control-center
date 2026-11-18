@@ -81,7 +81,8 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
       ).then(async (created) => {
         await Promise.all([
           utils.portalProve.registry.claims.invalidate(),
-          utils.portalProve.controlCenter.invalidate(),
+          utils.portalProve.portfolio.invalidate(),
+          utils.portalProve.onchain.walletBalances.invalidate(),
         ])
         return { path: `/accounts/${created.claim.id}`, isNew: true }
       }),

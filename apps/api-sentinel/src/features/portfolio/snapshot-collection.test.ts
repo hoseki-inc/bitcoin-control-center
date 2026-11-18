@@ -17,12 +17,12 @@ import {
   manualAccounts,
   manualBalanceSnapshots,
 } from '../../db/schema'
-import { EtfService } from '../../features/etf'
-import { ManualService } from '../../features/manual'
-import { PriceService } from '../../features/price'
 import { setupServiceDatabase } from '../../fixtures/service-database'
-import { ExchangeService } from '../exchange/service'
-import { WalletBalanceService } from '../wallet_balances/service'
+import { ExchangeService } from '../../modules/exchange/service'
+import { WalletBalanceService } from '../../modules/wallet_balances/service'
+import { EtfService } from '../etf'
+import { ManualService } from '../manual'
+import { PriceService } from '../price'
 import { ControlCenterService } from './service'
 
 const sources = ['on-chain', 'exchange', 'manual', 'ETF'] as const

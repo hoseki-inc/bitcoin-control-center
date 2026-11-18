@@ -4,8 +4,8 @@ import { type WalletBalancesQuery, useWalletBalances } from '../../lib/wallet-ba
 import { type RouterInput, type RouterOutput, trpc } from '../../trpc'
 import { getBrowserTimezone } from '../../utils/timezone'
 
-type PortfolioInput = Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>
-type PortfolioData = RouterOutput['portalProve']['controlCenter']['getData']
+type PortfolioInput = Exclude<RouterInput['portalProve']['portfolio']['getData'], void>
+type PortfolioData = RouterOutput['portalProve']['portfolio']['getData']
 type ListQuery<T> = { data?: T[]; isLoading: boolean; refetch: () => Promise<object> }
 
 export interface PortfolioQuery {
@@ -49,7 +49,7 @@ export const dashboardDataSource: DashboardDataSource = {
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
     btcPriceQuery: trpc.portalProve.price.current.useQuery(),
   }),
-  useHistory: (input, options) => trpc.portalProve.controlCenter.getData.useQuery(input, options),
+  useHistory: (input, options) => trpc.portalProve.portfolio.getData.useQuery(input, options),
   useWalletBalances,
   useAutoRefresh: useAutoRefreshExchanges,
   getTimezone: getBrowserTimezone,

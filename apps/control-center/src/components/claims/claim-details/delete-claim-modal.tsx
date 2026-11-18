@@ -50,7 +50,7 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
       await Promise.all([
         trpcUtils.portalProve.registry.claims.list.invalidate(),
         trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
-        trpcUtils.portalProve.controlCenter.getData.invalidate(),
+        trpcUtils.portalProve.portfolio.getData.invalidate(),
       ])
       void navigate('/accounts')
       onClose()
@@ -66,7 +66,7 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
     await Promise.all([
       trpcUtils.portalProve.registry.claims.list.invalidate(),
       trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
-      trpcUtils.portalProve.controlCenter.getData.invalidate(),
+      trpcUtils.portalProve.portfolio.getData.invalidate(),
     ])
     void navigate('/accounts')
     onClose()
