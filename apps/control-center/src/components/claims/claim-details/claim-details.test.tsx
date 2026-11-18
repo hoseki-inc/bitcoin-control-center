@@ -2,6 +2,7 @@
 import { Wallets } from '@hoseki/packages/testing'
 import { TestChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { QueryClient } from '@tanstack/react-query'
+import { Decimal } from 'decimal.js'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -37,7 +38,10 @@ const keystore: KeystoreDto = {
   isIdentified: false,
 }
 
-async function renderDetails(status: ClaimDto['status']): Promise<HTMLDivElement> {
+async function renderDetails(
+  status: ClaimDto['status'],
+  balance?: { sats: number; price: number },
+): Promise<HTMLDivElement> {
   const dom = browser.acquire()
   vi.stubGlobal('Image', document.defaultView?.Image)
   const claim: ClaimDto = {
@@ -61,7 +65,18 @@ async function renderDetails(status: ClaimDto['status']): Promise<HTMLDivElement
   })
   await act(async () => {
     root.render(
-      <TestTrpcProvider client={client} rpc={createTestTrpcClient(async () => null)}>
+      <TestTrpcProvider
+        client={client}
+        rpc={createTestTrpcClient(async ({ path }) => {
+          if (balance && path === 'portalProve.onchain.claimBalances') {
+            return new Map([[claim.id, new Decimal(balance.sats)]])
+          }
+          if (balance && path === 'portalProve.price.current') {
+            return { value: new Decimal(balance.price) }
+          }
+          return null
+        })}
+      >
         <TestChakraProvider>
           <MemoryRouter>
             <ClaimDetails claim={claim} />
@@ -87,4 +102,14 @@ it('shows a tracked single-sig wallet as unverified, without asking to sign', as
 
   expect(continueButton(container)).toBeUndefined()
   expect(container.textContent).toContain('unverified')
+})
+
+it('rounds the dollar value to the nearest cent, like the Accounts list', async () => {
+  // 0.74999 BTC at $2,417 is $1,812.72583.
+  const container = await renderDetails('unverified', { sats: 74_999_000, price: 2417 })
+
+  await vi.waitFor(() => {
+    expect(container.textContent).toMatch(/\$1,812\.\d\d/)
+  })
+  expect(container.textContent).toContain('$1,812.73')
 })

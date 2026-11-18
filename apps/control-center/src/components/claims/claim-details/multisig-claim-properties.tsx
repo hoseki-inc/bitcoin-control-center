@@ -46,7 +46,7 @@ export function MultisigClaimProperties({ claim, ...props }: { claim: ClaimDto }
               </Text>
               {balance?.usd && (
                 <Text textStyle="label/sm" color="success.600" fontWeight="medium">
-                  {formatUsd(balance.usd.toFixed(2))}
+                  {formatUsd(balance.usd)}
                 </Text>
               )}
             </>

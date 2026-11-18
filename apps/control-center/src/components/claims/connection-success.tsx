@@ -236,7 +236,7 @@ function SuccessBalance({ balance, badge }: { balance: BalanceState; badge?: Rea
   if (value !== null) {
     btc = formatBitcoinNumber(value.current.mul(progress).floor().div(100_000_000))
     if (value.usd !== null) {
-      usd = formatUsd(value.usd.mul(progress).toFixed(2))
+      usd = formatUsd(value.usd.mul(progress))
     } else if (!balance.isLoading) {
       usd = 'USD unavailable'
     }

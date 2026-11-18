@@ -31,6 +31,43 @@ const useTextStyleRule = defineRule({
   },
 })
 
+/** `formatUsd` rounds to the nearest cent. `toFixed` first would round with the value's own setting, which truncates for currency amounts. */
+const formatUsdRoundsRule = defineRule({
+  meta: {
+    type: 'problem',
+    docs: { description: 'Disallow toFixed inside a formatUsd call; formatUsd does the rounding.' },
+    messages: {
+      passTheValue: 'Pass the value to formatUsd without `toFixed`. formatUsd rounds to the nearest cent.',
+    },
+  },
+  createOnce(context) {
+    return {
+      CallExpression(node) {
+        const { callee } = node
+        if (callee.type !== 'MemberExpression' || callee.property.type !== 'Identifier') {
+          return
+        }
+        if (callee.property.name !== 'toFixed') {
+          return
+        }
+        for (let parent = node.parent; parent.type !== 'Program'; parent = parent.parent) {
+          if (
+            parent.type === 'CallExpression' &&
+            parent.callee.type === 'Identifier' &&
+            parent.callee.name === 'formatUsd'
+          ) {
+            context.report({ node, messageId: 'passTheValue' })
+            return
+          }
+          if (parent.type.includes('Function')) {
+            return
+          }
+        }
+      },
+    }
+  },
+})
+
 /** `<app>/src/features/<name>`, then the path inside that feature, if any. */
 const featurePath = /([^/]+)\/src\/features\/([^/]+)(?:\/(.+))?$/
 const scriptExtension = /\.[cm]?[jt]sx?$/
@@ -128,5 +165,9 @@ const featureBoundaryRule = defineRule({
 /** Rules for Control Center's own conventions. */
 export default eslintCompatPlugin({
   meta: { name: 'control-center' },
-  rules: { 'feature-boundary': featureBoundaryRule, 'use-text-style': useTextStyleRule },
+  rules: {
+    'feature-boundary': featureBoundaryRule,
+    'format-usd-rounds': formatUsdRoundsRule,
+    'use-text-style': useTextStyleRule,
+  },
 })

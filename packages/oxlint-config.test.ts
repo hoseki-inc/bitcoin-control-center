@@ -161,6 +161,32 @@ it('asks for a textStyle instead of raw font sizes on components, but not on SVG
   })
 })
 
+it('asks for the value itself, not toFixed, inside formatUsd', async () => {
+  await withTestSetup(async () => {
+    const path = join(fixture, 'apps/control-center/usd-probe.ts')
+    writeFileSync(
+      path,
+      [
+        'export const a = formatUsd(balance.usd.toFixed(2))',
+        'export const b = formatUsd(value.usd.mul(progress).toFixed(2), "compact")',
+        'export const c = formatUsd(balance.usd)',
+        'export const d = formatUsd(rows.map((row) => row.toFixed(2)).length)',
+        'export const e = `${rate.toFixed(2)}%`',
+      ].join('\n'),
+    )
+    const result = spawnSync(
+      process.execPath,
+      [resolve(repository, 'node_modules/oxlint/bin/oxlint'), '--format', 'unix', path],
+      { cwd: fixture, encoding: 'utf8', timeout: 15000 },
+    )
+    const lines = result.stdout
+      .split('\n')
+      .filter((line) => line.includes('control-center(format-usd-rounds)'))
+      .map((line) => line.split(':')[1])
+    expect(lines, result.stdout + result.stderr).toEqual(['1', '2'])
+  })
+})
+
 // Code outside a feature folder may import only the folder itself, which resolves to its index.ts.
 const featureBoundaryProbes = {
   allowed: {
