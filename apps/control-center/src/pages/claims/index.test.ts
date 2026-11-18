@@ -192,6 +192,12 @@ describe('Accounts page', () => {
     expect(text).not.toContain('Last synced')
   })
 
+  it('counts manual holdings as Unverified, as their cards say', () => {
+    const text = renderPage({ claims: [wallet], manual: [manualAccount], walletRows: [walletRow()] })
+    expect(text).toContain('1 Verified')
+    expect(text).toContain('1 Unverified')
+  })
+
   it('holds the total back while an exchange balance has not been fetched yet', () => {
     const exchange: ExchangeAccountDto = {
       id: 'exchange-1',
