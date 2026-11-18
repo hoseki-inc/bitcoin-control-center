@@ -196,7 +196,7 @@ it('accepts only one concurrent signature submission and preserves the winning s
 
 it('reads wallet balances without waiting for Electrum, and reports the scans it starts', async () => {
   const { app } = await setup()
-  const { accounts: accountRouter, controlCenter } = appRouter.createCaller({ app }).portalProve
+  const { accounts: accountRouter, onchain } = appRouter.createCaller({ app }).portalProve
   const wallet = await accountRouter.add({
     descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
     displayName: 'Wallet',
@@ -212,7 +212,7 @@ it('reads wallet balances without waiting for Electrum, and reports the scans it
   // Electrum never answers.
   vi.spyOn(app.onchainProvider, 'getBlocksTip').mockReturnValue(new AsyncResult(new Promise(() => undefined)))
 
-  await expect(controlCenter.walletBalances({ claimIds: [wallet.id, archived.id] })).resolves.toEqual([
+  await expect(onchain.walletBalances({ claimIds: [wallet.id, archived.id] })).resolves.toEqual([
     {
       accountId: wallet.id,
       balanceSats: '150',
@@ -281,18 +281,18 @@ it('loads portfolio data in a timezone Intl.supportedValuesOf omits', async () =
   const { app } = await setup()
   vi.spyOn(app.priceService, 'getCurrentBtcPrice').mockImplementation(asyncFn(async () => Err(new Error('offline'))))
   const getData = vi.spyOn(app.controlCenterService, 'getData')
-  const { controlCenter } = appRouter.createCaller({ app }).portalProve
+  const { portfolio } = appRouter.createCaller({ app }).portalProve
 
-  await controlCenter.getData({ timeRange: '30d', timezone: 'Asia/Kolkata' })
+  await portfolio.getData({ timeRange: '30d', timezone: 'Asia/Kolkata' })
 
   expect(getData).toHaveBeenCalledWith(expect.objectContaining({ timezone: 'Asia/Kolkata' }))
 })
 
 it('rejects an unknown portfolio timezone', async () => {
   const { app } = await setup()
-  const { controlCenter } = appRouter.createCaller({ app }).portalProve
+  const { portfolio } = appRouter.createCaller({ app }).portalProve
 
-  await expect(controlCenter.getData({ timeRange: '30d', timezone: 'Not/AZone' })).rejects.toMatchObject({
+  await expect(portfolio.getData({ timeRange: '30d', timezone: 'Not/AZone' })).rejects.toMatchObject({
     code: 'BAD_REQUEST',
     message: 'Invalid timezone',
   })

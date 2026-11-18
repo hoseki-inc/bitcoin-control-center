@@ -160,7 +160,7 @@ it('keeps a generating recent statement current on its own until it is done', { 
       switch (operation.path) {
         case 'portalProve.statements.list':
           return [statementFixture({ id: 'generating', status })]
-        case 'portalProve.controlCenter.getData':
+        case 'portalProve.portfolio.getData':
           return new Promise<never>(() => undefined)
         default:
           return []

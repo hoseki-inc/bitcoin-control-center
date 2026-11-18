@@ -102,7 +102,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
     await utils.portalProve.manual.get.invalidate({ accountId })
     await utils.portalProve.manual.list.invalidate()
     await utils.portalProve.manual.transactions.list.invalidate({ accountId })
-    await utils.portalProve.controlCenter.invalidate()
+    await utils.portalProve.portfolio.invalidate()
   }
 
   async function handleUpdateBalance(): Promise<void> {
@@ -167,7 +167,7 @@ export function ManualAccountDetailsPage(): JSX.Element {
     try {
       await deleteMutation.mutateAsync({ accountId })
       await utils.portalProve.manual.list.invalidate()
-      await utils.portalProve.controlCenter.invalidate()
+      await utils.portalProve.portfolio.invalidate()
       void navigate('/accounts')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to remove account')

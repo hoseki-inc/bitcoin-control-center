@@ -66,7 +66,7 @@ export function ConnectRobinhood(): JSX.Element {
       })
       setConnectedAccount(account)
       setStep('success')
-      void utils.portalProve.controlCenter.getData.invalidate()
+      void utils.portalProve.portfolio.getData.invalidate()
       void utils.portalProve.exchange.list.invalidate()
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to connect Robinhood account'

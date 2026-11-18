@@ -17,7 +17,7 @@ export function RenameClaim({
         trpcUtils.portalProve.registry.claims.get.byId.invalidate(),
         trpcUtils.portalProve.registry.claims.list.invalidate(),
         trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
-        trpcUtils.portalProve.controlCenter.getData.invalidate(),
+        trpcUtils.portalProve.portfolio.getData.invalidate(),
       ])
       onCancel()
     },

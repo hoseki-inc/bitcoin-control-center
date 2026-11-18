@@ -26,7 +26,7 @@ const browser = await vi.hoisted(async () => {
 function AccountNameLists(): null {
   trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
   trpc.portalProve.registry.claims.listArchived.useQuery()
-  trpc.portalProve.controlCenter.getData.useQuery()
+  trpc.portalProve.portfolio.getData.useQuery()
   return null
 }
 
@@ -90,7 +90,7 @@ it('refreshes every list that shows account names after a rename', async () => {
       'portalProve.registry.claims.update',
       'portalProve.registry.claims.list',
       'portalProve.registry.claims.listArchived',
-      'portalProve.controlCenter.getData',
+      'portalProve.portfolio.getData',
     ]),
   )
 })

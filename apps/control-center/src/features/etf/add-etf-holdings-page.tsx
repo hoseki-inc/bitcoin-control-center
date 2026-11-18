@@ -111,7 +111,7 @@ export function ClaimsVerifyEtfPage(): JSX.Element {
       )
 
       await utils.portalProve.etf.list.invalidate()
-      await utils.portalProve.controlCenter.invalidate()
+      await utils.portalProve.portfolio.invalidate()
       setAdded(result)
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to create ETF account'

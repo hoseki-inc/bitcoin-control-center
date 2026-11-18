@@ -123,7 +123,7 @@ describe('refetchPortfolioWhenBehind', () => {
         }),
     )
     const observer = new QueryObserver(queryClient, {
-      queryKey: getQueryKey(trpc.portalProve.controlCenter.getData, { timeRange: '30d' }, 'query'),
+      queryKey: getQueryKey(trpc.portalProve.portfolio.getData, { timeRange: '30d' }, 'query'),
       queryFn: read,
     })
     onTestFinished(observer.subscribe(() => undefined))

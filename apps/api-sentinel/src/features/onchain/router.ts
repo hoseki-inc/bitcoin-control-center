@@ -105,4 +105,20 @@ export const onchainRouter = router({
     }
     return balanceMap
   }),
+
+  /**
+   * Each wallet's newest known balance and whether a newer one is being fetched. Never waits on
+   * Electrum: out-of-date wallets start a scan, and pages poll while any wallet is syncing.
+   */
+  walletBalances: protectedProcedure.input(z.object({ claimIds: z.array(z.string()) })).query(async ({ ctx, input }) =>
+    (await ctx.app.walletBalanceService.readBalances(input.claimIds)).map(
+      ({ accountId, balanceSats, asOf, syncing, failed }) => ({
+        accountId,
+        balanceSats: balanceSats?.toString() ?? null,
+        asOf: asOf?.toISOString() ?? null,
+        syncing,
+        failed,
+      }),
+    ),
+  ),
 })

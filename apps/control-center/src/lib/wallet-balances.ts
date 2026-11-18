@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react'
 import { z } from 'zod'
 import { type RouterOutput, trpc } from '../trpc'
 
-export type WalletBalanceRow = RouterOutput['portalProve']['controlCenter']['walletBalances'][number]
+export type WalletBalanceRow = RouterOutput['portalProve']['onchain']['walletBalances'][number]
 
 /**
  * How current the wallet balances in view are: up to date, still loading, or kept while a wallet
@@ -125,7 +125,7 @@ export function refetchPortfolioWhenBehind(
 ): void {
   for (const query of queryClient
     .getQueryCache()
-    .findAll({ queryKey: getQueryKey(trpc.portalProve.controlCenter.getData) })) {
+    .findAll({ queryKey: getQueryKey(trpc.portalProve.portfolio.getData) })) {
     if (query.state.fetchStatus !== 'idle') {
       continue
     }
@@ -145,7 +145,7 @@ export function refetchPortfolioWhenBehind(
  */
 export function useWalletBalances(claimIds: string[], { enabled }: { enabled: boolean }): WalletBalancesQuery {
   const queryClient = useQueryClient()
-  const query = trpc.portalProve.controlCenter.walletBalances.useQuery(
+  const query = trpc.portalProve.onchain.walletBalances.useQuery(
     { claimIds },
     {
       enabled,

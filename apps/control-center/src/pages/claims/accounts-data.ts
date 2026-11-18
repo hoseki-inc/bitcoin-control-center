@@ -56,7 +56,7 @@ export const accountsDataSource: AccountsDataSource = {
         await Promise.all([
           trpcUtils.portalProve.registry.claims.list.invalidate(),
           trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
-          trpcUtils.portalProve.controlCenter.getData.invalidate(),
+          trpcUtils.portalProve.portfolio.getData.invalidate(),
         ])
         toast.success('Account restored')
       },

@@ -68,7 +68,7 @@ const mocks = vi.hoisted(() => {
     useQuery:
       vi.fn<
         (
-          input: Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>,
+          input: Exclude<RouterInput['portalProve']['portfolio']['getData'], void>,
           options?: { enabled: boolean },
         ) => PortfolioQuery
       >(),
@@ -280,7 +280,7 @@ function chartData(): JsonValue {
 
 function getQueryCall(
   index: number,
-): [Exclude<RouterInput['portalProve']['controlCenter']['getData'], void>, { enabled: boolean }] {
+): [Exclude<RouterInput['portalProve']['portfolio']['getData'], void>, { enabled: boolean }] {
   const call = mocks.useQuery.mock.calls.at(index)
   assert.exists(call, `Missing query call at index ${index}`)
   assert.exists(call[1], 'Expected query options')
