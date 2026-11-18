@@ -14,19 +14,19 @@ import { DiscoveryIndexes } from './features/onchain'
 import { DailyRatesService } from './features/price'
 import { PriceHistoryService } from './features/price'
 import { PriceService, readPriceSettings } from './features/price'
-import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
-import { applyPlatformRequests } from './modules/auth/platform'
-import { AuthService, type PinPlatform } from './modules/auth/service'
 import {
   type ConnectionDetails,
   ConnectionProfileStore,
   type ProfileReference,
-} from './modules/connection_profiles/store'
+  ReleaseCheckService,
+} from './features/settings'
+import { initEncryption, loadCredentialEncryptionKey } from './lib/encrypted'
+import { applyPlatformRequests } from './modules/auth/platform'
+import { AuthService, type PinPlatform } from './modules/auth/service'
 import { ControlCenterService } from './modules/control_center/service'
 import { ExchangeService } from './modules/exchange/service'
 import { ManualService } from './modules/manual/service'
 import { StatementService } from './modules/statements/service'
-import { ReleaseCheckService } from './modules/updates/service'
 import { WalletBalanceService } from './modules/wallet_balances/service'
 
 /**

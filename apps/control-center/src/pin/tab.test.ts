@@ -87,7 +87,7 @@ describe('sentinelFetch', () => {
     useGate.setState({ ...INITIAL_GATE, phase: 'open' }, true)
     const before = tabId()
     const first = sentinelFetch('/trpc/accounts.list')
-    const late = sentinelFetch('/trpc/settings.get')
+    const late = sentinelFetch('/trpc/portalProve.settings.get')
     await vi.waitFor(() => {
       expect(answers).toHaveLength(2)
     })

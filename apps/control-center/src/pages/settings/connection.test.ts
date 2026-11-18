@@ -107,7 +107,7 @@ function activeProfile(): ProfileFixture {
 }
 
 function requestsTo(procedure: string): unknown[] {
-  return requests.filter(({ path }) => path === `settings.${procedure}`).map(({ input }) => input)
+  return requests.filter(({ path }) => path === `portalProve.settings.${procedure}`).map(({ input }) => input)
 }
 
 function connectRequests(): Array<z.infer<typeof ConnectRequestSchema>> {
@@ -278,10 +278,10 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
           ? null
           : parseUnknown(z.object({ json: z.unknown() }), JSON.parse(body) as unknown).expect('request').json
       requests.push({ path, input })
-      if (path === 'settings.get') {
+      if (path === 'portalProve.settings.get') {
         return trpcResult(null)
       }
-      if (path === 'settings.electrumStatus') {
+      if (path === 'portalProve.settings.electrumStatus') {
         const { host, port, protocol } = activeProfile()
         return Response.json({
           result: { data: { json: { connected, connecting, host, port, protocol, tor: torStatus } } },
@@ -290,32 +290,35 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
       if (path === 'portalProve.price.options' || path === 'portalProve.price.status') {
         return Response.json({ result: { data: { json: null } } })
       }
-      if (path === 'settings.statementSource') {
+      if (path === 'portalProve.settings.statementSource') {
         return Response.json({ result: { data: { json: { selectable: true, source: 'mempool' } } } })
       }
-      if (path === 'settings.startTor') {
+      if (path === 'portalProve.settings.startTor') {
         torAttempts += 1
         const started = { state: 'starting', progress: 0, attempt: torAttempts }
         torStatus =
           torFailsInstantly === null ? started : { state: 'failed', message: torFailsInstantly, attempt: torAttempts }
         return Response.json({ result: { data: { json: started } } })
       }
-      if (path === 'settings.testElectrum') {
+      if (path === 'portalProve.settings.testElectrum') {
         if (testResponse) {
           return testResponse
         }
         return trpcResult({ success: true, version: ['Test Electrum', '1.4'] })
       }
-      if (path === 'settings.connectionProfiles.list') {
+      if (path === 'portalProve.settings.connectionProfiles.list') {
         return trpcResult({ profiles, activeId, limit: 5 })
       }
-      if (path === 'settings.connectionProfiles.create') {
+      if (path === 'portalProve.settings.connectionProfiles.create') {
         const request = parseUnknown(CreateRequestSchema, input).expect('create request')
         const created = { ...profile('New'), ...request, torEnabled: request.torEnabled ?? false }
         profiles.push(created)
         return trpcResult(created)
       }
-      if (path === 'settings.connectionProfiles.rename' || path === 'settings.connectionProfiles.delete') {
+      if (
+        path === 'portalProve.settings.connectionProfiles.rename' ||
+        path === 'portalProve.settings.connectionProfiles.delete'
+      ) {
         const reference = parseUnknown(ReferenceSchema, input).expect('profile reference')
         const index = profiles.findIndex((item) => item.id === reference.id)
         const current = profiles[index]
@@ -334,7 +337,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
         profiles[index] = renamed
         return trpcResult(renamed)
       }
-      if (path === 'settings.connectionProfiles.connect') {
+      if (path === 'portalProve.settings.connectionProfiles.connect') {
         const request = parseUnknown(ConnectRequestSchema, input).expect('connect request')
         const result = await saveResponse
         const index = profiles.findIndex((item) => item.id === request.id)
@@ -458,7 +461,7 @@ describe('desktop connection settings', () => {
       }
       await render()
       await turnTorOn()
-      expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(1)
+      expect(requests.filter(({ path }) => path === 'portalProve.settings.startTor')).toHaveLength(1)
       torStatus = { state: 'starting', progress: 45 }
       await advance(1000)
       expect(container.textContent).toContain('Starting Tor… 45%')
@@ -494,7 +497,7 @@ describe('desktop connection settings', () => {
       // Retrying never offers a direct connection: it starts Tor again and stays on Tor.
       await click(button('Test Connection'))
       expect(document.body.textContent).not.toContain('Connect without Tor?')
-      expect(requests.filter(({ path }) => path === 'settings.startTor')).toHaveLength(2)
+      expect(requests.filter(({ path }) => path === 'portalProve.settings.startTor')).toHaveLength(2)
       expect(requestsTo('testElectrum')).toEqual([expect.objectContaining({ torEnabled: true })])
     })
   })
@@ -582,7 +585,7 @@ describe('desktop connection settings', () => {
       await advance(10_000)
       expect(torSwitch().checked).toBe(true)
       expect(container.textContent).not.toContain('Tor stopped unexpectedly.')
-      expect(requests.filter(({ path }) => path === 'settings.startTor')).toEqual([])
+      expect(requests.filter(({ path }) => path === 'portalProve.settings.startTor')).toEqual([])
     })
   })
 
@@ -635,7 +638,7 @@ describe('desktop connection settings', () => {
       assert.ok(keep, 'Expected the onion notice')
       await click(keep)
       expect(torSwitch().checked).toBe(true)
-      expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toEqual([])
+      expect(requests.filter(({ path }) => path === 'portalProve.settings.testElectrum')).toEqual([])
     })
   })
 
@@ -649,7 +652,7 @@ describe('desktop connection settings', () => {
       expect(torSwitch().checked).toBe(false)
       await click(button('Test Connection'))
       expect(document.body.textContent).toContain('The server will be able to see your IP address.')
-      expect(requests.filter(({ path }) => path === 'settings.testElectrum')).toEqual([])
+      expect(requests.filter(({ path }) => path === 'portalProve.settings.testElectrum')).toEqual([])
     })
   })
 })

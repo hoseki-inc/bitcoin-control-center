@@ -77,7 +77,7 @@ const savedConnection = {
 
 /** Answers the saved-connection list, which the Electrum form loads before it is shown. */
 function savedConnections(input: RequestInfo | URL): Response | null {
-  return parseUnknown(z.string(), input).unwrapOr('').includes('/settings.connectionProfiles.list')
+  return parseUnknown(z.string(), input).unwrapOr('').includes('/portalProve.settings.connectionProfiles.list')
     ? Response.json({
         result: { data: { json: { profiles: [savedConnection], activeId: savedConnection.id, limit: 5 } } },
       })
@@ -96,7 +96,7 @@ it.each([
 ])('validates the %s Electrum status response', async (_label, body, visible) => {
   await withTestSetup(async () => {
     fetchMock.mockImplementation(async (input) =>
-      parseUnknown(z.string(), input).unwrapOr('').endsWith('/settings.electrumStatus')
+      parseUnknown(z.string(), input).unwrapOr('').endsWith('/portalProve.settings.electrumStatus')
         ? Response.json(body)
         : (savedConnections(input) ?? Response.json({ result: { data: { json: null } } })),
     )
@@ -129,7 +129,7 @@ it.each([
 ] as const)('says where statement lookups go in the Tor description when they use %s', async (source, text) => {
   await withTestSetup(async () => {
     fetchMock.mockImplementation(async (input) =>
-      parseUnknown(z.string(), input).unwrapOr('').includes('/settings.statementSource')
+      parseUnknown(z.string(), input).unwrapOr('').includes('/portalProve.settings.statementSource')
         ? Response.json({ result: { data: { json: { selectable: true, source } } } })
         : (savedConnections(input) ?? Response.json({ result: { data: { json: null } } })),
     )
@@ -166,10 +166,10 @@ it.each([
       }
       fetchMock.mockImplementation(async (input) => {
         const url = parseUnknown(z.string(), input).unwrapOr('')
-        if (url.includes('/settings.statementSource')) {
+        if (url.includes('/portalProve.settings.statementSource')) {
           return Response.json({ result: { data: { json: { selectable: true, source: 'electrum' } } } })
         }
-        if (url.includes('/settings.connectionProfiles.list')) {
+        if (url.includes('/portalProve.settings.connectionProfiles.list')) {
           return Response.json({
             result: { data: { json: { profiles: [other, active], activeId: active.id, limit: 5 } } },
           })

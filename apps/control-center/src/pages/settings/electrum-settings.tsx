@@ -45,14 +45,14 @@ import { PUBLIC_ELECTRUM_HOST, blankConnection, errorMessage, isOnionHost, isVal
 import { type FadingNotice, NOTICE_FADE_MS, useFadingNotice } from './fading-notice'
 import { useStatementSource } from './statement-source-settings'
 
-type Snapshot = RouterOutput['settings']['connectionProfiles']['list']
+type Snapshot = RouterOutput['portalProve']['settings']['connectionProfiles']['list']
 type Profile = Snapshot['profiles'][number]
 type Draft = Omit<Profile, 'id' | 'revision'> & { id?: string; revision?: number }
 type Selection = { kind: 'new' } | { kind: 'saved'; profile: Profile; reload?: boolean }
 // Saving a new connection never connects; connecting may save edits first.
 type Operation = 'test' | 'save' | 'connect'
 const queryKey = ['connection-profiles']
-const api = baseTrpc.settings.connectionProfiles
+const api = baseTrpc.portalProve.settings.connectionProfiles
 
 function emptyDraft(): Draft {
   return { nickname: '', ...blankConnection() }
@@ -114,7 +114,7 @@ function useElectrumStatus(): ElectrumStatusState {
 
   const refresh = useCallback((): void => {
     const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
-    void sentinelFetch(`${baseUrl}/settings.electrumStatus`)
+    void sentinelFetch(`${baseUrl}/portalProve.settings.electrumStatus`)
       // oxlint-disable-next-line anti-slop/no-unknown-returns -- the network response remains untrusted until the schemas below parse it.
       .then(async (res): Promise<unknown> => (res.ok ? res.json() : null))
       .then((data) => {
@@ -174,7 +174,7 @@ const TorStartResponseSchema = z.object({
 async function requestTorStart(): Promise<number | null> {
   const baseUrl = import.meta.env.VITE_BACKEND_API_URL ?? ''
   try {
-    const res = await sentinelFetch(`${baseUrl}/settings.startTor`, {
+    const res = await sentinelFetch(`${baseUrl}/portalProve.settings.startTor`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     })
@@ -539,7 +539,7 @@ export function ElectrumSettings(): JSX.Element {
         const test = new AbortController()
         runningTest.current = test
         try {
-          await baseTrpc.settings.testElectrum.mutate(details, { signal: test.signal })
+          await baseTrpc.portalProve.settings.testElectrum.mutate(details, { signal: test.signal })
         } finally {
           if (runningTest.current === test) {
             runningTest.current = null

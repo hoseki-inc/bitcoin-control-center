@@ -7,14 +7,14 @@ import { type RouterOutput, baseTrpc } from '../../trpc'
 /** The name the introduction saves your node under, which Settings can rename. */
 const NODE_NICKNAME = 'My node'
 
-const api = baseTrpc.settings.connectionProfiles
+const api = baseTrpc.portalProve.settings.connectionProfiles
 
 type ProfileReference = { id: string; revision: number }
 
 /** A saved connection as the introduction last left it. */
 type SavedConnection = ProfileReference & { details: ConnectionDetails }
 
-type StatementSource = RouterOutput['settings']['statementSource']['source']
+type StatementSource = RouterOutput['portalProve']['settings']['statementSource']['source']
 
 /** What the introduction's server step can do. A failure carries Sentinel's reason. */
 export interface ElectrumChoice {
@@ -80,7 +80,7 @@ export function useElectrumChoice(): ElectrumChoice {
       if ((statementSource.current ?? 'mempool') === source) {
         return Ok(undefined)
       }
-      const saved = await Result.fromPromise(baseTrpc.settings.setStatementSource.mutate({ source }))
+      const saved = await Result.fromPromise(baseTrpc.portalProve.settings.setStatementSource.mutate({ source }))
       if (saved.isErr()) {
         return Err(saved.unwrapErr())
       }
@@ -158,7 +158,7 @@ export function useElectrumChoice(): ElectrumChoice {
         return connected.isErr() ? connected : chooseStatementSource('electrum')
       },
       startTor: () => {
-        void Result.fromPromise(baseTrpc.settings.startTor.mutate())
+        void Result.fromPromise(baseTrpc.portalProve.settings.startTor.mutate())
       },
     }
   }, [queryClient])

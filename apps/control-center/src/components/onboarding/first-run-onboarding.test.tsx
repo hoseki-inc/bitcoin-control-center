@@ -78,30 +78,30 @@ class DesktopServer {
 
   // oxlint-disable-next-line anti-slop/no-unknown-parameters -- Request bodies are untrusted until each handler parses them.
   private answer(path: string, input: unknown): Response {
-    if (path === 'settings.get') {
+    if (path === 'portalProve.settings.get') {
       return result(this.saved.get(parseUnknown(KeySchema, input).expect('setting key').key) ?? null)
     }
-    if (path === 'settings.update') {
+    if (path === 'portalProve.settings.update') {
       const { key, value } = parseUnknown(UpdateSchema, input).expect('setting update')
       this.saved.set(key, value)
       return result(null)
     }
-    if (path === 'settings.startTor') {
+    if (path === 'portalProve.settings.startTor') {
       return result({ state: 'starting', progress: 0, attempt: 1 })
     }
-    if (path === 'settings.setStatementSource') {
+    if (path === 'portalProve.settings.setStatementSource') {
       this.statementSource = parseUnknown(StatementSourceSchema, input).expect('statement source').source
       return result(null)
     }
-    if (path === 'settings.connectionProfiles.list') {
+    if (path === 'portalProve.settings.connectionProfiles.list') {
       return result({ profiles: this.profiles, activeId: this.activeId, limit: 5 })
     }
-    if (path === 'settings.connectionProfiles.create') {
+    if (path === 'portalProve.settings.connectionProfiles.create') {
       const created = { ...parseUnknown(CreateSchema, input).expect('new connection'), id: 'node', revision: 1 }
       this.profiles.push(created)
       return result(created)
     }
-    if (path === 'settings.connectionProfiles.connect') {
+    if (path === 'portalProve.settings.connectionProfiles.connect') {
       const request = parseUnknown(ConnectSchema, input).expect('connection')
       const index = this.profiles.findIndex((profile) => profile.id === request.id)
       const current = this.profiles[index]
@@ -229,10 +229,10 @@ it('keeps the public server without saving anything', async () => {
   await toServerStep()
   await click('Continue')
   expect(heading()).toBe('Start with one account')
-  expect(server.requested('settings.connectionProfiles.connect')).toEqual([])
+  expect(server.requested('portalProve.settings.connectionProfiles.connect')).toEqual([])
   expect(server.saved.has('electrum_host')).toBe(false)
   // Statements stay on mempool.space, the fastest.
-  expect(server.requested('settings.setStatementSource')).toEqual([])
+  expect(server.requested('portalProve.settings.setStatementSource')).toEqual([])
 })
 
 it('connects the public server through Tor and carries on with the introduction', async () => {
@@ -240,7 +240,7 @@ it('connects the public server through Tor and carries on with the introduction'
   await toServerStep()
   await clickInput('#public-tor')
   // Tor starts while you read, so connecting waits less.
-  expect(server.requested('settings.startTor')).toHaveLength(1)
+  expect(server.requested('portalProve.settings.startTor')).toHaveLength(1)
   expect(document.body.textContent).toContain('Hidden by Tor')
   await click('Continue')
   // Connecting saves a server; the introduction keeps its steps anyway.
@@ -248,7 +248,7 @@ it('connects the public server through Tor and carries on with the introduction'
     expect(heading()).toBe('Start with one account')
   })
   expect(document.body.textContent).toContain('Step 6 of 6')
-  expect(server.requested('settings.connectionProfiles.connect')).toEqual([
+  expect(server.requested('portalProve.settings.connectionProfiles.connect')).toEqual([
     {
       id: 'public',
       revision: 1,
@@ -262,8 +262,8 @@ it('connects the public server through Tor and carries on with the introduction'
   expect(heading()).toBe('Choose your Electrum server')
   await click('Continue')
   expect(heading()).toBe('Start with one account')
-  expect(server.requested('settings.connectionProfiles.connect')).toHaveLength(1)
-  expect(server.requested('settings.setStatementSource')).toHaveLength(1)
+  expect(server.requested('portalProve.settings.connectionProfiles.connect')).toHaveLength(1)
+  expect(server.requested('portalProve.settings.setStatementSource')).toHaveLength(1)
 })
 
 it('goes back to the public server from a node connected in the introduction', async () => {
@@ -287,7 +287,7 @@ it('goes back to the public server from a node connected in the introduction', a
     expect(heading()).toBe('Start with one account')
   })
   expect(server.activeId).toBe('public')
-  expect(server.requested('settings.connectionProfiles.connect').at(-1)).toEqual({
+  expect(server.requested('portalProve.settings.connectionProfiles.connect').at(-1)).toEqual({
     id: 'public',
     revision: 1,
     connection: { host: 'electrum.blockstream.info', port: 50002, protocol: 'ssl', torEnabled: false },
@@ -321,7 +321,7 @@ it('reuses the node saved in the introduction after going back to the public ser
     expect(heading()).toBe('Start with one account')
   })
   // One saved node, connected again rather than saved twice.
-  expect(server.requested('settings.connectionProfiles.create')).toHaveLength(1)
+  expect(server.requested('portalProve.settings.connectionProfiles.create')).toHaveLength(1)
   expect(server.profiles.map((profile) => profile.id)).toEqual(['public', 'node'])
   expect(server.activeId).toBe('node')
   // And back to the public server without Tor still leaves the node.

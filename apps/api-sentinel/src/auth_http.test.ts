@@ -79,7 +79,8 @@ describe('PIN sign-in over HTTP', () => {
     expect((await fetch(`${base}/health`)).status).toBe(200)
     expect((await fetch(`${base}/trpc/auth.status`)).status).toBe(200)
     expect(
-      (await fetch(`${base}/trpc/settings.get?input=${encodeURIComponent('{"json":{"key":"user_name"}}')}`)).status,
+      (await fetch(`${base}/trpc/portalProve.settings.get?input=${encodeURIComponent('{"json":{"key":"user_name"}}')}`))
+        .status,
     ).toBe(401)
   })
 
@@ -111,7 +112,9 @@ describe('PIN sign-in over HTTP', () => {
 
   it('refuses batched calls, so a sign-in cannot carry another route', async () => {
     const { base } = await start()
-    const response = await fetch(`${base}/trpc/auth.status,settings.get?batch=1&input=${encodeURIComponent('{}')}`)
+    const response = await fetch(
+      `${base}/trpc/auth.status,portalProve.settings.get?batch=1&input=${encodeURIComponent('{}')}`,
+    )
     // tRPC 10 answers a batch with a generic error when batching is off; nothing runs.
     expect(response.status).toBe(500)
     await expect(response.json()).resolves.not.toHaveProperty('result')

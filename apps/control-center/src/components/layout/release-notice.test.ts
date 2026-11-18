@@ -32,7 +32,7 @@ class ReleaseServer {
   public constructor(fetchMock: ReturnType<typeof vi.fn<typeof fetch>>) {
     fetchMock.mockImplementation(async (input) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
-      const status = url.includes('/settings.releaseCheck')
+      const status = url.includes('/portalProve.settings.releaseCheck')
       if (status) {
         this.asked += 1
       }

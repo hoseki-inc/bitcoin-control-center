@@ -41,7 +41,7 @@ class SourceServer {
     fetchMock.mockImplementation(async (input, init) => {
       const url = parseUnknown(z.string(), input).unwrapOr('')
       if (this.hold) {
-        const kind = url.endsWith('/settings.setStatementSource') ? 'save' : 'read'
+        const kind = url.endsWith('/portalProve.settings.setStatementSource') ? 'save' : 'read'
         const source =
           kind === 'save'
             ? parseUnknown(SavedSchema, JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null')))
@@ -52,7 +52,7 @@ class SourceServer {
           this.held.push({ kind, source, release: resolve })
         })
       }
-      if (url.includes('/settings.statementSource')) {
+      if (url.includes('/portalProve.settings.statementSource')) {
         if (this.failRead) {
           return Response.json(
             { error: { json: { message: 'Sentinel is restarting', code: -32603 } } },
@@ -61,7 +61,7 @@ class SourceServer {
         }
         return Response.json({ result: { data: { json: { selectable: this.selectable, source: this.source } } } })
       }
-      if (url.endsWith('/settings.setStatementSource')) {
+      if (url.endsWith('/portalProve.settings.setStatementSource')) {
         const body = parseUnknown(SavedSchema, JSON.parse(parseUnknown(z.string(), init?.body).unwrapOr('null')))
         const { source } = body.expect('saved source').json
         this.saved.push(source)

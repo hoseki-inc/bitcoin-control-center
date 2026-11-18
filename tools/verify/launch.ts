@@ -193,7 +193,7 @@ try {
   await until('Sentinel /health', async () => ((await fetch(`${url}/health`)).ok ? true : null))
   await until('the web app', async () => ((await servesWebApp(url)) ? true : null))
   await until('Electrum to connect', async () =>
-    (await client.settings.electrumStatus.query()).connected ? true : null,
+    (await client.portalProve.settings.electrumStatus.query()).connected ? true : null,
   )
 
   // The fake mempool is the only price source; with fallbacks off, prices never come from a public service.

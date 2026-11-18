@@ -1690,6 +1690,9 @@
               "does": "Could not save your name",
               "needs": "fault"
             }
+          ],
+          "recipes": [
+            { "file": "settings-name.md", "proves": ["save", "save-disabled", "persists", "prefills-statement"] }
           ]
         },
         {

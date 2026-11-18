@@ -24,12 +24,12 @@ export function useLocalSetting(key: string): LocalSettingState {
   const query = useQuery({
     queryKey,
     staleTime: 30_000,
-    queryFn: async () => baseTrpc.settings.get.query({ key }),
+    queryFn: async () => baseTrpc.portalProve.settings.get.query({ key }),
   })
 
   const mutation = useMutation({
     mutationFn: async (value: string): Promise<void> => {
-      const res = await sentinelFetch(`${baseUrl}/settings.update`, {
+      const res = await sentinelFetch(`${baseUrl}/portalProve.settings.update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(superjson.serialize({ key, value })),
