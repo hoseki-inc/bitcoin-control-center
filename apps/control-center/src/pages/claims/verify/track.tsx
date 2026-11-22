@@ -36,9 +36,9 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
   const [isSaving, setIsSaving] = useState(false)
 
   const utils = trpc.useUtils()
-  const createSinglesig = trpc.portalProve.registry.claims.create.singlesig.useMutation()
-  const createMultisig = trpc.portalProve.registry.claims.create.multisig.useMutation()
-  const trackExisting = trpc.portalProve.registry.claims.track.useMutation()
+  const createSinglesig = trpc.portalProve.accounts.create.singlesig.useMutation()
+  const createMultisig = trpc.portalProve.accounts.create.multisig.useMutation()
+  const trackExisting = trpc.portalProve.accounts.track.useMutation()
 
   const wallet = parseTrackedWallet(raw, scriptType)
   const isInvalid = raw.trim() !== '' && wallet === null
@@ -48,9 +48,7 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
   async function save(tracked: TrackedWallet, name: string): Promise<Result<{ path: string; isNew: boolean }, Error>> {
     const network = tracked.account.network().toString()
     const account = tracked.account.descriptor()
-    const existing = await Result.fromPromise(
-      utils.portalProve.registry.claims.get.byAccount.fetch({ network, account }),
-    )
+    const existing = await Result.fromPromise(utils.portalProve.accounts.get.byAccount.fetch({ network, account }))
     if (existing.isOk()) {
       const claim = existing.unwrap()
       const path = claim.isArchived ? '/accounts#archived' : `/accounts/${claim.id}`
@@ -59,7 +57,7 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
         return Ok({ path, isNew: false })
       }
       return Result.fromPromise(
-        trackExisting.mutateAsync({ id: claim.id }).then(async () => utils.portalProve.registry.claims.invalidate()),
+        trackExisting.mutateAsync({ id: claim.id }).then(async () => utils.portalProve.accounts.invalidate()),
       ).map(() => ({ path, isNew: false }))
     }
     return Result.fromPromise(
@@ -80,7 +78,7 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
           })
       ).then(async (created) => {
         await Promise.all([
-          utils.portalProve.registry.claims.invalidate(),
+          utils.portalProve.accounts.invalidate(),
           utils.portalProve.portfolio.invalidate(),
           utils.portalProve.onchain.walletBalances.invalidate(),
         ])

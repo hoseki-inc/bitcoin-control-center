@@ -41,7 +41,7 @@ export function ClaimSelection({
   setSelectedClaimIds,
   ...props
 }: ClaimSelectionProps): JSX.Element {
-  const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: true })
+  const claimsQuery = trpc.portalProve.accounts.list.useQuery({ excludePending: true })
   const claimIds = claimsQuery.data?.map((claim) => claim.id) ?? []
   const claimUsdBalancesQuery = useGetBalancesPerClaimIds({ claimIds, enabled: claimIds.length > 0 })
 

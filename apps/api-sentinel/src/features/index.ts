@@ -1,3 +1,4 @@
+import { accountsRouter } from './accounts'
 import { etfRouter } from './etf'
 import { exchangesRouter } from './exchanges'
 import { manualRouter } from './manual'
@@ -9,6 +10,7 @@ import { statementsRouter } from './statements'
 
 /** Every feature's tRPC router, mounted under `portalProve` by name. Add a line here for each new feature. */
 export const featureRouters = {
+  accounts: accountsRouter,
   etf: etfRouter,
   exchanges: exchangesRouter,
   manual: manualRouter,

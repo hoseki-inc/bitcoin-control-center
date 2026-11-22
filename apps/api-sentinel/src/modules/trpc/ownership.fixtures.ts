@@ -40,9 +40,24 @@ function createSigningKey(seedByte: number, network: Network.Mainnet | Network.T
 }
 
 type SigningKey = ReturnType<typeof createSigningKey>
-export type OwnershipRegistry = ReturnType<typeof appRouter.createCaller>['portalProve']['registry']
+type AppCaller = ReturnType<typeof appRouter.createCaller>
+/** The ownership routes, plus the accounts they prove. */
+export type OwnershipRegistry = AppCaller['portalProve']['registry'] & {
+  accounts: AppCaller['portalProve']['accounts']
+}
+
+export function ownershipRegistry(caller: AppCaller): OwnershipRegistry {
+  const { registry, accounts: accountRoutes } = caller.portalProve
+  return {
+    challenges: registry.challenges,
+    challengeMessages: registry.challengeMessages,
+    getOrCreateSinglesigChallengeMessage: registry.getOrCreateSinglesigChallengeMessage,
+    accounts: accountRoutes,
+  }
+}
+
 type Challenge = Awaited<ReturnType<OwnershipRegistry['challenges']['complete']>>
-type SinglesigClaim = Awaited<ReturnType<OwnershipRegistry['claims']['create']['singlesig']>>
+type SinglesigClaim = Awaited<ReturnType<OwnershipRegistry['accounts']['create']['singlesig']>>
 
 export const owner = createSigningKey(1)
 export const secondOwner = createSigningKey(2)
@@ -110,11 +125,11 @@ interface OwnershipHarness {
 
 export async function setupOwnershipHarness(): Promise<OwnershipHarness> {
   const { caller, db } = await setupAppCaller()
-  return { registry: caller.portalProve.registry, db }
+  return { registry: ownershipRegistry(caller), db }
 }
 
 interface AppCallerHarness {
-  caller: ReturnType<typeof appRouter.createCaller>
+  caller: AppCaller
   db: SentinelDb
 }
 
@@ -197,7 +212,7 @@ export async function createSinglesigClaim(
   signingKey: SigningKey,
   scriptType: SingleSigAccountScriptType = 'p2wpkh',
 ): Promise<SinglesigClaim> {
-  return registry.claims.create.singlesig({
+  return registry.accounts.create.singlesig({
     network: signingKey.xpub.network.toString(),
     account: new SingleSigAccount(scriptType, signingKey.xpub).descriptor(),
     displayName: 'Test wallet',
@@ -270,14 +285,14 @@ export async function createMultisigClaim(
   keys: SigningKey[],
   descriptorKeys: SigningKey[] = [owner, secondOwner, thirdOwner],
   scriptType: MultiSigAccountScriptType = 'p2wsh',
-): Promise<Awaited<ReturnType<OwnershipRegistry['claims']['create']['multisig']>>> {
+): Promise<Awaited<ReturnType<OwnershipRegistry['accounts']['create']['multisig']>>> {
   const account = MultiSigAccount.from({
     scriptType,
     threshold: 2,
     isSorted: true,
     xpubs: descriptorKeys.map((key) => key.xpub),
   }).expect('Fixture descriptor must be valid')
-  return registry.claims.create.multisig({
+  return registry.accounts.create.multisig({
     network: account.network().toString(),
     account: account.descriptor(),
     displayName: '2-of-3 wallet',

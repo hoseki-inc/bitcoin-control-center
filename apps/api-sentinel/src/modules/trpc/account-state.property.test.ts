@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm'
 import fc from 'fast-check'
 import { describe, expect, it } from 'vitest'
 import { accounts, challenges, keystores } from '../../db/schema'
-import { owner, secondOwner, setupAppCaller, thirdOwner } from './ownership.fixtures'
+import { owner, ownershipRegistry, secondOwner, setupAppCaller, thirdOwner } from './ownership.fixtures'
 
 // Runs random sequences of what a user can do to their accounts, through the real routes, and checks
 // after every step that no account reached a state the product doesn't allow.
@@ -95,7 +95,7 @@ async function accountId(db: Harness['db'], wallet: number): Promise<string | nu
 }
 
 async function verify(harness: Harness, claimId: string, signer: Wallet): Promise<void> {
-  const registry = harness.caller.portalProve.registry
+  const registry = ownershipRegistry(harness.caller)
   const challenge = await registry.challenges.create({ claimId })
   const [keystore] = await harness.db.select().from(keystores).where(eq(keystores.accountId, claimId))
   if (!keystore) {
@@ -117,13 +117,13 @@ async function verify(harness: Harness, claimId: string, signer: Wallet): Promis
 }
 
 async function perform(harness: Harness, action: Action): Promise<void> {
-  const registry = harness.caller.portalProve.registry
+  const registry = ownershipRegistry(harness.caller)
   const key = wallets[action.wallet]
   if (!key) {
     return
   }
   if (action.kind === 'create') {
-    await registry.claims.create.singlesig({
+    await registry.accounts.create.singlesig({
       network: key.xpub.network.toString(),
       account: descriptorOf(key),
       displayName: 'Wallet',
@@ -138,7 +138,7 @@ async function perform(harness: Harness, action: Action): Promise<void> {
   }
   switch (action.kind) {
     case 'track':
-      await registry.claims.track({ id })
+      await registry.accounts.track({ id })
       return
     case 'verify':
       await verify(harness, id, wallets[action.signer] ?? key)
@@ -148,23 +148,23 @@ async function perform(harness: Harness, action: Action): Promise<void> {
       await harness.db.update(accounts).set({ deletedAt: new Date().toISOString() }).where(eq(accounts.id, id))
       return
     case 'restore':
-      await registry.claims.restore({ id })
+      await registry.accounts.restore({ id })
       return
     case 'deletePending':
-      await registry.claims.deletePending({ id })
+      await registry.accounts.deletePending({ id })
       return
     case 'delete':
-      await registry.claims.delete({ id })
+      await registry.accounts.delete({ id })
       return
     case 'setDevice': {
       const [keystore] = await harness.db.select().from(keystores).where(eq(keystores.accountId, id))
       if (keystore) {
-        await registry.claims.updateKeystore({ id: keystore.id, label: 'Key', wallet: action.device })
+        await registry.accounts.updateKeystore({ id: keystore.id, label: 'Key', wallet: action.device })
       }
       return
     }
     case 'rename':
-      await registry.claims.update({ id, displayName: 'Renamed' })
+      await registry.accounts.update({ id, displayName: 'Renamed' })
   }
 }
 

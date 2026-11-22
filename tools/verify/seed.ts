@@ -48,7 +48,7 @@ const keystore = { wallet: null, model: null, derivationPath: null }
 
 // Proven the way a user proves ownership in Advanced: sign the challenge message with the wallet, paste the signature.
 const { verified } = SEED_ACCOUNTS
-const created = await client.portalProve.registry.claims.create.singlesig.mutate({
+const created = await client.portalProve.accounts.create.singlesig.mutate({
   network: verified.account.network().toString(),
   account: verified.account.descriptor(),
   displayName: verified.displayName,
@@ -73,7 +73,7 @@ if (!proof.isSatisfied) {
 /** Adds a seeded wallet as watch-only and returns its account ID. */
 async function addWatchOnly(key: 'watchSegwit' | 'watchTaproot'): Promise<string> {
   const { displayName, account } = SEED_ACCOUNTS[key]
-  const watched = await client.portalProve.registry.claims.create.singlesig.mutate({
+  const watched = await client.portalProve.accounts.create.singlesig.mutate({
     network: account.network().toString(),
     account: account.descriptor(),
     displayName,

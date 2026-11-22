@@ -252,7 +252,7 @@ function GenericCheckWalletXpub({
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<Error | null>(null)
 
-  const updateKeystore = trpc.portalProve.registry.claims.updateKeystore.useMutation()
+  const updateKeystore = trpc.portalProve.accounts.updateKeystore.useMutation()
   const createChallengeMessage = trpc.portalProve.registry.challengeMessages.create.useMutation()
 
   const containsNonStandardPaths = claim.keystores.some(

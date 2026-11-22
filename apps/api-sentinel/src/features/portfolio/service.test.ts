@@ -398,7 +398,7 @@ describe('history scan boundaries', () => {
       harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
       harness.provider.getConfirmedAccountBalances.mockResolvedValue(Ok(new IndexMap([[account, 120n]])))
       harness.history.mockResolvedValue(Ok([entry(20n, nextTip.timestamp.toISOString(), nextTip.height)]))
-      expect((await harness.service.archiveAccount(accountId)).isOk()).toBe(true)
+      expect((await harness.service.preserveHistory(accountId, account.toString())).unwrap()).toBe(120n)
       expect(harness.history.mock.calls.map(([, height]) => height)).toEqual([tip.height])
       expect((await harness.rows())[0]?.balance_sats).toBe('100')
       expect((await harness.rows()).at(-1)?.balance_sats).toBe('120')
@@ -442,7 +442,7 @@ describe('history scan boundaries', () => {
       await vi.waitFor(async () => {
         expect(harness.history).toHaveBeenCalledTimes(1)
       })
-      harness.service['invalidateAccountHistoryBackfill'](accountId)
+      harness.service.invalidateAccountHistoryBackfill(accountId)
       pending.resolve(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
       await expect(result).resolves.toBeNull()
       await expect(harness.coverage()).resolves.toEqual([])
@@ -689,7 +689,7 @@ describe('atomic history persistence', () => {
             } else if (action === 'delete') {
               await db.delete(accounts).where(eq(accounts.id, accountId))
             } else {
-              service['invalidateAccountHistoryBackfill'](accountId)
+              service.invalidateAccountHistoryBackfill(accountId)
             }
           }
           return allowed

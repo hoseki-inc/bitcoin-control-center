@@ -419,66 +419,31 @@ export class ControlCenterService {
     })
   }
 
-  public archiveAccount = asyncFn(async (accountId: string): Promise<Result<void, Error>> => {
-    const [row] = await this.db
-      .select({ descriptor: accountTable.descriptor })
-      .from(accountTable)
-      .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
-    if (!row) {
-      return Err(new Error('Claim not found or already archived'))
-    }
-
-    const accountResult = Account.fromDescriptor(row.descriptor)
+  /**
+   * Saves an account's full balance history before the accounts feature archives it, and returns
+   * its balance now, for the snapshot the archive records.
+   */
+  public async preserveHistory(accountId: string, descriptor: string): Promise<Result<bigint, Error>> {
+    const accountResult = Account.fromDescriptor(descriptor)
     if (accountResult.isErr()) {
       return Err(new Error('Failed to preserve account history: invalid descriptor'))
     }
-
-    const account = accountResult.unwrap()
-    const preservedBalance = await this.ensureAccountHistorySnapshots(accountId, account, undefined, new Date(0), true)
+    const preservedBalance = await this.ensureAccountHistorySnapshots(
+      accountId,
+      accountResult.unwrap(),
+      undefined,
+      new Date(0),
+      true,
+    )
     if (preservedBalance === null) {
       return Err(new Error('Failed to preserve full account history'))
     }
+    return Ok(preservedBalance)
+  }
 
-    const archivedAt = new Date().toISOString()
-    const archived = await this.db.transaction(async (tx): Promise<boolean> => {
-      const updated = await tx
-        .update(accountTable)
-        .set({ deletedAt: archivedAt })
-        .where(and(eq(accountTable.id, accountId), isNull(accountTable.deletedAt)))
-      if (updated.rowsAffected === 0) {
-        return false
-      }
-      await this.upsertAccountSnapshot(tx, accountId, preservedBalance.toString(), archivedAt)
-      return true
-    })
-
-    if (!archived) {
-      return Err(new Error('Claim not found or already archived'))
-    }
-    this.invalidateAccountHistoryBackfill(accountId)
-    this.walletBalances.invalidate(accountId)
-    return Ok(undefined)
-  })
-
-  public async restoreAccount(accountId: string): Promise<Result<void, Error>> {
-    const restored = await this.db.transaction(async (tx): Promise<boolean> => {
-      const result = await tx
-        .update(accountTable)
-        .set({ deletedAt: null })
-        .where(and(eq(accountTable.id, accountId), isNotNull(accountTable.deletedAt)))
-      if (result.rowsAffected === 0) {
-        return false
-      }
-      await tx.delete(accountHistorySyncs).where(eq(accountHistorySyncs.accountId, accountId))
-      return true
-    })
-
-    if (!restored) {
-      return Err(new Error('Claim not found or not archived'))
-    }
-    this.clearAccountHistoryBackfillState(accountId)
-    this.walletBalances.invalidate(accountId)
-    return Ok(undefined)
+  /** Forgets which ranges of a restored account's history were scanned, so it scans them again. */
+  public async forgetHistorySyncs(tx: SentinelTx, accountId: string): Promise<void> {
+    await tx.delete(accountHistorySyncs).where(eq(accountHistorySyncs.accountId, accountId))
   }
 
   // ─── Private Helpers ───────────────────────────────────────────────────
@@ -663,12 +628,12 @@ export class ControlCenterService {
       })
   }
 
-  private clearAccountHistoryBackfillState(accountId: string): void {
+  public clearAccountHistoryBackfillState(accountId: string): void {
     this.accountHistoryBackfillsInFlight.delete(accountId)
     this.clearAccountHistoryBackfillRetry(accountId)
   }
 
-  private invalidateAccountHistoryBackfill(accountId: string): void {
+  public invalidateAccountHistoryBackfill(accountId: string): void {
     this.accountHistoryBackfillGenerations.set(accountId, this.getAccountHistoryBackfillGeneration(accountId) + 1)
     this.clearAccountHistoryBackfillState(accountId)
   }

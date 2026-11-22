@@ -91,7 +91,7 @@ describe('database timestamps outside UTC', () => {
     })
 
     const statement = await caller.portalProve.statements.retrieve('st_created_time')
-    const claim = await caller.portalProve.registry.claims.get.byId({ id: 'acct_created_time' })
+    const claim = await caller.portalProve.accounts.get.byId({ id: 'acct_created_time' })
     const message = await caller.portalProve.registry.challengeMessages.get({ signedMessageId })
     const [exchange] = await caller.portalProve.exchanges.list()
 

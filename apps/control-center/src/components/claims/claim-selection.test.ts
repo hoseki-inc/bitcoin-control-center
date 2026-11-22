@@ -77,7 +77,7 @@ async function withTestSetup(
   const domGlobals = acquireDom()
   queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
   queryClient.setQueryData<ClaimDto[]>(
-    getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'),
+    getQueryKey(trpc.portalProve.accounts.list, { excludePending: true }, 'query'),
     claims,
   )
   queryClient.setQueryData(

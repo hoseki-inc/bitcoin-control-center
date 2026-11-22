@@ -36,13 +36,13 @@ async function openReceipt(status: ClaimDto['status'], cached?: ClaimDto['status
     act(callback)
   })
   const rpc = createTestTrpcClient(async (operation) =>
-    operation.path === 'portalProve.registry.claims.get.byId'
+    operation.path === 'portalProve.accounts.get.byId'
       ? { ...claimFixture(id, 'Cold storage'), status }
       : new Promise<never>(() => undefined),
   )
   const client = new QueryClient()
   if (cached !== undefined) {
-    const key = getQueryKey(trpc.portalProve.registry.claims.get.byId, { id }, 'query')
+    const key = getQueryKey(trpc.portalProve.accounts.get.byId, { id }, 'query')
     client.setQueryData(key, { ...claimFixture(id, 'Cold storage'), status: cached })
     // Completing the challenge marks every query stale.
     await client.invalidateQueries({ refetchType: 'none' })

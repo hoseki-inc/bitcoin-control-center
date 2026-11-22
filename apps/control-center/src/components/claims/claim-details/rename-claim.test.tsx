@@ -24,8 +24,8 @@ const browser = await vi.hoisted(async () => {
 
 /** The lists that show account names, kept on screen beside the rename form. */
 function AccountNameLists(): null {
-  trpc.portalProve.registry.claims.list.useQuery({ excludePending: false })
-  trpc.portalProve.registry.claims.listArchived.useQuery()
+  trpc.portalProve.accounts.list.useQuery({ excludePending: false })
+  trpc.portalProve.accounts.listArchived.useQuery()
   trpc.portalProve.portfolio.getData.useQuery()
   return null
 }
@@ -87,9 +87,9 @@ it('refreshes every list that shows account names after a rename', async () => {
 
   expect(requests).toEqual(
     expect.arrayContaining([
-      'portalProve.registry.claims.update',
-      'portalProve.registry.claims.list',
-      'portalProve.registry.claims.listArchived',
+      'portalProve.accounts.update',
+      'portalProve.accounts.list',
+      'portalProve.accounts.listArchived',
       'portalProve.portfolio.getData',
     ]),
   )

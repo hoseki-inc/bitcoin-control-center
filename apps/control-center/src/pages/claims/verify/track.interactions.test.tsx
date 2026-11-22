@@ -42,15 +42,15 @@ async function renderTrackPage({
   const rpc = createTestTrpcClient(async (operation) => {
     requests.push(operation)
     switch (operation.path) {
-      case 'portalProve.registry.claims.get.byAccount':
+      case 'portalProve.accounts.get.byAccount':
         if (existing === undefined) {
           throw notFound('Claim not found')
         }
         return { id: existing.id, status: existing.status, isArchived: existing.isArchived ?? false }
-      case 'portalProve.registry.claims.track':
+      case 'portalProve.accounts.track':
         return { id: existing?.id, status: 'unverified' }
-      case 'portalProve.registry.claims.create.singlesig':
-      case 'portalProve.registry.claims.create.multisig':
+      case 'portalProve.accounts.create.singlesig':
+      case 'portalProve.accounts.create.multisig':
         if (failCreate) {
           throw new Error('Sentinel is not reachable')
         }
@@ -131,7 +131,7 @@ async function renderTrackPage({
     })
   }
   const created = (): Operation[] => requests.filter((request) => request.path.includes('.create.'))
-  const tracked = (): Operation[] => requests.filter((request) => request.path.endsWith('.claims.track'))
+  const tracked = (): Operation[] => requests.filter((request) => request.path === 'portalProve.accounts.track')
   return {
     fillName: async (value: string) => fill(nameInput, value),
     fillWallet: async (value: string) => fill(walletInput, value),
@@ -158,7 +158,7 @@ it('keeps the picked script type when the xpub is edited, and saves that type', 
   await page.submit()
   expect(page.created()).toMatchObject([
     {
-      path: 'portalProve.registry.claims.create.singlesig',
+      path: 'portalProve.accounts.create.singlesig',
       input: {
         account: Wallets.singlesigNativeSegwitAccount.descriptor(),
         displayName: 'Cold storage',
@@ -177,7 +177,7 @@ it('saves a multisig descriptor as track-only', async () => {
 
   expect(page.created()).toMatchObject([
     {
-      path: 'portalProve.registry.claims.create.multisig',
+      path: 'portalProve.accounts.create.multisig',
       input: {
         account: Wallets.multisigNativeSegwitAccount.descriptor(),
         displayName: 'Family vault',

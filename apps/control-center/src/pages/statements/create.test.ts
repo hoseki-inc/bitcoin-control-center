@@ -60,7 +60,7 @@ it.each(StatementQuoteCurrencySchema.options)(
       throw new Error(`Unexpected request: ${operation.path}`)
     })
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
-    client.setQueryData(getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query'), [
+    client.setQueryData(getQueryKey(trpc.portalProve.accounts.list, { excludePending: true }, 'query'), [
       claimFixture(claimId, 'Savings wallet'),
     ])
     // A connected exchange must stay off the page and out of statement requests.
@@ -178,7 +178,7 @@ it.each([
   { state: 'empty', status: 'success', heading: 'First, Connect an Account.', loadClaims: async () => [] },
 ])('shows "$heading" while accounts are $state', async ({ status, heading, loadClaims }) => {
   const rpc = createTestTrpcClient(async (operation) => {
-    if (operation.path === 'portalProve.registry.claims.list') {
+    if (operation.path === 'portalProve.accounts.list') {
       return loadClaims()
     }
     throw new Error(`Unexpected request: ${operation.path}`)
@@ -189,7 +189,7 @@ it.each([
   vi.spyOn(console, 'error').mockImplementation(() => undefined)
   const container = await renderCreatePage(client, rpc)
   await vi.waitFor(() => {
-    const claimsKey = getQueryKey(trpc.portalProve.registry.claims.list, { excludePending: true }, 'query')
+    const claimsKey = getQueryKey(trpc.portalProve.accounts.list, { excludePending: true }, 'query')
     expect(client.getQueryState(claimsKey)?.status).toBe(status)
     expect(container.textContent).toContain(heading)
   })
@@ -197,7 +197,7 @@ it.each([
 
 it('captions both previews in text when there are no accounts', async () => {
   const rpc = createTestTrpcClient(async (operation) => {
-    if (operation.path === 'portalProve.registry.claims.list') {
+    if (operation.path === 'portalProve.accounts.list') {
       return []
     }
     throw new Error(`Unexpected request: ${operation.path}`)

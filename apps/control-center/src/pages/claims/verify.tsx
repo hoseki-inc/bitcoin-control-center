@@ -45,7 +45,7 @@ export function ClaimVerificationReceiptPage(): JSX.Element {
 }
 
 function ClaimVerificationReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element {
-  const { data: claim, isError, isFetching } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+  const { data: claim, isError, isFetching } = trpc.portalProve.accounts.get.byId.useQuery({ id: claimId })
 
   if (isError) {
     return <ErrorBanner mt={8} mb={4} message="Failed to get claim" />

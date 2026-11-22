@@ -45,11 +45,11 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
       ? Number(archiveBalance.toString())
       : undefined
 
-  const archiveMutation = trpc.portalProve.registry.claims.archive.useMutation({
+  const archiveMutation = trpc.portalProve.accounts.archive.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        trpcUtils.portalProve.registry.claims.list.invalidate(),
-        trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
+        trpcUtils.portalProve.accounts.list.invalidate(),
+        trpcUtils.portalProve.accounts.listArchived.invalidate(),
         trpcUtils.portalProve.portfolio.getData.invalidate(),
       ])
       void navigate('/accounts')
@@ -64,8 +64,8 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
 
   const onDeleteSuccess = async (): Promise<void> => {
     await Promise.all([
-      trpcUtils.portalProve.registry.claims.list.invalidate(),
-      trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
+      trpcUtils.portalProve.accounts.list.invalidate(),
+      trpcUtils.portalProve.accounts.listArchived.invalidate(),
       trpcUtils.portalProve.portfolio.getData.invalidate(),
     ])
     void navigate('/accounts')
@@ -78,11 +78,11 @@ export function DeleteClaimModal({ action, isOpen, onClose, claim }: DeleteClaim
     toast.error(isAbandon ? 'Failed to abandon setup' : 'Failed to delete account')
   }
 
-  const deletePendingMutation = trpc.portalProve.registry.claims.deletePending.useMutation({
+  const deletePendingMutation = trpc.portalProve.accounts.deletePending.useMutation({
     onSuccess: onDeleteSuccess,
     onError: onDeleteError,
   })
-  const deletePermanentlyMutation = trpc.portalProve.registry.claims.delete.useMutation({
+  const deletePermanentlyMutation = trpc.portalProve.accounts.delete.useMutation({
     onSuccess: async () => {
       await onDeleteSuccess()
     },

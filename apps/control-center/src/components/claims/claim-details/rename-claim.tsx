@@ -11,12 +11,12 @@ export function RenameClaim({
   onCancel: () => void
 }): JSX.Element {
   const trpcUtils = trpc.useUtils()
-  const updateClaimMutation = trpc.portalProve.registry.claims.update.useMutation({
+  const updateClaimMutation = trpc.portalProve.accounts.update.useMutation({
     onSuccess: async () => {
       await Promise.all([
-        trpcUtils.portalProve.registry.claims.get.byId.invalidate(),
-        trpcUtils.portalProve.registry.claims.list.invalidate(),
-        trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
+        trpcUtils.portalProve.accounts.get.byId.invalidate(),
+        trpcUtils.portalProve.accounts.list.invalidate(),
+        trpcUtils.portalProve.accounts.listArchived.invalidate(),
         trpcUtils.portalProve.portfolio.getData.invalidate(),
       ])
       onCancel()

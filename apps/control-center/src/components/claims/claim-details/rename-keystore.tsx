@@ -11,9 +11,9 @@ export function RenameKeystore({
   onCancel: () => void
 }): JSX.Element {
   const trpcUtils = trpc.useUtils()
-  const updateKeystoreMutation = trpc.portalProve.registry.claims.updateKeystore.useMutation({
+  const updateKeystoreMutation = trpc.portalProve.accounts.updateKeystore.useMutation({
     onSuccess: async () => {
-      await trpcUtils.portalProve.registry.claims.get.byId.invalidate()
+      await trpcUtils.portalProve.accounts.get.byId.invalidate()
       onCancel()
     },
   })

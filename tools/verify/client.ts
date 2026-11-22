@@ -79,12 +79,12 @@ export interface ListQuery {
 
 /** The account lists Home counts: wallets, exchange accounts, manual holdings and ETF holdings. */
 export interface AccountLists {
-  portalProve: { registry: { claims: ListQuery }; exchanges: ListQuery; manual: ListQuery; etf: ListQuery }
+  portalProve: { accounts: ListQuery; exchanges: ListQuery; manual: ListQuery; etf: ListQuery }
 }
 
 /** Every account the app shows, of every kind, so "no accounts" means the app is really empty. */
 export async function countAccounts(client: AccountLists): Promise<number> {
-  const { registry, exchanges, manual, etf } = client.portalProve
-  const lists = await Promise.all([registry.claims, exchanges, manual, etf].map(async (kind) => kind.list.query()))
+  const { accounts, exchanges, manual, etf } = client.portalProve
+  const lists = await Promise.all([accounts, exchanges, manual, etf].map(async (kind) => kind.list.query()))
   return lists.reduce((total, list) => total + list.length, 0)
 }
