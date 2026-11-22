@@ -23,6 +23,7 @@ export function PortfolioSummary({
   data,
   accountCount,
   walletStatus,
+  historyComplete = true,
   AccumulationChart = DefaultAccumulationChart,
   portfolioLinkProps,
 }: {
@@ -30,6 +31,8 @@ export function PortfolioSummary({
   accountCount: number | null
   /** Whether the wallet balances behind the total are current, and how old they are if not. */
   walletStatus?: WalletBalanceStatus
+  /** False while an account's history hasn't loaded, so the chart and the 30-day change would be wrong. */
+  historyComplete?: boolean
   AccumulationChart?: typeof DefaultAccumulationChart
   /** Extra props for the View Portfolio link, such as taking it out of the tab order. */
   portfolioLinkProps?: ButtonProps
@@ -42,11 +45,12 @@ export function PortfolioSummary({
   const totalBtc = new Decimal(currentSats).div(100_000_000)
   const totalUsd = btcPrice === null ? null : totalBtc.toNumber() * btcPrice
 
-  const historicalData = data.historicalData
-  const startSats = historicalData[0]?.totalBalance ?? '0'
-  const change30d = new Decimal(currentSats).minus(new Decimal(startSats))
-  const change30dBtc = change30d.div(100_000_000)
-  const isUp = change30d.gte(0)
+  // Without every account's history, the chart would start too low and the change would count old coins as new.
+  const historicalData = historyComplete ? data.historicalData : []
+  const startSats = historicalData[0]?.totalBalance
+  const change30d = startSats === undefined ? null : new Decimal(currentSats).minus(new Decimal(startSats))
+  const change30dBtc = change30d === null ? null : change30d.div(100_000_000)
+  const isUp = change30d === null || change30d.gte(0)
   const hasBalance = totalBtc.gt(0)
 
   return (

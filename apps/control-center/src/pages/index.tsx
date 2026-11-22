@@ -66,6 +66,7 @@ export function HomePage({
             data={portfolio}
             accountCount={accountCount}
             walletStatus={wallets.status}
+            historyComplete={!historyStillLoading(portfolio)}
             AccumulationChart={views.AccumulationChart}
           />
         </Box>
@@ -189,12 +190,35 @@ export interface HomeDataSource {
 const homeDataSource: HomeDataSource = {
   useStatements: () =>
     trpc.portalProve.statements.list.useQuery(undefined, { refetchInterval: refetchWhileGenerating }),
-  usePortfolio: (input) => trpc.portalProve.portfolio.getData.useQuery(input),
+  usePortfolio: (input) =>
+    trpc.portalProve.portfolio.getData.useQuery(input, { refetchInterval: portfolioRefetchInterval }),
   useClaims: () => trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
   useExchanges: () => trpc.portalProve.exchanges.list.useQuery(),
   useManual: () => trpc.portalProve.manual.list.useQuery(),
   useEtfs: () => trpc.portalProve.etf.list.useQuery(),
   useWalletBalances,
+}
+
+/**
+ * Whether an account's history in the overview hasn't loaded yet, so the 30 days before it are unknown. An account
+ * whose earlier history is saved and only refreshing still counts.
+ */
+export function historyStillLoading(data: PortfolioData): boolean {
+  return data.historySyncingAccountIds.some((id) => !data.historyRefreshingAccountIds.includes(id))
+}
+
+/**
+ * Ask again while an account's history is still loading, and more slowly while there is a balance but no price,
+ * so the overview catches up once Electrum or the price source answers. Otherwise not at all.
+ */
+export function portfolioRefetchInterval(data: PortfolioData | undefined): number | false {
+  if (data === undefined) {
+    return false
+  }
+  if (data.historySyncingAccountIds.length > 0) {
+    return 10_000
+  }
+  return BigInt(data.currentTotalBalance) > 0n && Number(data.currentBtcPrice) <= 0 ? 30_000 : false
 }
 
 export interface HomeViews {
