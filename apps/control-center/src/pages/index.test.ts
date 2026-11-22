@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { WalletBalanceRow } from '../lib/wallet-balances'
 import { statementFixture } from '../testing/statements'
 import type { StatementDto } from '../trpc/server-types'
-import { type HomeDataSource, HomePage, type HomeViews } from './index'
+import { type HomeDataSource, HomePage, type HomeViews, portfolioRefetchInterval } from './index'
 
 type PortfolioData = NonNullable<ReturnType<HomeDataSource['usePortfolio']>['data']>
 type AccountKind = 'claims' | 'exchange' | 'manual' | 'etf'
@@ -35,6 +35,8 @@ interface HomeState {
   statementsError: boolean
   btcPrice: string
   walletRows: WalletBalanceRow[]
+  historySyncingAccountIds: string[]
+  historyRefreshingAccountIds: string[]
 }
 
 /** A query as React Query reports it: no data while loading for the first time. */
@@ -63,9 +65,9 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     manualAccountCount: 0,
     etfAccountCount: 0,
     historicalData: state.history,
-    historySyncingAccountIds: [],
+    historySyncingAccountIds: state.historySyncingAccountIds,
     historySyncedAccountIds: [],
-    historyRefreshingAccountIds: [],
+    historyRefreshingAccountIds: state.historyRefreshingAccountIds,
     historyFailedAccountIds: [],
     walletBalancesAsOf: {},
   }
@@ -112,6 +114,8 @@ function renderHome(overrides: Partial<HomeState> = {}): string {
     statementsError: false,
     btcPrice: '50000',
     walletRows: [],
+    historySyncingAccountIds: [],
+    historyRefreshingAccountIds: [],
     ...overrides,
   }
   return renderToStaticMarkup(
@@ -344,6 +348,31 @@ describe('Home overview states', () => {
     expect(text).toContain('+$30,617.28')
   })
 
+  it("shows no 30-day change while an account's history is still loading", () => {
+    // Only today's balance is known yet, so the history would start at zero and count the whole balance as new.
+    const text = renderText({
+      currentSats: '10000000',
+      history: [
+        { timestamp: '2026-10-20T00:00:00.000Z', totalBalance: '0' },
+        { timestamp: '2026-11-19T00:00:00.000Z', totalBalance: '10000000' },
+      ],
+      historySyncingAccountIds: ['wallet-1'],
+    })
+    expect(text).toContain('0.10000000 BTC')
+    expect(text).toMatch(/30d Change—/)
+    expect(text).not.toContain('+0.10000000 BTC')
+  })
+
+  it('keeps the 30-day change while saved history only refreshes', () => {
+    const text = renderText({
+      currentSats: '10000000',
+      history: [{ timestamp: '2026-10-20T00:00:00.000Z', totalBalance: '10000000' }],
+      historySyncingAccountIds: ['wallet-1'],
+      historyRefreshingAccountIds: ['wallet-1'],
+    })
+    expect(text).toContain('+0.00000000 BTC')
+  })
+
   it('counts every kind of account', () => {
     const account = { id: 'account', status: 'verified', balance: '0' }
     const accounts = { claims: [account], exchange: [account], manual: [account], etf: [account] }
@@ -374,5 +403,37 @@ describe('Home overview states', () => {
     const text = renderText({ statements: [], statementsError: true, history: zeroBalanceHistory })
     expect(text).toContain('Your holdings, on record')
     expect(text).not.toContain('Recent statements could not be loaded')
+  })
+})
+
+describe('Home overview refresh', () => {
+  const data = (overrides: Partial<PortfolioData>): PortfolioData => ({
+    currentTotalBalance: '10000000',
+    currentBtcPrice: '50000',
+    verifiedClaimsCount: 1,
+    exchangeAccountCount: 0,
+    manualAccountCount: 0,
+    etfAccountCount: 0,
+    historicalData: [],
+    historySyncingAccountIds: [],
+    historySyncedAccountIds: [],
+    historyRefreshingAccountIds: [],
+    historyFailedAccountIds: [],
+    walletBalancesAsOf: {},
+    ...overrides,
+  })
+
+  it('asks again while history loads, so the overview completes without a reload', () => {
+    expect(portfolioRefetchInterval(data({ historySyncingAccountIds: ['wallet-1'] }))).toBe(10_000)
+  })
+
+  it('asks again while a balance has no price, so dollars return once the price source does', () => {
+    expect(portfolioRefetchInterval(data({ currentBtcPrice: '0' }))).toBe(30_000)
+  })
+
+  it('stays quiet once history and the price are in, or when there is nothing to value', () => {
+    expect(portfolioRefetchInterval(data({}))).toBe(false)
+    expect(portfolioRefetchInterval(data({ currentTotalBalance: '0', currentBtcPrice: '0' }))).toBe(false)
+    expect(portfolioRefetchInterval(undefined)).toBe(false)
   })
 })

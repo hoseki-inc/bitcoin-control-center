@@ -3,7 +3,7 @@ import type { BalanceValue } from '@hoseki/packages/lib/balance'
 import { isNullish } from '@hoseki/packages/lib/util'
 import type { ClaimId } from '@hoseki/packages/schemas'
 import type { Decimal } from 'decimal.js'
-import { trpc } from '../trpc'
+import { type RouterOutput, trpc } from '../trpc'
 
 function getBalanceValue(balance: Decimal | bigint, price: Decimal | null): BalanceValue {
   const btc = BTC.fromSats(balance)
@@ -85,18 +85,36 @@ export type UseGetClaimBalanceOutput = {
     | ReturnType<typeof trpc.portalProve.price.current.useQuery>['error']
   data: BalanceValue | null
 }
+/** Ask again while there is no price, so a balance gets its dollar value once the price source answers. */
+export function priceRefetchInterval(
+  price: RouterOutput['portalProve']['price']['current'] | undefined,
+): number | false {
+  return price === undefined ? 30_000 : false
+}
+
+/** Ask again while the wallet's balance couldn't be read, so the page catches up once Electrum answers. */
+export function claimBalanceRefetchInterval(
+  balances: ReadonlyMap<string, unknown> | undefined,
+  claimId: string,
+): number | false {
+  return balances?.has(claimId) === true ? false : 10_000
+}
+
 export function useGetClaimBalance(claimId: ClaimId | null, { enabled } = { enabled: true }): UseGetClaimBalanceOutput {
-  const balanceQueriesOpts = { enabled }
+  const hasClaim = claimId != null && claimId.length > 0
   const queries = trpc.useQueries((t) => [
-    t.portalProve.price.current(undefined, balanceQueriesOpts),
+    t.portalProve.price.current(undefined, { enabled, refetchInterval: priceRefetchInterval }),
     t.portalProve.onchain.claimBalances(
-      { claimIds: claimId != null && claimId.length > 0 ? [claimId] : [] },
-      balanceQueriesOpts,
+      { claimIds: hasClaim ? [claimId] : [] },
+      {
+        enabled,
+        refetchInterval: (balances) => (hasClaim ? claimBalanceRefetchInterval(balances, claimId) : false),
+      },
     ),
   ])
   const [btcPriceQuery, btcClaimBalancesQuery] = queries
   const btcPrice = btcPriceQuery.data?.value ?? null
-  const balance = claimId != null && claimId.length > 0 ? btcClaimBalancesQuery.data?.get(claimId) : null
+  const balance = hasClaim ? btcClaimBalancesQuery.data?.get(claimId) : null
 
   return {
     isLoading: queries.some((q) => q.isLoading),
