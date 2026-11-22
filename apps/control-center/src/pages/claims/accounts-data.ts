@@ -41,21 +41,21 @@ export interface AccountsDataSource {
 
 export const accountsDataSource: AccountsDataSource = {
   useLists: () => ({
-    claimsQuery: trpc.portalProve.registry.claims.list.useQuery({ excludePending: false }),
+    claimsQuery: trpc.portalProve.accounts.list.useQuery({ excludePending: false }),
     exchangeAccountsQuery: trpc.portalProve.exchanges.list.useQuery(),
     manualAccountsQuery: trpc.portalProve.manual.list.useQuery(),
     etfAccountsQuery: trpc.portalProve.etf.list.useQuery(),
-    archivedClaimsQuery: trpc.portalProve.registry.claims.listArchived.useQuery(),
+    archivedClaimsQuery: trpc.portalProve.accounts.listArchived.useQuery(),
     btcPriceQuery: trpc.portalProve.price.current.useQuery(),
   }),
   useWalletBalances,
   useRestore: () => {
     const trpcUtils = trpc.useUtils()
-    const restoreMutation = trpc.portalProve.registry.claims.restore.useMutation({
+    const restoreMutation = trpc.portalProve.accounts.restore.useMutation({
       onSuccess: async () => {
         await Promise.all([
-          trpcUtils.portalProve.registry.claims.list.invalidate(),
-          trpcUtils.portalProve.registry.claims.listArchived.invalidate(),
+          trpcUtils.portalProve.accounts.list.invalidate(),
+          trpcUtils.portalProve.accounts.listArchived.invalidate(),
           trpcUtils.portalProve.portfolio.getData.invalidate(),
         ])
         toast.success('Account restored')

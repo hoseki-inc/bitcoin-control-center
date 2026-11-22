@@ -15,7 +15,7 @@ export function ClaimDetailsPage(): JSX.Element {
 }
 
 function ClaimDetailsContent({ claimId }: { claimId: ClaimId }): JSX.Element {
-  const { isLoading, error, data: claim } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+  const { isLoading, error, data: claim } = trpc.portalProve.accounts.get.byId.useQuery({ id: claimId })
 
   if (isLoading) {
     return <AccountDetailsSkeleton />

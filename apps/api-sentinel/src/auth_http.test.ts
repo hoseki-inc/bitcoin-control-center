@@ -61,7 +61,7 @@ async function mutate(
 /** The status of a protected route that needs nothing but a signed-in tab. */
 async function protectedStatus(base: string, headers: Record<string, string> = {}): Promise<number> {
   return (
-    await fetch(`${base}/trpc/portalProve.registry.claims.getCountLimit`, {
+    await fetch(`${base}/trpc/portalProve.accounts.getCountLimit`, {
       headers: { [TAB_HEADER]: TAB, ...headers },
     })
   ).status
@@ -252,7 +252,7 @@ describe('PIN rules over HTTP', () => {
     const { base } = await start(undefined, null)
     const status = await fetch(`${base}/trpc/auth.status`)
     await expect(status.json()).resolves.toMatchObject({ result: { data: { json: { platform: null } } } })
-    expect((await fetch(`${base}/trpc/portalProve.registry.claims.getCountLimit`)).status).toBe(200)
+    expect((await fetch(`${base}/trpc/portalProve.accounts.getCountLimit`)).status).toBe(200)
   })
 
   it('refuses a first PIN from the app on StartOS, and a second one anywhere', async () => {

@@ -53,7 +53,7 @@ it.each(['restore', 'verify', 'archive'] as const)(
     let expectedState = await claimState(db)
     changeAfterEligibilityRead(db, async () => {
       if (action === 'restore') {
-        await registry.claims.restore({ id: claimId })
+        await registry.accounts.restore({ id: claimId })
       } else if (action === 'verify') {
         const message = challengeMessage.signedMessage
         const signature = Signer.sign(owner.wif, message.address, message.messageTextToSign)
@@ -67,7 +67,9 @@ it.each(['restore', 'verify', 'archive'] as const)(
     })
 
     const attempt =
-      action === 'restore' ? registry.claims.delete({ id: claimId }) : registry.claims.deletePending({ id: claimId })
+      action === 'restore'
+        ? registry.accounts.delete({ id: claimId })
+        : registry.accounts.deletePending({ id: claimId })
     await expect(attempt).rejects.toMatchObject({
       code: 'CONFLICT',
       message: 'Claim changed before it could be deleted',
@@ -92,7 +94,7 @@ it.each(['delete', 'deletePending'] as const)(
       await db.delete(accounts).where(eq(accounts.id, claimId))
     })
 
-    await expect(registry.claims[method]({ id: claimId })).rejects.toMatchObject({
+    await expect(registry.accounts[method]({ id: claimId })).rejects.toMatchObject({
       code: 'CONFLICT',
       message: 'Claim changed before it could be deleted',
     })
@@ -111,7 +113,7 @@ it.each(['delete', 'deletePending'] as const)(
       expect(rows).toHaveLength(1)
     }
 
-    await registry.claims[method]({ id: claimId })
+    await registry.accounts[method]({ id: claimId })
 
     await expect(claimState(db)).resolves.toEqual({
       accounts: [],
@@ -125,7 +127,7 @@ it.each(['delete', 'deletePending'] as const)(
 
 it.each(['delete', 'deletePending'] as const)('%s preserves the missing-claim error', async (method) => {
   const { registry } = await setupOwnershipHarness()
-  await expect(registry.claims[method]({ id: 'missing' })).rejects.toMatchObject({
+  await expect(registry.accounts[method]({ id: 'missing' })).rejects.toMatchObject({
     code: 'NOT_FOUND',
     message: 'Claim not found',
   })
@@ -146,7 +148,7 @@ it.each([
   await db.update(accounts).set({ status: state.status, deletedAt: state.deletedAt }).where(eq(accounts.id, claimId))
   const before = await claimState(db)
 
-  await expect(registry.claims[state.method]({ id: claimId })).rejects.toMatchObject({
+  await expect(registry.accounts[state.method]({ id: claimId })).rejects.toMatchObject({
     code: 'BAD_REQUEST',
     message: state.message,
   })

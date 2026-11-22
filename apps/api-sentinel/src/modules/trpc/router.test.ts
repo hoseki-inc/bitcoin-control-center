@@ -7,12 +7,13 @@ import { AsyncResult, Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { Signer } from 'bip322-js'
 import { eq } from 'drizzle-orm'
+import { nanoid } from 'nanoid'
 import pino from 'pino'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { type AppContextOptions, createAppContext } from '../../context'
 import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import * as env from '../../env'
-import { createSinglesigClaim, owner } from './ownership.fixtures'
+import { createSinglesigClaim, owner, ownershipRegistry } from './ownership.fixtures'
 import { appRouter } from './router'
 
 async function setup(options: AppContextOptions = {}) {
@@ -31,8 +32,15 @@ async function setup(options: AppContextOptions = {}) {
     app.database.$client.close()
     app.electrumClient.disconnect()
   })
-  const caller = appRouter.createCaller({ app }).portalProve.registry
+  const caller = ownershipRegistry(appRouter.createCaller({ app }))
   return { app, caller }
+}
+
+/** Saves a watch-only wallet straight to the database, for tests that only need one to exist. */
+async function addWallet(app: Awaited<ReturnType<typeof setup>>['app'], descriptor: string, displayName: string) {
+  const id = nanoid()
+  await app.database.insert(accounts).values({ id, network: 'mainnet', descriptor, displayName })
+  return { id }
 }
 
 const singlesigInput = {
@@ -43,15 +51,15 @@ const singlesigInput = {
 }
 
 it('preserves claim, keystore and signing-message DTOs through database round trips', async () => {
-  const { app, caller } = await setup()
+  const { caller } = await setup()
   const account = Wallets.singlesigLegacyAccount.toString()
-  const created = await caller.claims.create.singlesig({
+  const created = await caller.accounts.create.singlesig({
     network: 'bitcoin_mainnet',
     account,
     displayName: 'Wallet',
     keystore: { label: 'Hardware wallet', wallet: 'coldcard', model: 'Mk4', derivationPath: null },
   })
-  const claim = await caller.claims.get.byId({ id: created.claim.id })
+  const claim = await caller.accounts.get.byId({ id: created.claim.id })
   expect(claim).toEqual(created.claim)
   expect(claim).toMatchObject({
     displayName: 'Wallet',
@@ -70,21 +78,10 @@ it('preserves claim, keystore and signing-message DTOs through database round tr
   expect(
     (await caller.getOrCreateSinglesigChallengeMessage({ network: 'bitcoin_mainnet', account })).challengeMessage,
   ).toEqual(message)
-  expect((await caller.claims.get.byId({ id: claim.id })).latestChallenge).toEqual({
+  expect((await caller.accounts.get.byId({ id: claim.id })).latestChallenge).toEqual({
     id: message.challengeId,
     completed: false,
     messages: [{ signedMessageId: message.signedMessage.id, keystoreId: message.keystoreId, signed: false }],
-  })
-
-  const basic = await appRouter.createCaller({ app }).portalProve.accounts.add({
-    descriptor: 'synthetic-descriptor',
-    displayName: 'Basic account',
-    network: 'mainnet',
-  })
-  await expect(caller.claims.get.byId({ id: basic.id })).resolves.toMatchObject({
-    id: basic.id,
-    account: basic.descriptor,
-    displayName: basic.displayName,
   })
 })
 
@@ -92,8 +89,8 @@ it.each(['singlesig', 'multisig'] as const)('creates only one %s claim under con
   const { app, caller } = await setup()
   const create = async () =>
     kind === 'singlesig'
-      ? caller.claims.create.singlesig(singlesigInput)
-      : caller.claims.create.multisig({
+      ? caller.accounts.create.singlesig(singlesigInput)
+      : caller.accounts.create.multisig({
           network: 'bitcoin_mainnet',
           account: Wallets.multisigNativeSegwitAccount.toString(),
           displayName: 'Multisig',
@@ -119,7 +116,7 @@ it.each(['singlesig', 'multisig'] as const)('creates only one %s claim under con
 
 it('reuses one challenge and message under concurrent get-or-create requests', async () => {
   const { app, caller } = await setup()
-  await caller.claims.create.singlesig(singlesigInput)
+  await caller.accounts.create.singlesig(singlesigInput)
   const input = { network: singlesigInput.network, account: singlesigInput.account }
   const [first, second] = await Promise.all([
     caller.getOrCreateSinglesigChallengeMessage(input),
@@ -132,7 +129,7 @@ it('reuses one challenge and message under concurrent get-or-create requests', a
 
 it('serializes separate challenge and message creation with the combined flow', async () => {
   const { app, caller } = await setup()
-  const created = await caller.claims.create.singlesig(singlesigInput)
+  const created = await caller.accounts.create.singlesig(singlesigInput)
   const [key] = created.keystores
   assert(key)
   const [challenge, sameChallenge] = await Promise.all([
@@ -196,17 +193,9 @@ it('accepts only one concurrent signature submission and preserves the winning s
 
 it('reads wallet balances without waiting for Electrum, and reports the scans it starts', async () => {
   const { app } = await setup()
-  const { accounts: accountRouter, onchain } = appRouter.createCaller({ app }).portalProve
-  const wallet = await accountRouter.add({
-    descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
-    displayName: 'Wallet',
-    network: 'mainnet',
-  })
-  const archived = await accountRouter.add({
-    descriptor: Wallets.singlesigLegacyAccount.toString(),
-    displayName: 'Archived wallet',
-    network: 'mainnet',
-  })
+  const { onchain } = appRouter.createCaller({ app }).portalProve
+  const wallet = await addWallet(app, Wallets.singlesigNativeSegwitAccount.toString(), 'Wallet')
+  const archived = await addWallet(app, Wallets.singlesigLegacyAccount.toString(), 'Archived wallet')
   await app.controlCenterService.recordAccountSnapshot(wallet.id, '150', '2020-01-03T09:00:00.000Z')
   await app.database.update(accounts).set({ deletedAt: '2020-01-04T00:00:00.000Z' }).where(eq(accounts.id, archived.id))
   // Electrum never answers.
@@ -225,17 +214,9 @@ it('reads wallet balances without waiting for Electrum, and reports the scans it
 
 it('returns the balances of wallets it could scan, leaving out one that failed, without its error', async () => {
   const { app } = await setup()
-  const { accounts: accountRouter, onchain } = appRouter.createCaller({ app }).portalProve
-  const good = await accountRouter.add({
-    descriptor: Wallets.singlesigNativeSegwitAccount.toString(),
-    displayName: 'Good wallet',
-    network: 'mainnet',
-  })
-  const bad = await accountRouter.add({
-    descriptor: Wallets.singlesigLegacyAccount.toString(),
-    displayName: 'Bad wallet',
-    network: 'mainnet',
-  })
+  const { onchain } = appRouter.createCaller({ app }).portalProve
+  const good = await addWallet(app, Wallets.singlesigNativeSegwitAccount.toString(), 'Good wallet')
+  const bad = await addWallet(app, Wallets.singlesigLegacyAccount.toString(), 'Bad wallet')
   vi.spyOn(app.onchainProvider, 'getBlocksTip').mockReturnValue(
     new AsyncResult(Promise.resolve(Ok({ height: 1, hash: 'a'.repeat(64), timestamp: new Date() }))),
   )
@@ -301,7 +282,7 @@ it('rejects an unknown portfolio timezone', async () => {
 it('connects a Bitkey as one unverified 2-of-3 account that statements leave out', async () => {
   const { caller } = await setup()
 
-  const { claim, alreadyConnected } = await caller.claims.create.bitkey({
+  const { claim, alreadyConnected } = await caller.accounts.create.bitkey({
     descriptorExport: Wallets.bitkeyExport,
     displayName: 'Bitkey',
   })
@@ -315,19 +296,19 @@ it('connects a Bitkey as one unverified 2-of-3 account that statements leave out
     hardware: ['Hardware key', 'bitkey'],
     server: ['Block key', 'bitkey'],
   })
-  expect((await caller.claims.list()).map((listed) => listed.id)).toEqual([claim.id])
-  await expect(caller.claims.list({ excludePending: true })).resolves.toEqual([])
+  expect((await caller.accounts.list()).map((listed) => listed.id)).toEqual([claim.id])
+  await expect(caller.accounts.list({ excludePending: true })).resolves.toEqual([])
   await expect(caller.challenges.create({ claimId: claim.id })).rejects.toThrow('can’t be verified')
 
   await expect(
-    caller.claims.create.bitkey({ descriptorExport: Wallets.bitkeyExport, displayName: 'Another name' }),
+    caller.accounts.create.bitkey({ descriptorExport: Wallets.bitkeyExport, displayName: 'Another name' }),
   ).resolves.toMatchObject({ alreadyConnected: true, claim: { id: claim.id, displayName: 'Bitkey' } })
 })
 
 it('explains why it cannot read a Bitkey export', async () => {
   const { caller } = await setup()
 
-  await expect(caller.claims.create.bitkey({ descriptorExport: 'hello', displayName: 'Bitkey' })).rejects.toThrow(
+  await expect(caller.accounts.create.bitkey({ descriptorExport: 'hello', displayName: 'Bitkey' })).rejects.toThrow(
     'Bitkey wallet descriptor',
   )
 })

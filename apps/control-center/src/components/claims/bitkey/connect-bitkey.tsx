@@ -74,7 +74,7 @@ export function ConnectBitkey(): JSX.Element {
   const navigationState = parseNavigationState(location.state)
   const returnTo = navigationState?.returnTo ?? '/accounts'
   const trpcUtils = trpc.useUtils()
-  const createBitkey = trpc.portalProve.registry.claims.create.bitkey.useMutation()
+  const createBitkey = trpc.portalProve.accounts.create.bitkey.useMutation()
 
   const requested = stepFromParam(searchParams.get('step'))
   // The descriptor is only kept in memory, so after a reload the confirm step asks for it again.
@@ -103,7 +103,7 @@ export function ConnectBitkey(): JSX.Element {
       { descriptorExport, displayName: name.trim() },
       {
         onSuccess: ({ claim, alreadyConnected }) => {
-          void trpcUtils.portalProve.registry.claims.list.invalidate()
+          void trpcUtils.portalProve.accounts.list.invalidate()
           if (alreadyConnected) {
             toast.info('This Bitkey is already connected')
             void navigate(`/accounts/${claim.id}`)

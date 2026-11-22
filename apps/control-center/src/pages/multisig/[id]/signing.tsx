@@ -32,7 +32,7 @@ export function MultisigSigningPage(): JSX.Element {
   const { keystoreId, walletType } = useParams<{ keystoreId: string; walletType: string }>()
   const { claim } = useMultisigPageWrapperContext()
   // Opening this page refreshes the claim, so a message created on the previous step is not missed.
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
+  const claimQuery = trpc.portalProve.accounts.get.byId.useQuery({ id: claim.id })
 
   if (claim.latestChallenge?.completed === true) {
     return <Navigate to={`/accounts/verify/receipt/${claim.id}`} replace />
@@ -97,7 +97,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
   const [error, setError] = useState<string | null>(null)
   const [signingInProgress, setSigningInProgress] = useState(false)
 
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
+  const claimQuery = trpc.portalProve.accounts.get.byId.useQuery({ id: claim.id })
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
 
   const challengeMessageQueryEnabled = !!latestMessage
@@ -231,7 +231,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
 
   const error = initiateLedgerMutation.error ?? signingError
 
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
+  const claimQuery = trpc.portalProve.accounts.get.byId.useQuery({ id: claim.id })
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
 
   const challengeMessageQueryEnabled = !!latestMessage
@@ -392,7 +392,7 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
   }
 
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
+  const claimQuery = trpc.portalProve.accounts.get.byId.useQuery({ id: claim.id })
 
   const challengeMessageQueryEnabled = !!latestMessage
   const challengeMessageQuery = trpc.portalProve.registry.challengeMessages.get.useQuery(
@@ -527,7 +527,7 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
   const [error, setError] = useState<string | null>(null)
 
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claim.id })
+  const claimQuery = trpc.portalProve.accounts.get.byId.useQuery({ id: claim.id })
 
   const challengeMessageQuery = trpc.portalProve.registry.challengeMessages.get.useQuery(
     { signedMessageId: latestMessage?.signedMessageId ?? '' },
@@ -662,7 +662,7 @@ function useCompleteChallenge(claim: ClaimDto) {
   const completeChallengeMutation = trpc.portalProve.registry.challenges.complete.useMutation({
     onSuccess: async () => {
       try {
-        await trpcUtils.portalProve.registry.claims.get.byId.invalidate({ id: claim.id }, undefined, {
+        await trpcUtils.portalProve.accounts.get.byId.invalidate({ id: claim.id }, undefined, {
           throwOnError: true,
         })
       } catch {

@@ -58,9 +58,9 @@ export function MultisigCreatePage(): JSX.Element {
   const [detectedWallet, setDetectedWallet] = useState<CreateMultisigClaimInput | null>(null)
 
   const trpcUtils = trpc.useUtils()
-  const createMultisigClaimMutation = trpc.portalProve.registry.claims.create.multisig.useMutation()
-  const updateClaimMutation = trpc.portalProve.registry.claims.update.useMutation()
-  const updateKeystoreMutation = trpc.portalProve.registry.claims.updateKeystore.useMutation()
+  const createMultisigClaimMutation = trpc.portalProve.accounts.create.multisig.useMutation()
+  const updateClaimMutation = trpc.portalProve.accounts.update.useMutation()
+  const updateKeystoreMutation = trpc.portalProve.accounts.updateKeystore.useMutation()
 
   async function handleClaimCreation(updatedName: string) {
     if (!detectedWallet) {
@@ -74,7 +74,7 @@ export function MultisigCreatePage(): JSX.Element {
 
     // Try to get existing claim first
     const existingClaimResult = await Result.fromPromise(
-      trpcUtils.portalProve.registry.claims.get.byAccount.fetch({
+      trpcUtils.portalProve.accounts.get.byAccount.fetch({
         network: detectedWallet.network,
         account: detectedWallet.account,
       }),
@@ -99,7 +99,7 @@ export function MultisigCreatePage(): JSX.Element {
               missingKeyPaths(claim, detectedWallet.keystores).map(async (update) =>
                 updateKeystoreMutation.mutateAsync(update),
               ),
-            ).then(async () => trpcUtils.portalProve.registry.claims.invalidate()),
+            ).then(async () => trpcUtils.portalProve.accounts.invalidate()),
           ).map(() => data),
         )
         .andThen((data) => {

@@ -119,11 +119,11 @@ const mocks = await vi.hoisted(async () => {
   }
 })
 
-const claimQueryKey = getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }, 'query')
+const claimQueryKey = getQueryKey(trpc.portalProve.accounts.get.byId, { id: 're_clmx_claim1' }, 'query')
 let invalidateClaim: MockInstance<QueryClient['invalidateQueries']>
 const rpc = createTestTrpcClient(async ({ path, input }) => {
   switch (path) {
-    case 'portalProve.registry.claims.get.byId':
+    case 'portalProve.accounts.get.byId':
       return mocks.fetchClaim()
     case 'portalProve.registry.challengeMessages.get':
       return challengeMessage()
@@ -573,7 +573,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       expect(mocks.completeChallenge).toHaveBeenCalledExactlyOnceWith({ challengeId: 're_chal_challenge1' })
       expect(invalidateClaim).toHaveBeenCalledWith(
         expect.objectContaining({
-          queryKey: getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }),
+          queryKey: getQueryKey(trpc.portalProve.accounts.get.byId, { id: 're_clmx_claim1' }),
         }),
         { throwOnError: true },
       )
@@ -628,7 +628,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
         expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
         expect(invalidateClaim).toHaveBeenCalledWith(
           expect.objectContaining({
-            queryKey: getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }),
+            queryKey: getQueryKey(trpc.portalProve.accounts.get.byId, { id: 're_clmx_claim1' }),
           }),
           { throwOnError: true },
         )
@@ -665,7 +665,7 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
       expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
       expect(invalidateClaim).toHaveBeenCalledWith(
         expect.objectContaining({
-          queryKey: getQueryKey(trpc.portalProve.registry.claims.get.byId, { id: 're_clmx_claim1' }),
+          queryKey: getQueryKey(trpc.portalProve.accounts.get.byId, { id: 're_clmx_claim1' }),
         }),
         { throwOnError: true },
       )

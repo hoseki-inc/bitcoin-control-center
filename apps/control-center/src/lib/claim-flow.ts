@@ -16,7 +16,7 @@ import type {
   UpdateKeystoreInput,
 } from '../trpc/server-types'
 
-type CreateSingleSigClaimMutation = ReturnType<typeof trpc.portalProve.registry.claims.create.singlesig.useMutation>
+type CreateSingleSigClaimMutation = ReturnType<typeof trpc.portalProve.accounts.create.singlesig.useMutation>
 
 interface Input {
   network: BitcoinNetworkString
@@ -62,8 +62,8 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
   const trpcUtils = trpc.useUtils()
   const navigate = useNavigate()
   const [isLoading, setIsLoading] = useState(false)
-  const createSingleSigClaimMutation = trpc.portalProve.registry.claims.create.singlesig.useMutation()
-  const updateKeystoreMutation = trpc.portalProve.registry.claims.updateKeystore.useMutation()
+  const createSingleSigClaimMutation = trpc.portalProve.accounts.create.singlesig.useMutation()
+  const updateKeystoreMutation = trpc.portalProve.accounts.updateKeystore.useMutation()
 
   function execute({
     account,
@@ -76,7 +76,7 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
     setIsLoading(true)
 
     return Result.fromPromise(
-      trpcUtils.portalProve.registry.claims.get.byAccount.fetch({
+      trpcUtils.portalProve.accounts.get.byAccount.fetch({
         network,
         account: account.descriptor(),
       }),
@@ -108,7 +108,7 @@ export function useNavigateToAnExistentOrNewClaim(): UseNavigateToAnExistentOrNe
           return Ok(found)
         }
         return Result.fromPromise(updateKeystoreMutation.mutateAsync(found.update))
-          .andThenAsync(async () => Result.fromPromise(trpcUtils.portalProve.registry.claims.invalidate()))
+          .andThenAsync(async () => Result.fromPromise(trpcUtils.portalProve.accounts.invalidate()))
           .map(() => found)
       })
       .andThen(({ claimId, isArchived }) => {

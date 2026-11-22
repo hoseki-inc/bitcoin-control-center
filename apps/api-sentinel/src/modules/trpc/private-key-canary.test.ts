@@ -82,19 +82,12 @@ async function reply<T>(request: Promise<T>): Promise<string> {
 
 const cases: Case[] = [
   {
-    route: 'portalProve.accounts.add',
-    field: 'descriptor',
-    values: [singlesig, taproot, multisig].flatMap(withPrivateKeys),
-    call: async (caller, descriptor) =>
-      reply(caller.portalProve.accounts.add({ descriptor, displayName: 'Wallet', network: 'mainnet' })),
-  },
-  {
-    route: 'portalProve.registry.claims.create.singlesig',
+    route: 'portalProve.accounts.create.singlesig',
     field: 'account',
     values: [singlesig, taproot].flatMap(withPrivateKeys),
     call: async (caller, account) =>
       reply(
-        caller.portalProve.registry.claims.create.singlesig({
+        caller.portalProve.accounts.create.singlesig({
           network: 'bitcoin_mainnet',
           account,
           displayName: 'Wallet',
@@ -103,12 +96,12 @@ const cases: Case[] = [
       ),
   },
   {
-    route: 'portalProve.registry.claims.create.multisig',
+    route: 'portalProve.accounts.create.multisig',
     field: 'account',
     values: withPrivateKeys(multisig),
     call: async (caller, account) =>
       reply(
-        caller.portalProve.registry.claims.create.multisig({
+        caller.portalProve.accounts.create.multisig({
           network: 'bitcoin_mainnet',
           account,
           displayName: 'Wallet',
@@ -117,12 +110,12 @@ const cases: Case[] = [
       ),
   },
   {
-    route: 'portalProve.registry.claims.create.multisig',
+    route: 'portalProve.accounts.create.multisig',
     field: 'keystores[].publicKey',
     values: privateKeys,
     call: async (caller, publicKey) =>
       reply(
-        caller.portalProve.registry.claims.create.multisig({
+        caller.portalProve.accounts.create.multisig({
           network: 'bitcoin_mainnet',
           account: multisig,
           displayName: 'Wallet',
@@ -131,18 +124,18 @@ const cases: Case[] = [
       ),
   },
   {
-    route: 'portalProve.registry.claims.create.bitkey',
+    route: 'portalProve.accounts.create.bitkey',
     field: 'descriptorExport',
     values: withPrivateKeys(Wallets.bitkeyExport),
     call: async (caller, descriptorExport) =>
-      reply(caller.portalProve.registry.claims.create.bitkey({ descriptorExport, displayName: 'Bitkey' })),
+      reply(caller.portalProve.accounts.create.bitkey({ descriptorExport, displayName: 'Bitkey' })),
   },
   {
-    route: 'portalProve.registry.claims.get.byAccount',
+    route: 'portalProve.accounts.get.byAccount',
     field: 'account',
     values: withPrivateKeys(singlesig),
     call: async (caller, account) =>
-      reply(caller.portalProve.registry.claims.get.byAccount({ network: 'bitcoin_mainnet', account })),
+      reply(caller.portalProve.accounts.get.byAccount({ network: 'bitcoin_mainnet', account })),
   },
   {
     route: 'portalProve.registry.getOrCreateSinglesigChallengeMessage',

@@ -38,7 +38,7 @@ function MultisigPageContent({ claimId }: { claimId: ClaimId }): JSX.Element {
     refetch,
     error,
     data: claim,
-  } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+  } = trpc.portalProve.accounts.get.byId.useQuery({ id: claimId })
 
   if (isLoading) {
     return <AccountDetailsSkeleton label="Loading wallet" />

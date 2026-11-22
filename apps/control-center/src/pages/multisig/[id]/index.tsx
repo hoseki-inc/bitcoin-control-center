@@ -56,7 +56,7 @@ function ConnectWallets({
 
     try {
       await createChallenge.mutateAsync({ claimId: claim.id })
-      await trpcUtils.portalProve.registry.claims.get.byId.invalidate()
+      await trpcUtils.portalProve.accounts.get.byId.invalidate()
       void navigate(`/multisig/${claim.id}/connect/${signingDevice}/${expandedKeystore.id}`)
     } catch (error) {
       browserLogger.error(error, 'Error creating challenge')

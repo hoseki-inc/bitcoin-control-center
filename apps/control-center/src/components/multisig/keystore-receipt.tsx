@@ -35,7 +35,7 @@ export function KeystoreReceiptPage(): JSX.Element {
 
 function KeystoreReceiptContent({ claimId }: { claimId: ClaimId }): JSX.Element {
   const { keystoreId } = useParams()
-  const { data: claim, isLoading, isError } = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+  const { data: claim, isLoading, isError } = trpc.portalProve.accounts.get.byId.useQuery({ id: claimId })
 
   if (isError) {
     return <ErrorBanner mt={8} mb={4} message="Failed to get claim" />

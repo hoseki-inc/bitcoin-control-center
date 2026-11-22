@@ -57,7 +57,7 @@ export function StatementCreatePage(): JSX.Element {
   // claims
   const [selectedClaimIds, setSelectedClaimIds] = useState<Set<ClaimId>>(new Set())
   const [hasAppliedPreSelection, setHasAppliedPreSelection] = useState(false)
-  const claimsQuery = trpc.portalProve.registry.claims.list.useQuery({ excludePending: true })
+  const claimsQuery = trpc.portalProve.accounts.list.useQuery({ excludePending: true })
 
   useEffect(() => {
     if (hasAppliedPreSelection || !claimsQuery.data) {

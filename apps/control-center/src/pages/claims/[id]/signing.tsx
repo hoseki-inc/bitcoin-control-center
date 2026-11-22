@@ -31,7 +31,7 @@ function SinglesigSigning(): JSX.Element {
 function SinglesigSigningContent({ claimId }: { claimId: ClaimId }): JSX.Element {
   const navigate = useNavigate()
 
-  const claimQuery = trpc.portalProve.registry.claims.get.byId.useQuery({ id: claimId })
+  const claimQuery = trpc.portalProve.accounts.get.byId.useQuery({ id: claimId })
   const claim = claimQuery.data
   const messageQuery = trpc.portalProve.registry.getOrCreateSinglesigChallengeMessage.useQuery(
     {

@@ -10,9 +10,8 @@ type Table = keyof typeof schema
 // One writer per table. Each table lists the one place, relative to src/, that may insert, update or
 // delete its rows. Reads stay open. To change data a feature doesn't own, call that feature.
 const OWNERS = {
-  // Step 11 moves these into features/accounts.
-  accounts: 'modules/trpc/router.ts',
-  keystores: 'modules/trpc/router.ts',
+  accounts: 'features/accounts',
+  keystores: 'features/accounts',
   // Step 13 moves the ownership code into modules/ownership.
   challenges: 'modules/trpc/router.ts',
   signedMessages: 'modules/trpc/router.ts',
@@ -63,7 +62,11 @@ const EXCEPTIONS: { file: string; table: Table; why: string }[] = [
     table: 'keystores',
     why: 'startup cleanup of stored private keys, before any feature runs',
   },
-  { file: 'features/portfolio/service.ts', table: 'accounts', why: 'archive and restore, until step 11' },
+  {
+    file: 'modules/trpc/router.ts',
+    table: 'accounts',
+    why: 'ownership proof marks the account verified, until step 13',
+  },
   { file: 'features/portfolio/service.ts', table: 'exchangeBalanceSnapshots', why: 'until portfolio calls exchanges' },
 ]
 

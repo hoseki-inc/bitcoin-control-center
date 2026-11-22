@@ -10,7 +10,7 @@ describe('countAccounts', () => {
   it('counts every kind of account Home shows, not only wallets', async () => {
     for (const kind of ['exchanges', 'manual', 'etf'] as const) {
       const lists = {
-        registry: { claims: list(0) },
+        accounts: list(0),
         exchanges: list(0),
         manual: list(0),
         etf: list(0),
@@ -18,7 +18,7 @@ describe('countAccounts', () => {
       }
       assert.equal(await countAccounts({ portalProve: lists }), 1, kind)
     }
-    const all = { registry: { claims: list(2) }, exchanges: list(1), manual: list(1), etf: list(1) }
+    const all = { accounts: list(2), exchanges: list(1), manual: list(1), etf: list(1) }
     assert.equal(await countAccounts({ portalProve: all }), 5)
   })
 })

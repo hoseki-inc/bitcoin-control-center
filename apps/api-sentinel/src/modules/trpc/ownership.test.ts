@@ -45,7 +45,7 @@ describe('ownership verification account binding', () => {
     const result = await verifyOwnership()
 
     expect(result.isSatisfied).toBe(true)
-    await expect(registry.claims.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'verified' })
+    await expect(registry.accounts.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'verified' })
   })
 
   it('rejects verification of a singlesig account using another account’s keystore', async () => {
@@ -54,7 +54,7 @@ describe('ownership verification account binding', () => {
     const attempt = verifyOwnership()
 
     await expect.soft(attempt).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    await expect(registry.claims.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'pending' })
+    await expect(registry.accounts.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'pending' })
   })
 
   it('allows two distinct descriptor members to verify a 2-of-3 account', async () => {
@@ -76,7 +76,7 @@ describe('ownership verification account binding', () => {
 
     await expect.soft(attempt).rejects.toMatchObject({ code: 'BAD_REQUEST' })
 
-    const claims = await registry.claims.list({ excludePending: false })
+    const claims = await registry.accounts.list({ excludePending: false })
     expect(claims).toEqual([])
   })
 
@@ -87,14 +87,14 @@ describe('ownership verification account binding', () => {
   ])('rejects multisig creation with $scenario without saving the claim', async ({ keys }) => {
     const registry = await setupOwnershipRegistry()
     await expect(createMultisigClaim(registry, keys)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    await expect(registry.claims.list({ excludePending: false })).resolves.toEqual([])
+    await expect(registry.accounts.list({ excludePending: false })).resolves.toEqual([])
   })
 
   it('rejects duplicate signing keys hidden behind different xpub metadata', async () => {
     const registry = await setupOwnershipRegistry()
     const keys = [owner, ownerAlias, thirdOwner]
     await expect(createMultisigClaim(registry, keys, keys)).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    await expect(registry.claims.list({ excludePending: false })).resolves.toEqual([])
+    await expect(registry.accounts.list({ excludePending: false })).resolves.toEqual([])
   })
 
   describe.each([
@@ -122,7 +122,7 @@ describe('ownership verification account binding', () => {
           await expect(registry.challenges.complete({ challengeId: challenge.id })).rejects.toMatchObject({
             code: 'BAD_REQUEST',
           })
-          await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({
+          await expect(registry.accounts.get.byId({ id: created.claim.id })).resolves.toMatchObject({
             status: 'pending',
           })
         }
@@ -168,7 +168,7 @@ describe('ownership verification account binding', () => {
       await expect(registry.challenges.complete({ challengeId: challenge.id })).rejects.toMatchObject({
         code: 'BAD_REQUEST',
       })
-      await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({ status: 'pending' })
+      await expect(registry.accounts.get.byId({ id: created.claim.id })).resolves.toMatchObject({ status: 'pending' })
     })
   })
 
@@ -241,7 +241,7 @@ describe('ownership verification account binding', () => {
         await expect(registry.challenges.complete({ challengeId: challenge.id })).rejects.toMatchObject({
           code: 'BAD_REQUEST',
         })
-        await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({ status: 'pending' })
+        await expect(registry.accounts.get.byId({ id: created.claim.id })).resolves.toMatchObject({ status: 'pending' })
       },
     )
   })
@@ -257,7 +257,7 @@ describe('ownership verification account binding', () => {
   ] as const)('rejects a stored %s proof at final completion', async (scenario) => {
     const { registry, db, claimId, challengeId } = await setupStoredProof(scenario)
     await expect(registry.challenges.complete({ challengeId })).rejects.toMatchObject({ code: 'BAD_REQUEST' })
-    await expect(registry.claims.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'pending' })
+    await expect(registry.accounts.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'pending' })
     await expect(
       db
         .select({ isSatisfied: challenges.isSatisfied, completedAt: challenges.completedAt })
@@ -291,7 +291,7 @@ describe('ownership verification account binding', () => {
           .from(signedMessages)
           .where(eq(signedMessages.id, message.id)),
       ).resolves.toEqual([{ signature: null, signedAt: null }])
-      await expect(registry.claims.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'pending' })
+      await expect(registry.accounts.get.byId({ id: claimId })).resolves.toMatchObject({ status: 'pending' })
     },
   )
 
@@ -319,7 +319,7 @@ describe('ownership verification account binding', () => {
 
     await rerunChallengeMessageReset(db)
 
-    await expect(registry.claims.get.byId({ id: created.claim.id })).resolves.toMatchObject({
+    await expect(registry.accounts.get.byId({ id: created.claim.id })).resolves.toMatchObject({
       latestChallenge: { id: challenge.id, messages: [] },
     })
     await expect(registry.challenges.create({ claimId: created.claim.id })).resolves.toMatchObject({ id: challenge.id })
@@ -345,9 +345,9 @@ describe('ownership verification account binding', () => {
           .set({ deletedAt: archived ? new Date().toISOString() : null })
           .where(eq(accounts.id, claimId))
         for (let attempt = 0; attempt < 2; attempt++) {
-          const claim = await registry.claims.get.byId({ id: claimId })
-          await registry.claims.get.byAccount({ network: claim.network, account: claim.account })
-          const claims = archived ? await registry.claims.listArchived() : await registry.claims.list()
+          const claim = await registry.accounts.get.byId({ id: claimId })
+          await registry.accounts.get.byAccount({ network: claim.network, account: claim.account })
+          const claims = archived ? await registry.accounts.listArchived() : await registry.accounts.list()
           expect(claims.some((item) => item.id === claimId)).toBe(true)
           await expect(registry.challenges.create({ claimId })).resolves.toMatchObject({ id: challengeId })
         }
