@@ -2,7 +2,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { ChildEnv } from './process'
-import { REPO_ROOT, type RunState, readJsonFile } from './run'
+import { type FaultMode, type FaultTarget, type Faults, REPO_ROOT, type RunState, readJsonFile } from './run'
 
 // Pure rules the scripts share, kept apart so tests can check them without starting anything.
 
@@ -299,4 +299,36 @@ export function webBuildEnv(desktop = false): ChildEnv {
     VITE_BACKEND_BASE_URL: '',
     VITE_PLATFORM: desktop ? 'desktop' : '',
   })
+}
+
+/** How long `slow` holds each answer: long enough to see loading states, short of Sentinel's 30-second timeouts. */
+export const SLOW_FAULT_MS = 5_000
+
+// Under `error` the fake Electrum still answers these, so Sentinel stays connected while every data request fails.
+const KEEPALIVE_METHODS = new Set(['server.version', 'server.ping', 'blockchain.headers.subscribe'])
+
+export interface FaultedAnswer {
+  delayMs: number
+  fail: boolean
+}
+
+/** What a fake does with one request under a fault: `request` is an Electrum method or a mempool path. */
+export function faultedAnswer(target: FaultTarget, mode: FaultMode, request: string): FaultedAnswer {
+  return {
+    delayMs: mode === 'slow' ? SLOW_FAULT_MS : 0,
+    fail: mode === 'down' || (mode === 'error' && !(target === 'electrum' && KEEPALIVE_METHODS.has(request))),
+  }
+}
+
+/** The faults after setting one target's mode, as the next change. */
+export function withFault(current: Faults, target: FaultTarget, mode: FaultMode): Faults {
+  const seq = current.seq + 1
+  return target === 'electrum' ? { ...current, seq, electrum: mode } : { ...current, seq, mempool: mode }
+}
+
+/** The faults in effect, such as `electrum down`, or nothing when the fakes behave. */
+export function activeFaults(faults: Faults): string[] {
+  return (['electrum', 'mempool'] as const)
+    .filter((target) => faults[target] !== 'ok')
+    .map((target) => `${target} ${faults[target]}`)
 }

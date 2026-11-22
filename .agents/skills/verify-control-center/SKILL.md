@@ -33,6 +33,8 @@ Launching a run that is already up does nothing. Seeding a seeded run does nothi
 
 PINs are off unless you launch with `--pin`. Then Sentinel uses Umbrel's PIN rules and launch sets the run's test PIN, `246813`. The browser starts signed out: enter that PIN to sign in. The helper commands sign in with it as their own tab, so a recipe that changes the PIN must change it back before the next helper command. Wrong PINs make every sign-in wait, the helper's included. `--pin` doesn't combine with `--desktop`, whose PIN needs the Electron shell.
 
+For features the map marks `fault`, make a fake fail on purpose: `helpers/verify fault electrum|mempool down|slow|error`. `down` refuses connections, `slow` holds every answer for five seconds, and `error` fails every request, though Electrum still answers keepalives so Sentinel stays connected. `ok` puts the fake right. The command returns once the fakes act on it. Put every fault right before the recipe ends: the doctor fails while one is on, and so does `ports` while a fake is down.
+
 Never verify against `pnpm dev` or `turbo`: turbo drops `DATA_DIR`, so Sentinel would open the developer's own `apps/api-sentinel/data`.
 
 ## Doctor
@@ -50,6 +52,7 @@ Never verify against `pnpm dev` or `turbo`: turbo drops `DATA_DIR`, so Sentinel 
 | `electrum`                          | Sentinel is not connected to this run's fake Electrum.                                                                                                     |
 | `prices`                            | The fake mempool is not the only price source. A journey changed the price settings; launch a new run.                                                     |
 | `seed`                              | Not seeded, or a journey removed a seeded account or the seeded statement. Seed, or launch a new run for later journeys that need the baseline.            |
+| `faults`                            | A fault is still on. Put it right with `helpers/verify fault <target> ok`.                                                                                 |
 | `fake coverage`                     | A fake could not serve a request. The journey may have shown an error the real services would not; extend `tools/verify/fakes.ts` before trusting results. |
 
 ## Drive
@@ -103,6 +106,7 @@ Proof standards:
 | `seed`                                                         | Adds the baseline accounts and statement.                               |
 | `doctor`                                                       | The read-only checks above.                                             |
 | `query --sql "SELECT ..."`                                     | Prints rows from the run's database as JSON, read-only.                 |
+| `fault <electrum or mempool> <ok, down, slow or error>`        | Makes a fake fail on purpose, or puts it right.                         |
 | `evidence start`                                               | Starts `evidence.json` and `report.md`.                                 |
 | `evidence begin <recipe>`                                      | Opens a recipe's next attempt and its empty folder, on a live run.      |
 | `evidence record <recipe> --status <status> [--reason <text>]` | Closes the open attempt with its outcome and rewrites the report.       |

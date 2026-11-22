@@ -6,7 +6,7 @@ A user generates a statement in another currency with their address on it, and o
 
 Proves: `other-currency`, `address`, `empty-period`
 
-`generation-progress` and `close-while-pending` are not claimed: with the local fakes a statement completes in about a second, so there is no percentage to read and no time to close the progress screen.
+`generation-progress` and `close-while-pending` are claimed by `statements-slow`: with healthy fakes a statement completes in about a second.
 
 ## How to get to it (user POV)
 

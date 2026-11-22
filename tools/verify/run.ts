@@ -40,6 +40,20 @@ export const FakesRecordSchema = z.object({
   mempoolPort: z.number().int().positive(),
 })
 
+export const FAULT_MODES = ['ok', 'down', 'slow', 'error'] as const
+export type FaultMode = (typeof FAULT_MODES)[number]
+export const FAULT_TARGETS = ['electrum', 'mempool'] as const
+export type FaultTarget = (typeof FAULT_TARGETS)[number]
+
+/** What `helpers/verify fault` asked the fakes to do. `seq` counts changes, so the fakes can say which one they applied. */
+export const FaultsSchema = z.object({
+  seq: z.number().int().nonnegative(),
+  electrum: z.enum(FAULT_MODES),
+  mempool: z.enum(FAULT_MODES),
+})
+export type Faults = z.infer<typeof FaultsSchema>
+export const NO_FAULTS: Faults = { seq: 0, electrum: 'ok', mempool: 'ok' }
+
 const SeedMarkerSchema = z.object({
   seededAt: z.string(),
   accounts: z.record(z.string(), z.string()),
@@ -58,6 +72,10 @@ export interface RunPaths {
   fakesFile: string
   seedFile: string
   requestLog: string
+  /** Written by the fault command. */
+  faultsFile: string
+  /** Written by the fakes once they act on faultsFile. */
+  appliedFaultsFile: string
 }
 
 /** IDs become folder names, so they are letters, digits, - and _ only. */
@@ -79,6 +97,8 @@ export function runPaths(runId: string): RunPaths {
     fakesFile: join(runDir, 'fakes.json'),
     seedFile: join(dataDir, 'verify-seed.json'),
     requestLog: join(runDir, 'logs', 'fake-requests.log'),
+    faultsFile: join(runDir, 'faults.json'),
+    appliedFaultsFile: join(runDir, 'faults-applied.json'),
   }
 }
 
@@ -136,6 +156,12 @@ export function readSeedMarker(paths: RunPaths): JsonFile<SeedMarker> {
   return readJsonFile(SeedMarkerSchema, paths.seedFile)
 }
 
+/** The faults the fakes are acting on now. No file means none. */
+export function readAppliedFaults(paths: RunPaths): JsonFile<Faults> {
+  const result = readJsonFile(FaultsSchema, paths.appliedFaultsFile)
+  return result.status === 'missing' ? { status: 'ok', value: NO_FAULTS } : result
+}
+
 export function readProcesses(paths: RunPaths): RecordedProcess[] {
   const result = readJsonFile(ProcessListSchema, paths.processesFile)
   return result.status === 'ok' ? result.value : []
@@ -154,7 +180,7 @@ export function boundPort(address: string | { port: number } | null): number {
   return parsed.isOk() ? parsed.unwrap().port : fail('The server is not listening on a TCP port')
 }
 
-type JsonRecord = RunState | SeedMarker | RecordedProcess[] | z.infer<typeof FakesRecordSchema>
+type JsonRecord = RunState | SeedMarker | RecordedProcess[] | Faults | z.infer<typeof FakesRecordSchema>
 
 export function writeJson(file: string, value: JsonRecord): void {
   mkdirSync(resolve(file, '..'), { recursive: true })

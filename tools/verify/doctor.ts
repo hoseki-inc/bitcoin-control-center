@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readArgs } from './args'
 import { countAccounts, sentinelClient, signIn } from './client'
+import { activeFaults } from './rules'
 import {
   HELPER,
   type RunState,
@@ -8,6 +9,7 @@ import {
   isOurProcess,
   listeners,
   portOwnedBy,
+  readAppliedFaults,
   readRunState,
   readSeedMarker,
   runPaths,
@@ -156,6 +158,18 @@ if (state.status === 'missing') {
     check('app', false, "skipped: this run doesn't own its processes and ports, so its URL may be another server")
   }
 }
+
+const applied = readAppliedFaults(paths)
+const faults = applied.status === 'ok' ? activeFaults(applied.value) : null
+check(
+  'faults',
+  faults?.length === 0,
+  faults === null
+    ? `${paths.appliedFaultsFile} does not parse`
+    : faults.length === 0
+      ? 'none'
+      : `${faults.join(', ')}; put them right with ${HELPER} fault <target> ok`,
+)
 
 const unserved = existsSync(paths.requestLog)
   ? readFileSync(paths.requestLog, 'utf8')
