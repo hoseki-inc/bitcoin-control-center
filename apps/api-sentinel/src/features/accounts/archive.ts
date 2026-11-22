@@ -12,7 +12,7 @@ export interface ArchiveDeps {
   walletBalances: WalletBalanceService
 }
 
-/** Hides an account from every page, after portfolio saves its full history so past totals stay right. */
+/** Moves an account from the active list to Archived, after portfolio saves its full history so past totals stay right. */
 export async function archiveAccount(deps: ArchiveDeps, accountId: string): Promise<Result<void, Error>> {
   const [row] = await deps.db
     .select({ descriptor: accountTable.descriptor })

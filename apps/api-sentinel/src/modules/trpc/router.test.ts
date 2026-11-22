@@ -85,6 +85,23 @@ it('preserves claim, keystore and signing-message DTOs through database round tr
   })
 })
 
+it('reads an account saved by the retired accounts.add route as it was stored', async () => {
+  const { app, caller } = await setup()
+  // That route stored a nanoid, the descriptor text as typed, and no keystores.
+  const legacy = await addWallet(app, 'synthetic-descriptor', 'Basic account')
+
+  const claim = await caller.accounts.get.byId({ id: legacy.id })
+  expect(claim).toMatchObject({
+    id: legacy.id,
+    account: 'synthetic-descriptor',
+    displayName: 'Basic account',
+    keystores: [],
+    latestChallenge: null,
+    metadata: null,
+  })
+  expect((await caller.accounts.list()).map((account) => account.id)).toContain(legacy.id)
+})
+
 it.each(['singlesig', 'multisig'] as const)('creates only one %s claim under concurrent requests', async (kind) => {
   const { app, caller } = await setup()
   const create = async () =>

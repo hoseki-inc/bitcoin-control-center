@@ -136,7 +136,7 @@ function buildClaimDto(
     officialName: '',
     displayName: row.displayName,
     network: networkToClaimNetwork(row.network),
-    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: The basic account API stores descriptor text verbatim; this existing DTO brand must not normalize or newly reject that text.
+    // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- SAFETY: Accounts saved by the retired accounts.add route kept their descriptor text verbatim; this DTO brand must not normalize or newly reject those stored rows.
     account: row.descriptor as CheckedAccountDescriptor,
     status: row.status,
     isArchived: row.deletedAt !== null,
