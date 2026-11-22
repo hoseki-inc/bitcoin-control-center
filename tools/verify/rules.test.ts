@@ -11,7 +11,10 @@ import {
   MAP_FILE,
   type Outcome,
   type Recipe,
+  SLOW_FAULT_MS,
+  activeFaults,
   beginProblem,
+  faultedAnswer,
   freeAttemptNumber,
   latestRecorded,
   launchDecision,
@@ -21,6 +24,7 @@ import {
   recordProblem,
   webBuildEnv,
   withAbandoned,
+  withFault,
   withOutcome,
 } from './rules'
 import { REPO_ROOT, type RunState } from './run'
@@ -424,5 +428,30 @@ describe('map.json', () => {
     assert.equal(readRecipes()?.size, listed.length)
     assert.equal(readRecipes()?.has('statements'), true)
     assert.equal(readRecipes()?.has('Statements'), false)
+  })
+})
+
+describe('faults', () => {
+  it('holds every answer under slow, and fails none', () => {
+    assert.deepEqual(faultedAnswer('electrum', 'slow', 'blockchain.scripthash.get_history'), {
+      delayMs: SLOW_FAULT_MS,
+      fail: false,
+    })
+    assert.deepEqual(faultedAnswer('mempool', 'ok', '/api/v1/prices'), { delayMs: 0, fail: false })
+  })
+
+  it("fails every request under error except Electrum's keepalives", () => {
+    assert.equal(faultedAnswer('electrum', 'error', 'server.ping').fail, false)
+    assert.equal(faultedAnswer('electrum', 'error', 'blockchain.headers.subscribe').fail, false)
+    assert.equal(faultedAnswer('electrum', 'error', 'blockchain.transaction.get').fail, true)
+    assert.equal(faultedAnswer('mempool', 'error', 'server.ping').fail, true)
+  })
+
+  it('changes one target at a time and counts each change', () => {
+    const down = withFault({ seq: 0, electrum: 'ok', mempool: 'ok' }, 'electrum', 'down')
+    assert.deepEqual(down, { seq: 1, electrum: 'down', mempool: 'ok' })
+    const both = withFault(down, 'mempool', 'slow')
+    assert.deepEqual(activeFaults(both), ['electrum down', 'mempool slow'])
+    assert.deepEqual(activeFaults(withFault(withFault(both, 'electrum', 'ok'), 'mempool', 'ok')), [])
   })
 })

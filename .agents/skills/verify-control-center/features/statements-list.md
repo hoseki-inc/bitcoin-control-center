@@ -6,7 +6,7 @@ A user browses saved statements as cards, each with its period, created time, Vi
 
 Proves: `card-view`, `list-view`, `view-resets`, `delete`
 
-`no-delete-while-pending` is not claimed: statements complete too fast to catch one pending. `empty` needs a fresh run.
+`no-delete-while-pending` is claimed by `statements-list-pending`, which slows the fake mempool. `empty` needs a fresh run.
 
 ## How to get to it (user POV)
 

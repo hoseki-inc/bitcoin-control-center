@@ -6,7 +6,7 @@ A user generates a proof-of-ownership statement: they pick a date range, a curre
 
 Proves: `generate`, `watch-only-excluded`, `listed`, `details`, `pdf-content`
 
-The progress view (`generation-progress`) may finish before the first read, so this recipe does not claim it. Run `helpers/verify evidence begin statements` before driving it and `helpers/verify evidence record statements --status <status>` after.
+The progress view (`generation-progress`) may finish before the first read, so `statements-slow` claims it instead. Run `helpers/verify evidence begin statements` before driving it and `helpers/verify evidence record statements --status <status>` after.
 
 ## How to get to it (user POV)
 

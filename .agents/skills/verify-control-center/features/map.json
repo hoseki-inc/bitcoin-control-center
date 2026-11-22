@@ -3,7 +3,7 @@
     "now": "Drivable on a standard launched and seeded run.",
     "fresh": "Drivable on a launched run that is not seeded.",
     "seed": "Needs more seed data or a test-data helper first.",
-    "fault": "Needs a fake that fails on demand, or a Sentinel restart mid-run.",
+    "fault": "Needs helpers/verify fault, which makes a fake fail on demand, or a Sentinel restart mid-run.",
     "pin": "Needs helpers/verify launch --pin: PINs on with Umbrel's rules and the run's test PIN.",
     "desktop-web": "Needs helpers/verify launch --desktop: the desktop web app and Sentinel's --desktop options, driven in a browser.",
     "electron": "Needs the Electron app run from source with its own data folder, driven with computer use.",
@@ -197,7 +197,9 @@
             {
               "file": "home-summary.md",
               "proves": ["total", "open-portfolio", "chart-30d", "change-30d", "account-count"]
-            }
+            },
+            { "file": "home-sync-electrum.md", "proves": ["sync-indicator"] },
+            { "file": "home-no-price.md", "proves": ["usd-unavailable"] }
           ]
         },
         {
@@ -228,7 +230,10 @@
               "needs": "fault"
             }
           ],
-          "recipes": [{ "file": "home-price-chart.md", "proves": ["price-heading", "range-switch", "source-footer"] }]
+          "recipes": [
+            { "file": "home-price-chart.md", "proves": ["price-heading", "range-switch", "source-footer"] },
+            { "file": "home-price-chart-error.md", "proves": ["price-error"] }
+          ]
         },
         {
           "id": "home-recent-statements",
@@ -464,7 +469,9 @@
               "file": "accounts-list.md",
               "proves": ["header-totals", "wallet-card", "open-card", "add-account-entry"]
             },
-            { "file": "accounts-empty.md", "proves": ["empty"] }
+            { "file": "accounts-empty.md", "proves": ["empty"] },
+            { "file": "accounts-sync-electrum.md", "proves": ["sync-indicator"] },
+            { "file": "accounts-no-price.md", "proves": ["usd-hidden-without-price"] }
           ]
         },
         {
@@ -571,7 +578,8 @@
                 "delete-permanently",
                 "re-add-archived"
               ]
-            }
+            },
+            { "file": "accounts-archive-offline.md", "proves": ["balance-unknown"] }
           ]
         },
         {
@@ -1654,7 +1662,9 @@
               "file": "statement-generate-options.md",
               "proves": ["other-currency", "address", "empty-period"]
             },
-            { "file": "statements-empty.md", "proves": ["no-eligible-accounts"] }
+            { "file": "statements-empty.md", "proves": ["no-eligible-accounts"] },
+            { "file": "statements-slow.md", "proves": ["generation-progress", "close-while-pending"] },
+            { "file": "statements-failed.md", "proves": ["generation-failed"] }
           ]
         },
         {
@@ -1702,7 +1712,8 @@
           ],
           "recipes": [
             { "file": "statements-list.md", "proves": ["card-view", "list-view", "view-resets", "delete"] },
-            { "file": "statements-list-empty.md", "proves": ["empty"] }
+            { "file": "statements-list-empty.md", "proves": ["empty"] },
+            { "file": "statements-list-pending.md", "proves": ["no-delete-while-pending"] }
           ]
         },
         {
@@ -1757,7 +1768,8 @@
             {
               "file": "statement-details.md",
               "proves": ["format-switch", "delete", "close", "contact-na", "unknown-id"]
-            }
+            },
+            { "file": "statement-details-failed.md", "proves": ["failed-statement"] }
           ]
         }
       ]
@@ -1854,7 +1866,10 @@
               "does": "The choice is still there after reload"
             }
           ],
-          "recipes": [{ "file": "settings-price.md", "proves": ["section", "toggle-fallbacks", "persists"] }]
+          "recipes": [
+            { "file": "settings-price.md", "proves": ["section", "toggle-fallbacks", "persists"] },
+            { "file": "settings-price-last-known.md", "proves": ["last-known"] }
+          ]
         },
         {
           "id": "settings-security",

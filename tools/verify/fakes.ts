@@ -1,6 +1,11 @@
 import { appendFileSync, mkdirSync } from 'node:fs'
-import { createServer as createHttpServer } from 'node:http'
-import { type Socket, createServer as createTcpServer } from 'node:net'
+import {
+  type Server as HttpServer,
+  type IncomingMessage,
+  type ServerResponse,
+  createServer as createHttpServer,
+} from 'node:http'
+import { type Socket, type Server as TcpServer, createServer as createTcpServer } from 'node:net'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import { readArgs } from './args'
@@ -16,11 +21,24 @@ import {
   scriptAddress,
   tipHeight,
 } from './chain'
-import { boundPort, fail, runPaths, writeJson } from './run'
+import { faultedAnswer } from './rules'
+import {
+  type FaultTarget,
+  type Faults,
+  FaultsSchema,
+  NO_FAULTS,
+  boundPort,
+  fail,
+  readJsonFile,
+  runPaths,
+  wait,
+  writeJson,
+} from './run'
 
 // Local stand-ins for the Electrum server and the mempool API, serving the synthetic chain and prices in chain.ts.
 // Started by launch.ts. Every request is logged; UNHANDLED and ERROR lines are requests the fakes could not serve,
-// which the doctor's `fake coverage` check reports.
+// which the doctor's `fake coverage` check reports. `helpers/verify fault` makes them fail on purpose: FAULT lines are
+// requests they failed that way.
 
 const runId = readArgs({ run: { type: 'string' } }).values.run ?? fail('Usage: fakes.ts --run <id>')
 const paths = runPaths(runId)
@@ -29,6 +47,8 @@ mkdirSync(paths.logsDir, { recursive: true })
 function log(line: string): void {
   appendFileSync(paths.requestLog, `${new Date().toISOString()} ${line}\n`)
 }
+
+let faults = NO_FAULTS
 
 interface ChainView {
   tip: number
@@ -91,7 +111,9 @@ function electrum({ method, params }: RpcRequest): RpcAnswer {
   }
 }
 
-function answer(socket: Socket, line: string): void {
+const FAULT_ERROR = { code: -32603, message: 'Verify fault: the server failed this request' }
+
+async function answer(socket: Socket, line: string): Promise<void> {
   let message: unknown
   try {
     message = JSON.parse(line)
@@ -105,13 +127,27 @@ function answer(socket: Socket, line: string): void {
     return
   }
   const requests = parsed.unwrap()
-  const responses = [requests].flat().map((request) => {
-    const response = electrum(request)
-    const outcome = response.error === undefined ? '' : response.error.code === UNHANDLED ? ' UNHANDLED' : ' ERROR'
+  const mode = faults.electrum
+  const answers = [requests]
+    .flat()
+    .map((request) => ({ request, fault: faultedAnswer('electrum', mode, request.method) }))
+  await wait(Math.max(0, ...answers.map(({ fault }) => fault.delayMs)))
+  const responses = answers.map(({ request, fault }) => {
+    const response: RpcAnswer = fault.fail ? { error: FAULT_ERROR } : electrum(request)
+    const outcome =
+      response.error === undefined
+        ? ''
+        : fault.fail
+          ? ` FAULT ${mode}`
+          : response.error.code === UNHANDLED
+            ? ' UNHANDLED'
+            : ' ERROR'
     log(`electrum ${request.method}${outcome}`)
     return Object.assign({ jsonrpc: '2.0', id: request.id ?? null }, response)
   })
-  socket.write(`${JSON.stringify(Array.isArray(requests) ? responses : responses[0])}\n`)
+  if (!socket.destroyed) {
+    socket.write(`${JSON.stringify(Array.isArray(requests) ? responses : responses[0])}\n`)
+  }
 }
 
 const sockets = new Set<Socket>()
@@ -125,7 +161,7 @@ const electrumServer = createTcpServer((socket) => {
   socket.on('data', (chunk) => {
     buffer += chunk.toString()
     for (let newline = buffer.indexOf('\n'); newline >= 0; newline = buffer.indexOf('\n')) {
-      answer(socket, buffer.slice(0, newline))
+      void answer(socket, buffer.slice(0, newline))
       buffer = buffer.slice(newline + 1)
     }
   })
@@ -173,8 +209,17 @@ function mempoolTransaction(txid: string): MempoolTx | null {
   }
 }
 
-const mempoolServer = createHttpServer((request, response) => {
+async function mempool(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? '/', 'http://fake.invalid')
+  const mode = faults.mempool
+  const fault = faultedAnswer('mempool', mode, url.pathname)
+  await wait(fault.delayMs)
+  if (fault.fail) {
+    log(`mempool ${request.method ?? 'GET'} ${url.pathname} 500 FAULT ${mode}`)
+    response.writeHead(500, { 'content-type': 'application/json' })
+    response.end(JSON.stringify({ error: 'Verify fault: the server failed this request' }))
+    return
+  }
   const send = (status: number, body: MempoolTx | PricePoint | PriceHistory | { error: string }): void => {
     log(`mempool ${request.method ?? 'GET'} ${url.pathname} ${status}${status >= 400 ? ' ERROR' : ''}`)
     response.writeHead(status, { 'content-type': 'application/json' })
@@ -192,6 +237,10 @@ const mempoolServer = createHttpServer((request, response) => {
     log(`mempool ${request.method ?? 'GET'} ${url.pathname} UNHANDLED`)
     response.writeHead(404).end()
   }
+}
+
+const mempoolServer = createHttpServer((request, response) => {
+  void mempool(request, response)
 })
 
 await new Promise<void>((done) => {
@@ -200,11 +249,73 @@ await new Promise<void>((done) => {
 await new Promise<void>((done) => {
   mempoolServer.listen(0, '127.0.0.1', done)
 })
-writeJson(paths.fakesFile, {
+const ports = {
   electrumPort: boundPort(electrumServer.address()),
   mempoolPort: boundPort(mempoolServer.address()),
-})
+}
+writeJson(paths.fakesFile, ports)
 log('fakes ready')
+
+const servers: Record<FaultTarget, { server: TcpServer | HttpServer; port: number }> = {
+  electrum: { server: electrumServer, port: ports.electrumPort },
+  mempool: { server: mempoolServer, port: ports.mempoolPort },
+}
+
+/** `down` stops listening and drops open connections, so clients see the connection refused; any other mode listens. */
+async function setListening(target: FaultTarget, listening: boolean): Promise<void> {
+  const { server, port } = servers[target]
+  if (server.listening === listening) {
+    return
+  }
+  if (listening) {
+    await new Promise<void>((done) => {
+      server.listen(port, '127.0.0.1', done)
+    })
+    return
+  }
+  const closed = new Promise<void>((done) => {
+    server.close(() => {
+      done()
+    })
+  })
+  if (target === 'electrum') {
+    for (const socket of sockets) {
+      socket.destroy()
+    }
+  } else {
+    mempoolServer.closeAllConnections()
+  }
+  await closed
+}
+
+// The fault command writes faults.json; the fakes poll it, act on each new change, then confirm it in
+// faults-applied.json, which the command waits for.
+let applying = false
+
+async function applyFaults(next: Faults): Promise<void> {
+  try {
+    await Promise.all([
+      setListening('electrum', next.electrum !== 'down'),
+      setListening('mempool', next.mempool !== 'down'),
+    ])
+    faults = next
+    writeJson(paths.appliedFaultsFile, next)
+    log(`fault ${next.seq}: electrum ${next.electrum}, mempool ${next.mempool}`)
+  } catch (error) {
+    log(`fault ${next.seq} ERROR ${error instanceof Error ? error.message : String(error)}`)
+  } finally {
+    applying = false
+  }
+}
+
+setInterval(() => {
+  const requested = readJsonFile(FaultsSchema, paths.faultsFile)
+  if (applying || requested.status !== 'ok' || requested.value.seq === faults.seq) {
+    return
+  }
+  applying = true
+  void applyFaults(requested.value)
+}, 200)
 
 function stop(): void {
   for (const socket of sockets) {

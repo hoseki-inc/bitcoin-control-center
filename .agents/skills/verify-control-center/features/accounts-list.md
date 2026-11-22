@@ -6,7 +6,7 @@ A user opens Accounts and sees their total in BTC and US dollars with how many a
 
 Proves: `header-totals`, `wallet-card`, `open-card`, `add-account-entry`
 
-`sync-indicator` is not claimed: a normal run only shows `Synced`, and `Can't reach Electrum` needs a fake that fails on demand.
+`sync-indicator` is claimed by `accounts-sync-electrum`, which takes the fake Electrum down.
 
 ## How to get to it (user POV)
 
