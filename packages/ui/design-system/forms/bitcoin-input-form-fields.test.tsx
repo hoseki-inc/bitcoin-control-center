@@ -264,7 +264,7 @@ it('explains how to abandon and re-add when the script-type balance looks wrong'
     const tooltip = document.querySelector('[role="tooltip"]')
     assert.exists(tooltip)
     expect(tooltip.textContent).toBe(
-      "Select your wallet's script type. If you're unsure, add the account and check its balance. If the balance looks wrong, open the pending account from Accounts, click Abandon, then add it again with another script type.",
+      "If unsure, add it and check the balance. If it's wrong, abandon the pending account and re-add it with another script type.",
     )
   })
 })
