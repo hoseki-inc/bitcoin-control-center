@@ -324,6 +324,173 @@ const exchangeProviderErrorsRule = defineRule({
   },
 })
 
+const signingSourcePath =
+  /(?:apps\/control-center\/src\/components\/claims\/(?:.*\/)?[^/]*signing[^/]*\.tsx|apps\/control-center\/src\/pages\/multisig\/\[id\]\/signing\.tsx)$/
+const signingTestPath = /\.(?:test|spec|fixtures)\.tsx?$/
+const signingSubmissionCalls = new Set(['mutateAsync', 'onSubmitSignature', 'onProveControl', 'completeChallenge'])
+
+function isSigningSourceFile(filename: string): boolean {
+  const normalized = filename.replaceAll('\\', '/')
+  return !signingTestPath.test(normalized) && signingSourcePath.test(normalized)
+}
+
+function isFunctionNodeType(type: string): boolean {
+  return type === 'FunctionDeclaration' || type === 'FunctionExpression' || type === 'ArrowFunctionExpression'
+}
+
+function isStaticStringNode(node: { type: string; raw?: string; expressions?: unknown[] }): boolean {
+  if (isStringLiteralNode(node)) {
+    return true
+  }
+  return node.type === 'TemplateLiteral' && node.expressions?.length === 0
+}
+
+function isSigningSubmissionCall(callee: {
+  type: string
+  name?: string
+  property?: { type: string; name?: string }
+}): boolean {
+  if (callee.type === 'Identifier' && callee.name !== undefined) {
+    return signingSubmissionCalls.has(callee.name)
+  }
+  return (
+    callee.type === 'MemberExpression' &&
+    callee.property?.type === 'Identifier' &&
+    callee.property.name !== undefined &&
+    signingSubmissionCalls.has(callee.property.name)
+  )
+}
+
+function isErrorDisplayCall(callee: {
+  type: string
+  name?: string
+  object?: { type: string; name?: string }
+  property?: { type: string; name?: string }
+}): boolean {
+  if (callee.type === 'Identifier') {
+    return callee.name === 'setError'
+  }
+  return (
+    callee.type === 'MemberExpression' &&
+    callee.object?.type === 'Identifier' &&
+    callee.object.name === 'toast' &&
+    callee.property?.type === 'Identifier' &&
+    callee.property.name === 'error'
+  )
+}
+
+const noSwallowedSigningErrorRule = defineRule({
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'Disallow swallowing signing submission errors in signing flows.',
+    },
+    messages: {
+      swallowedCatch:
+        'Capture the signing failure cause and surface safe reasons with toastSigningError or getSigningErrorMessage.',
+      swallowedOnError:
+        'Pass the onError parameter to toastSigningError or getSigningErrorMessage instead of displaying a hardcoded string.',
+    },
+  },
+  createOnce(context) {
+    const signingTryStarts = new Set<number>()
+    const reportedCatchStarts = new Set<number>()
+    const onErrorCallStack: Array<{ start: number; paramName: string | undefined; referenced: boolean }> = []
+
+    return {
+      Program() {
+        signingTryStarts.clear()
+        reportedCatchStarts.clear()
+        onErrorCallStack.length = 0
+      },
+      CallExpression(node) {
+        if (!isSigningSourceFile(context.filename)) {
+          return
+        }
+        if (isSigningSubmissionCall(node.callee)) {
+          let child = node.parent
+          let current: { type: string; start?: number; block?: unknown } = node
+          while (child.type !== 'Program') {
+            if (child.type === 'TryStatement' && child.block === current) {
+              signingTryStarts.add(child.start)
+            }
+            if (isFunctionNodeType(child.type)) {
+              break
+            }
+            current = child
+            child = child.parent
+          }
+        }
+        if (!isErrorDisplayCall(node.callee)) {
+          return
+        }
+        for (let parent = node.parent; parent.type !== 'Program'; parent = parent.parent) {
+          if (parent.type === 'CatchClause') {
+            if (
+              parent.param === null &&
+              parent.parent.type === 'TryStatement' &&
+              signingTryStarts.has(parent.parent.start) &&
+              !reportedCatchStarts.has(parent.start)
+            ) {
+              reportedCatchStarts.add(parent.start)
+              context.report({ node: parent, messageId: 'swallowedCatch' })
+            }
+            return
+          }
+          if (parent.type === 'ArrowFunctionExpression' || parent.type === 'FunctionExpression') {
+            if (
+              parent.parent.type === 'Property' &&
+              parent.parent.key.type === 'Identifier' &&
+              parent.parent.key.name === 'onError'
+            ) {
+              const firstArg = node.arguments.at(0)
+              if (firstArg !== undefined && isStaticStringNode(firstArg)) {
+                const firstParam = parent.params.at(0)
+                const paramName = firstParam?.type === 'Identifier' ? firstParam.name : undefined
+                onErrorCallStack.push({ start: node.start, paramName, referenced: false })
+              }
+            }
+            return
+          }
+          if (parent.type === 'FunctionDeclaration') {
+            return
+          }
+        }
+      },
+      Identifier(node) {
+        if (onErrorCallStack.length === 0) {
+          return
+        }
+        if (node.parent.type === 'MemberExpression' && !node.parent.computed && node.parent.property === node) {
+          return
+        }
+        if (
+          node.parent.type === 'Property' &&
+          !node.parent.computed &&
+          !node.parent.shorthand &&
+          node.parent.key === node
+        ) {
+          return
+        }
+        for (const entry of onErrorCallStack) {
+          if (entry.paramName !== undefined && node.name === entry.paramName) {
+            entry.referenced = true
+          }
+        }
+      },
+      'CallExpression:exit'(node) {
+        const top = onErrorCallStack.at(-1)
+        if (top !== undefined && top.start === node.start) {
+          onErrorCallStack.pop()
+          if (!top.referenced) {
+            context.report({ node, messageId: 'swallowedOnError' })
+          }
+        }
+      },
+    }
+  },
+})
+
 /** Rules for Control Center's own conventions. */
 export default eslintCompatPlugin({
   meta: { name: 'control-center' },
@@ -331,6 +498,7 @@ export default eslintCompatPlugin({
     'exchange-provider-errors': exchangeProviderErrorsRule,
     'feature-boundary': featureBoundaryRule,
     'format-usd-rounds': formatUsdRoundsRule,
+    'no-swallowed-signing-error': noSwallowedSigningErrorRule,
     'use-text-style': useTextStyleRule,
   },
 })
