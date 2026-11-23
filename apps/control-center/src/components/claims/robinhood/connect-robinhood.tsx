@@ -20,6 +20,11 @@ import { z } from 'zod'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
 import { ExchangeConnected, ExchangeConnecting } from '../exchange-connection'
+import {
+  type ExchangeConnectErrorState,
+  ExchangeReconnectError,
+  parseExchangeConnectError,
+} from '../exchange-reconnect-error'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchanges']['robinhood']['connect']
 
@@ -42,6 +47,8 @@ export function ConnectRobinhood(): JSX.Element {
   const isReconnect = Boolean(replaceAccountId)
   const [step, setStep] = useState<Step>('form')
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null)
+  const [completedAsReconnect, setCompletedAsReconnect] = useState(isReconnect)
+  const [submitError, setSubmitError] = useState<ExchangeConnectErrorState | null>(null)
 
   const utils = trpc.useUtils()
   const connectMutation = trpc.portalProve.exchanges.robinhood.connect.useMutation()
@@ -49,30 +56,51 @@ export function ConnectRobinhood(): JSX.Element {
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<RobinhoodFormData>({
     resolver: zodResolver(robinhoodFormSchema),
     defaultValues: { apiKey: '', privateKey: '', displayName: routeState?.displayName ?? '' },
   })
 
-  async function onSubmit(data: RobinhoodFormData): Promise<void> {
+  async function submitConnection(data: RobinhoodFormData, options: { asNewAccount: boolean }): Promise<void> {
+    setSubmitError(null)
     setStep('loading')
+    const targetReplaceId = options.asNewAccount ? undefined : replaceAccountId
     try {
       const account = await connectMutation.mutateAsync({
         apiKey: data.apiKey,
         privateKeyBase64: data.privateKey,
         displayName: data.displayName,
-        replaceAccountId,
+        replaceAccountId: targetReplaceId,
       })
       setConnectedAccount(account)
+      setCompletedAsReconnect(Boolean(targetReplaceId))
       setStep('success')
       void utils.portalProve.portfolio.getData.invalidate()
       void utils.portalProve.exchanges.list.invalidate()
+      void utils.portalProve.exchanges.robinhood.list.invalidate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to connect Robinhood account'
-      toast.error(message)
+      const parsed =
+        err instanceof Error
+          ? parseExchangeConnectError(err, 'Failed to connect Robinhood account')
+          : { message: 'Failed to connect Robinhood account', isMismatch: false }
+      reset(data)
+      setSubmitError(parsed)
       setStep('form')
     }
+  }
+
+  async function onSubmit(data: RobinhoodFormData): Promise<void> {
+    await submitConnection(data, { asNewAccount: false })
+  }
+
+  function handleConnectAsNew(): void {
+    handleSubmit(async (data) => {
+      await submitConnection(data, { asNewAccount: true })
+    })().catch(() => {
+      toast.error('Unable to submit the connection form. Please try again.')
+    })
   }
 
   if (step === 'loading') {
@@ -84,8 +112,8 @@ export function ConnectRobinhood(): JSX.Element {
       <ExchangeConnected
         exchange="robinhood"
         account={connectedAccount}
-        isReconnect={isReconnect}
-        returnTo={returnTo}
+        isReconnect={completedAsReconnect}
+        returnTo={completedAsReconnect ? returnTo : '/accounts'}
       />
     )
   }
@@ -111,6 +139,10 @@ export function ConnectRobinhood(): JSX.Element {
             Enter your Robinhood Crypto API credentials to import your Bitcoin balance and order history. Only read-only
             access is required.
           </Text>
+
+          {submitError !== null ? (
+            <ExchangeReconnectError exchangeName="Robinhood" error={submitError} onConnectAsNew={handleConnectAsNew} />
+          ) : null}
 
           {/* Form fields */}
           <Stack gap={4}>
@@ -180,7 +212,9 @@ export function ConnectRobinhood(): JSX.Element {
                 >
                   Robinhood Crypto Account Settings
                 </Text>{' '}
-                and create an API credential using your public key.
+                and create an API credential using your public key. Under Permissions, check &ldquo;Read crypto
+                accounts&rdquo;, &ldquo;Read crypto holdings&rdquo;, and &ldquo;Read crypto orders&rdquo;. Leave all
+                trading and withdrawal permissions unchecked.
               </Text>
               <Text as="li" textStyle="text/sm" color="neutral.700">
                 Copy the API key (e.g. rh-api-...) and your base64 private key, then paste them above. Both will be
@@ -195,8 +229,8 @@ export function ConnectRobinhood(): JSX.Element {
               What is being accessed?
             </Text>
             <Text textStyle="text/sm" color="neutral.600">
-              Only your Bitcoin holdings and order history are read. No trading or withdrawal permissions are required
-              or granted.
+              Only your crypto account info, Bitcoin holdings, and order history are read. No trading or withdrawal
+              permissions are required or granted.
             </Text>
           </Box>
         </Stack>

@@ -70,6 +70,7 @@ export const Account = z.object({
     /** Denomination of the currency. */
     currency: z.string(),
   }),
+  retail_portfolio_id: z.string().optional().nullable(),
 })
 export type Account = z.infer<typeof Account>
 
@@ -87,3 +88,12 @@ export const AccountList = z.object({
   size: z.number(),
 })
 export type AccountList = z.infer<typeof AccountList>
+
+export const KeyPermissions = z.object({
+  can_view: z.boolean().optional(),
+  can_trade: z.boolean().optional(),
+  can_transfer: z.boolean().optional(),
+  portfolio_uuid: z.string().optional().nullable(),
+  portfolio_type: z.string().optional().nullable(),
+})
+export type KeyPermissions = z.infer<typeof KeyPermissions>

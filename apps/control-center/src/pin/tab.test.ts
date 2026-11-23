@@ -103,4 +103,22 @@ describe('sentinelFetch', () => {
     await late
     expect(useGate.getState()).toMatchObject({ epoch: 1, phase: 'open' })
   })
+
+  it('does not lock the tab or rotate its ID on HTTP 412 PRECONDITION_FAILED', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () => new Response('{}', { status: 412 })),
+    )
+    onTestFinished(() => {
+      vi.unstubAllGlobals()
+      useGate.setState(INITIAL_GATE, true)
+    })
+    useGate.setState({ ...INITIAL_GATE, phase: 'open' }, true)
+    const before = tabId()
+
+    await sentinelFetch('/trpc/portalProve.exchanges.refreshBalance')
+
+    expect(useGate.getState()).toMatchObject({ epoch: 0, phase: 'open' })
+    expect(tabId()).toBe(before)
+  })
 })
