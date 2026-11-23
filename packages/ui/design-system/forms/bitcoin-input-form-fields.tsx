@@ -175,7 +175,7 @@ export function BitcoinInputFormFields({
           <LabelWithTooltip
             htmlFor="encoding"
             labelText="Select script type"
-            tooltipText="Select your address's script type. If you're unsure, add it and check the balance. If it doesn't match what you expect, you can go back and edit the script type."
+            tooltipText="Not sure? Pick one and check the balance. If it's wrong, abandon it and try another."
           />
           <RadioCardGroup
             options={Object.keys(labelsToEncodings)}

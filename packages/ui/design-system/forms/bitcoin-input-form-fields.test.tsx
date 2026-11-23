@@ -246,3 +246,25 @@ it.each([1, 2])('preserves Chakra visibility styles across test documents (%s)',
     expect(getComputedStyle(probe).display).toBe('flex')
   })
 })
+
+it('explains how to abandon and re-add when the script-type balance looks wrong', async () => {
+  await withTestSetup(async () => {
+    await render()
+    await changeValue('#bitcoin-source', Wallets.legacyXpub.toString())
+    const label = host.querySelector('label[for="encoding"]')
+    assert.exists(label)
+    const trigger = label.parentElement?.querySelector('svg')
+    assert.exists(trigger)
+    await act(async () => {
+      trigger.dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0)
+      })
+    })
+    const tooltip = document.querySelector('[role="tooltip"]')
+    assert.exists(tooltip)
+    expect(tooltip.textContent).toBe(
+      "Not sure? Pick one and check the balance. If it's wrong, abandon it and try another.",
+    )
+  })
+})
