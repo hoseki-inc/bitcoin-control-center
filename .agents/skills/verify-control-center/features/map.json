@@ -742,6 +742,11 @@
               "does": "Transaction total would exceed the current balance"
             },
             {
+              "id": "sell-exceeds",
+              "kind": "failure",
+              "does": "A checked Sell or Transfer Out that would take the balance below zero is refused and leaves the balance unchanged"
+            },
+            {
               "id": "delete-transaction",
               "kind": "happy",
               "does": "Delete asks first; the balance moves back only if the user ticks the box"
@@ -768,6 +773,7 @@
                 "update-below-transactions",
                 "add-transaction",
                 "transaction-exceeds",
+                "sell-exceeds",
                 "delete-transaction",
                 "remove-account",
                 "cleared-date"

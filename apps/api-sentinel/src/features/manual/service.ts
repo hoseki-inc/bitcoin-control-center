@@ -1,10 +1,25 @@
 import { Err, Ok } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
-import { and, desc, eq, gt, gte, inArray, lte, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, gt, gte, inArray, lte, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
 import type { SentinelDb, SentinelTx } from '../../db/drizzle'
 import { manualAccounts, manualBalanceSnapshots, manualTransactions } from '../../db/schema'
+
+const balanceDateFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+function formatBalanceDate(timestamp: string): string {
+  const date = new Date(timestamp)
+  if (Number.isNaN(date.getTime())) {
+    return timestamp
+  }
+  return balanceDateFormatter.format(date)
+}
 
 export type ManualTransactionType = 'buy' | 'sell' | 'transfer_in' | 'transfer_out'
 
@@ -154,8 +169,49 @@ export class ManualService {
       let newBalance = currentBalance
       if (args.addToBalance === true) {
         newBalance = currentBalance + signedAmount
-        if (newBalance < 0n) {
-          newBalance = 0n
+        if (signedAmount < 0n) {
+          const [latestSnapshot] = await tx
+            .select({ timestamp: manualBalanceSnapshots.timestamp })
+            .from(manualBalanceSnapshots)
+            .where(eq(manualBalanceSnapshots.accountId, args.accountId))
+            .orderBy(desc(manualBalanceSnapshots.timestamp))
+            .limit(1)
+          const isBackDated = latestSnapshot !== undefined && args.transactedAt < latestSnapshot.timestamp
+          if (isBackDated) {
+            const negativeDate = await this.findEarliestNegativeSavedBalanceDate(
+              tx,
+              args.accountId,
+              args.transactedAt,
+              signedAmount,
+            )
+            if (negativeDate !== null) {
+              return Err(
+                new Error(
+                  `This would take the balance on ${formatBalanceDate(negativeDate)} below zero. Update the balance first, then log the sell.`,
+                ),
+              )
+            }
+          }
+          if (newBalance < 0n) {
+            return Err(
+              new Error('This would take the balance below zero. Update the balance first, then log the sell.'),
+            )
+          }
+          if (!isBackDated) {
+            const negativeDate = await this.findEarliestNegativeSavedBalanceDate(
+              tx,
+              args.accountId,
+              args.transactedAt,
+              signedAmount,
+            )
+            if (negativeDate !== null) {
+              return Err(
+                new Error(
+                  `This would take the balance on ${formatBalanceDate(negativeDate)} below zero. Update the balance first, then log the sell.`,
+                ),
+              )
+            }
+          }
         }
       } else if (newNetTotal > currentBalance) {
         return Err(
@@ -330,6 +386,34 @@ export class ManualService {
         await this.insertSnapshot(tx, accountId, account.balanceSats, timestamp)
       }
     })
+  }
+
+  private async findEarliestNegativeSavedBalanceDate(
+    tx: SentinelTx,
+    accountId: string,
+    timestamp: string,
+    delta: bigint,
+  ): Promise<string | null> {
+    const [atOrBefore] = await tx
+      .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+      .from(manualBalanceSnapshots)
+      .where(and(eq(manualBalanceSnapshots.accountId, accountId), lte(manualBalanceSnapshots.timestamp, timestamp)))
+      .orderBy(desc(manualBalanceSnapshots.timestamp))
+      .limit(1)
+    if (atOrBefore && atOrBefore.timestamp !== timestamp && BigInt(atOrBefore.balanceSats) + delta < 0n) {
+      return timestamp
+    }
+    const atOrAfter = await tx
+      .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+      .from(manualBalanceSnapshots)
+      .where(and(eq(manualBalanceSnapshots.accountId, accountId), gte(manualBalanceSnapshots.timestamp, timestamp)))
+      .orderBy(asc(manualBalanceSnapshots.timestamp))
+    for (const snapshot of atOrAfter) {
+      if (BigInt(snapshot.balanceSats) + delta < 0n) {
+        return snapshot.timestamp
+      }
+    }
+    return null
   }
 
   /**

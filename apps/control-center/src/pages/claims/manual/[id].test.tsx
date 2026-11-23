@@ -4,6 +4,7 @@ import { QueryClient, notifyManager } from '@tanstack/react-query'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
+import { Toaster, toast } from 'sonner'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { TestTrpcProvider, createTestTrpcClient } from '../../../testing/trpc'
 import { ManualAccountDetailsPage } from './[id]'
@@ -22,26 +23,31 @@ const browser = await vi.hoisted(async () => {
   }
 })
 
-async function renderManualAccount() {
+async function renderManualAccount(options?: { balanceSats?: string; addTransactionError?: string }) {
   const dom = browser.acquire()
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   notifyManager.setNotifyFunction((callback) => {
     act(callback)
   })
-  const requests: string[] = []
+  const requests: Array<{ path: string; input: unknown }> = []
   const rpc = createTestTrpcClient(async (operation) => {
-    requests.push(operation.path)
+    requests.push({ path: operation.path, input: operation.input })
     switch (operation.path) {
       case 'portalProve.manual.get':
         return {
           id: 'acct_manual',
           displayName: 'Paper wallet',
-          balance: '100000000',
+          balance: options?.balanceSats ?? '100000000',
           balanceAsOf: '2026-10-01T16:00:00.000Z',
           createdAt: '2026-10-01T16:00:00.000Z',
         }
       case 'portalProve.manual.transactions.list':
         return []
+      case 'portalProve.manual.transactions.add':
+        if (options?.addTransactionError !== undefined) {
+          throw new Error(options.addTransactionError)
+        }
+        return null
       default:
         return null
     }
@@ -52,6 +58,7 @@ async function renderManualAccount() {
   const root = createRoot(container)
   onTestFinished(async () => {
     await act(async () => {
+      toast.dismiss()
       root.unmount()
     })
     container.remove()
@@ -66,6 +73,7 @@ async function renderManualAccount() {
     root.render(
       <TestTrpcProvider client={client} rpc={rpc}>
         <TestChakraProvider>
+          <Toaster />
           <MemoryRouter initialEntries={['/accounts/manual/acct_manual']}>
             <Routes>
               <Route path="/accounts/manual/:accountId" element={<ManualAccountDetailsPage />} />
@@ -79,13 +87,13 @@ async function renderManualAccount() {
     expect(container.textContent).toContain('Update Balance')
   })
 
-  const fill = async (element: HTMLInputElement, value: string): Promise<void> => {
+  const fill = async (element: HTMLInputElement | HTMLSelectElement, value: string): Promise<void> => {
     await act(async () => {
       // Set the value the way the browser does, so React sees the change.
       const descriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(element), 'value')
       assert(descriptor?.set !== undefined, 'Expected the value setter')
       descriptor.set.call(element, value)
-      element.dispatchEvent(new Event('input', { bubbles: true }))
+      element.dispatchEvent(new Event(element.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
     })
   }
   const button = (label: string): HTMLButtonElement => {
@@ -95,12 +103,16 @@ async function renderManualAccount() {
   }
   const [balanceAmount, txAmount] = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
   const [balanceDate, txDate] = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="date"]'))
+  const txType = container.querySelector<HTMLSelectElement>('select')
+  const addToBalance = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
   assert.exists(balanceAmount, 'Expected the balance amount input')
   assert.exists(txAmount, 'Expected the transaction amount input')
   assert.exists(balanceDate, 'Expected the balance date input')
   assert.exists(txDate, 'Expected the transaction date input')
+  assert.exists(txType, 'Expected the transaction type select')
+  assert.exists(addToBalance, 'Expected the Add this amount to balance checkbox')
   requests.length = 0
-  return { requests, fill, button, balanceAmount, txAmount, balanceDate, txDate }
+  return { container, requests, fill, button, balanceAmount, txAmount, balanceDate, txDate, txType, addToBalance }
 }
 
 it('keeps Update disabled while the balance date is cleared', async () => {
@@ -114,7 +126,7 @@ it('keeps Update disabled while the balance date is cleared', async () => {
   await act(async () => {
     page.button('Update').click()
   })
-  expect(page.requests).not.toContain('portalProve.manual.updateBalance')
+  expect(page.requests.map((request) => request.path)).not.toContain('portalProve.manual.updateBalance')
 })
 
 it('keeps Add disabled while the transaction date is cleared', async () => {
@@ -128,5 +140,38 @@ it('keeps Add disabled while the transaction date is cleared', async () => {
   await act(async () => {
     page.button('Add').click()
   })
-  expect(page.requests).not.toContain('portalProve.manual.transactions.add')
+  expect(page.requests.map((request) => request.path)).not.toContain('portalProve.manual.transactions.add')
+})
+
+it.each([
+  'This would take the balance below zero. Update the balance first, then log the sell.',
+  'This would take the balance on Sep 3, 2026 below zero. Update the balance first, then log the sell.',
+])('shows the refusal toast and keeps the balance unchanged when a checked sell is refused (%s)', async (message) => {
+  const page = await renderManualAccount({
+    balanceSats: '50000000',
+    addTransactionError: message,
+  })
+  expect(page.container.textContent).toContain('0.50000000 BTC')
+
+  await page.fill(page.txType, 'sell')
+  await page.fill(page.txAmount, '0.8')
+  await act(async () => {
+    page.addToBalance.click()
+  })
+  await act(async () => {
+    page.button('Add').click()
+  })
+
+  await vi.waitFor(() => {
+    expect(document.body.textContent).toContain(message)
+  })
+  expect(page.requests.map((request) => request.path)).toEqual(['portalProve.manual.transactions.add'])
+  expect(page.requests[0]?.input).toMatchObject({
+    accountId: 'acct_manual',
+    type: 'sell',
+    amountSats: '80000000',
+    addToBalance: true,
+  })
+  expect(page.container.textContent).toContain('0.50000000 BTC')
+  expect(page.container.textContent).not.toContain('Transactions')
 })
