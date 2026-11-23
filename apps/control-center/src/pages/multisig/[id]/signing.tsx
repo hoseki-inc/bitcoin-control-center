@@ -27,6 +27,7 @@ import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../../trpc/server-types'
 import { getNumberOfMissingSignatures } from '../../../utils/multisig-utils'
+import { getSigningErrorMessage, toastSigningError } from '../../../utils/signing-error-message'
 
 export function MultisigSigningPage(): JSX.Element {
   const { keystoreId, walletType } = useParams<{ keystoreId: string; walletType: string }>()
@@ -441,7 +442,7 @@ function ColdcardSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
         {
           onError: (completionError) => {
             console.error('error', completionError)
-            setError('Error completing challenge message')
+            setError(getSigningErrorMessage(completionError, 'Error completing challenge message'))
           },
         },
       )
@@ -567,7 +568,7 @@ function KeystoneSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keyst
         {
           onError: (completionError) => {
             console.error('error', completionError)
-            setError('Error completing challenge message')
+            setError(getSigningErrorMessage(completionError, 'Error completing challenge message'))
           },
         },
       )
@@ -632,8 +633,8 @@ function ColdcardMultisigStep11({
     inProgress.current = true
     try {
       await onProveControl(signatureFile.signature)
-    } catch {
-      toast.error('The signing process did not complete successfully.')
+    } catch (cause) {
+      toastSigningError(cause, 'The signing process did not complete successfully.')
     } finally {
       inProgress.current = false
     }
@@ -673,7 +674,7 @@ function useCompleteChallenge(claim: ClaimDto) {
     },
     onError: (error) => {
       browserLogger.error(error, 'There was an error when completing your Multisig claim')
-      toast.error('There was an error when completing your Multisig claim')
+      toastSigningError(error, 'There was an error when completing your Multisig claim')
     },
   })
 
