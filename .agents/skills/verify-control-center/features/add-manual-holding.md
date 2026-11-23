@@ -4,7 +4,7 @@ A user tracks bitcoin that isn't in a connected wallet. They give it a name, a b
 
 ## Sub-features
 
-Proves: `add`, `add-disabled`, `detail`, `update-balance`, `update-below-transactions`, `add-transaction`, `transaction-exceeds`, `delete-transaction`, `remove-account`, `cleared-date`
+Proves: `add`, `add-disabled`, `detail`, `update-balance`, `update-below-transactions`, `add-transaction`, `transaction-exceeds`, `sell-exceeds`, `delete-transaction`, `remove-account`, `cleared-date`
 
 ## How to get to it (user POV)
 
@@ -27,7 +27,8 @@ Preconditions: the baseline.
 - **Update balance**: click `Update`. Toast `Balance updated`; Balance `0.60000000 BTC`, Balance As Of `April 1st, 2026`.
 - **Cleared date, transaction**: under `Add Transaction`, leave `Type` on `Buy`, type `1` in `Amount (BTC)` and clear `Date`. Button `Add` is disabled. Set `Date` to `2026-04-10`.
 - **Exceeds**: leave `Add this amount to balance` unticked and click `Add`. Toast `Transaction total would exceed the current balance. Check "Add this amount to balance" or update the balance first.`; no Transactions table appears.
-- **Add a transaction**: change the amount to `0.2`, type `Verify buy` in `Note (optional)`, tick `Add this amount to balance`, click `Add`. Toast `Transaction added`; Balance `0.80000000 BTC`, Balance As Of `April 10th, 2026`, and a Transactions table with one row: `Buy`, `0.20000000`, `Apr 10, 2026`, `Verify buy`.
+- **Oversell**: switch `Type` to `Sell`, change `Amount (BTC)` to `0.8`, tick `Add this amount to balance`, click `Add`. Toast `This would take the balance below zero. Update the balance first, then log the sell.`; Balance stays `0.60000000 BTC` and no Transactions table appears.
+- **Add a transaction**: switch `Type` back to `Buy`, change the amount to `0.2`, type `Verify buy` in `Note (optional)`, leave `Add this amount to balance` ticked, click `Add`. Toast `Transaction added`; Balance `0.80000000 BTC`, Balance As Of `April 10th, 2026`, and a Transactions table with one row: `Buy`, `0.20000000`, `Apr 10, 2026`, `Verify buy`.
 - **Below transactions**: type `0.1` in `New Balance (BTC)` with date `2026-04-20` and click `Update`. Toast `Balance cannot be less than net transaction total (20000000 sats)`; Balance stays `0.80000000 BTC`.
 - **Delete a transaction**: click the row's `Delete`. The dialog `Delete this transaction?` offers an unticked box `Subtract 0.2 BTC from the balance`. Tick it and click the dialog's `Delete`. Toast `Transaction deleted`; the table is gone and Balance is `0.60000000 BTC`.
 - **Second view**: click link `Accounts` in the navigation. A card `Verify Cold Storage` shows `0.60000000 BTC` as Unverified. Open it again.

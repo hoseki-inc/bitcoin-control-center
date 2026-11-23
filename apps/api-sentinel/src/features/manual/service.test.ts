@@ -332,19 +332,471 @@ describe('portfolio history entries', () => {
     await expect(history(service)).resolves.toHaveLength(2)
   })
 
-  it('never saves a balance below zero', async () => {
+  it.each(['sell', 'transfer_out'] as const)(
+    'refuses a checked %s that exceeds the live balance and writes nothing',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '50000000',
+          balanceAsOf: '2026-11-10T12:00:00.000Z',
+        })
+      ).unwrap()
+      await service.recordSnapshot(account.id, '2026-11-12T15:00:00.000Z')
+
+      const result = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '80000000',
+        transactedAt: '2026-11-15T12:00:00.000Z',
+        addToBalance: true,
+      })
+
+      expect(result.unwrapErr().message).toBe(
+        'This would take the balance below zero. Update the balance first, then log the sell.',
+      )
+      const after = await service.getAccount(account.id)
+      expect(after?.balanceSats).toBe('50000000')
+      expect(after?.balanceAsOf).toBe('2026-11-10T12:00:00.000Z')
+      await expect(service.listTransactions(account.id)).resolves.toEqual([])
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-11-10T12:00:00.000Z', balanceSats: '50000000' },
+        { timestamp: '2026-11-12T15:00:00.000Z', balanceSats: '50000000' },
+      ])
+      await expect(history(service)).resolves.toEqual([['2026-11-10T12:00:00.000Z', '50000000']])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'returns the dated message for a back-dated checked %s even when the live balance would also go below zero',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '6000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '2000',
+        balanceAsOf: '2026-09-03T12:00:00.000Z',
+      })
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '4000',
+        balanceAsOf: '2026-09-05T12:00:00.000Z',
+      })
+
+      const result = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '5000',
+        transactedAt: '2026-09-02T12:00:00.000Z',
+        addToBalance: true,
+      })
+
+      expect(result.unwrapErr().message).toBe(
+        'This would take the balance on Sep 3, 2026 below zero. Update the balance first, then log the sell.',
+      )
+      const after = await service.getAccount(account.id)
+      expect(after?.balanceSats).toBe('4000')
+      expect(after?.balanceAsOf).toBe('2026-09-05T12:00:00.000Z')
+      await expect(service.listTransactions(account.id)).resolves.toEqual([])
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '6000' },
+        { timestamp: '2026-09-03T12:00:00.000Z', balanceSats: '2000' },
+        { timestamp: '2026-09-05T12:00:00.000Z', balanceSats: '4000' },
+      ])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'names the earliest failing date when multiple later saved balances would go below zero on a checked %s',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '5000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '1000',
+        balanceAsOf: '2026-09-03T12:00:00.000Z',
+      })
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '2000',
+        balanceAsOf: '2026-09-04T12:00:00.000Z',
+      })
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '10000',
+        balanceAsOf: '2026-09-05T12:00:00.000Z',
+      })
+
+      const result = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '3000',
+        transactedAt: '2026-09-02T12:00:00.000Z',
+        addToBalance: true,
+      })
+
+      expect(result.unwrapErr().message).toBe(
+        'This would take the balance on Sep 3, 2026 below zero. Update the balance first, then log the sell.',
+      )
+      const after = await service.getAccount(account.id)
+      expect(after?.balanceSats).toBe('10000')
+      expect(after?.balanceAsOf).toBe('2026-09-05T12:00:00.000Z')
+      await expect(service.listTransactions(account.id)).resolves.toEqual([])
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+        { timestamp: '2026-09-03T12:00:00.000Z', balanceSats: '1000' },
+        { timestamp: '2026-09-04T12:00:00.000Z', balanceSats: '2000' },
+        { timestamp: '2026-09-05T12:00:00.000Z', balanceSats: '10000' },
+      ])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'accepts a valid checked %s dated before the first saved balance and restores it on ticked delete',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '5000',
+          balanceAsOf: '2026-09-10T12:00:00.000Z',
+        })
+      ).unwrap()
+
+      const added = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '2000',
+        transactedAt: '2026-09-01T12:00:00.000Z',
+        addToBalance: true,
+      })
+
+      expect(added.isOk()).toBe(true)
+      expect((await service.getAccount(account.id))?.balanceSats).toBe('3000')
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([{ timestamp: '2026-09-10T12:00:00.000Z', balanceSats: '3000' }])
+
+      const deleted = await service.deleteTransaction({ transactionId: added.unwrap().id, removeFromBalance: true })
+      expect(deleted.isOk()).toBe(true)
+      expect((await service.getAccount(account.id))?.balanceSats).toBe('5000')
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([{ timestamp: '2026-09-10T12:00:00.000Z', balanceSats: '5000' }])
+      await expect(history(service)).resolves.toEqual([['2026-09-10T12:00:00.000Z', '5000']])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'refuses a back-dated checked %s when a later saved balance would go below zero',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '5000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '2000',
+        balanceAsOf: '2026-09-03T12:00:00.000Z',
+      })
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '10000',
+        balanceAsOf: '2026-09-05T12:00:00.000Z',
+      })
+
+      const result = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '5000',
+        transactedAt: '2026-09-02T12:00:00.000Z',
+        addToBalance: true,
+      })
+
+      expect(result.unwrapErr().message).toBe(
+        'This would take the balance on Sep 3, 2026 below zero. Update the balance first, then log the sell.',
+      )
+      const after = await service.getAccount(account.id)
+      expect(after?.balanceSats).toBe('10000')
+      expect(after?.balanceAsOf).toBe('2026-09-05T12:00:00.000Z')
+      await expect(service.listTransactions(account.id)).resolves.toEqual([])
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+        { timestamp: '2026-09-03T12:00:00.000Z', balanceSats: '2000' },
+        { timestamp: '2026-09-05T12:00:00.000Z', balanceSats: '10000' },
+      ])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'refuses a back-dated checked %s when the saved balance at or before its date would go below zero',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '2000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '10000',
+        balanceAsOf: '2026-09-05T12:00:00.000Z',
+      })
+
+      const between = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '5000',
+        transactedAt: '2026-09-02T12:00:00.000Z',
+        addToBalance: true,
+      })
+      expect(between.unwrapErr().message).toBe(
+        'This would take the balance on Sep 2, 2026 below zero. Update the balance first, then log the sell.',
+      )
+
+      const sameTimestamp = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '5000',
+        transactedAt: '2026-09-01T12:00:00.000Z',
+        addToBalance: true,
+      })
+      expect(sameTimestamp.unwrapErr().message).toBe(
+        'This would take the balance on Sep 1, 2026 below zero. Update the balance first, then log the sell.',
+      )
+
+      const beforeFirst = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '5000',
+        transactedAt: '2026-08-25T12:00:00.000Z',
+        addToBalance: true,
+      })
+      expect(beforeFirst.unwrapErr().message).toBe(
+        'This would take the balance on Sep 1, 2026 below zero. Update the balance first, then log the sell.',
+      )
+
+      const after = await service.getAccount(account.id)
+      expect(after?.balanceSats).toBe('10000')
+      expect(after?.balanceAsOf).toBe('2026-09-05T12:00:00.000Z')
+      await expect(service.listTransactions(account.id)).resolves.toEqual([])
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '2000' },
+        { timestamp: '2026-09-05T12:00:00.000Z', balanceSats: '10000' },
+      ])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'accepts a checked %s equal to the balance and restores it exactly on ticked delete',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '5000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+      await service.recordSnapshot(account.id, '2026-09-03T15:00:00.000Z')
+
+      const added = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '5000',
+        transactedAt: '2026-09-02T12:00:00.000Z',
+        addToBalance: true,
+      })
+      expect(added.isOk()).toBe(true)
+      expect((await service.getAccount(account.id))?.balanceSats).toBe('0')
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+        { timestamp: '2026-09-02T12:00:00.000Z', balanceSats: '0' },
+        { timestamp: '2026-09-03T15:00:00.000Z', balanceSats: '0' },
+      ])
+
+      const deleted = await service.deleteTransaction({ transactionId: added.unwrap().id, removeFromBalance: true })
+      expect(deleted.isOk()).toBe(true)
+      expect((await service.getAccount(account.id))?.balanceSats).toBe('5000')
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+        { timestamp: '2026-09-02T12:00:00.000Z', balanceSats: '5000' },
+        { timestamp: '2026-09-03T15:00:00.000Z', balanceSats: '5000' },
+      ])
+      await expect(history(service)).resolves.toEqual([['2026-09-01T12:00:00.000Z', '5000']])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'accepts a back-dated checked %s equal to a smaller later saved balance and restores it on ticked delete',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '5000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '2000',
+        balanceAsOf: '2026-09-03T12:00:00.000Z',
+      })
+      await service.updateBalance({
+        accountId: account.id,
+        balanceSats: '10000',
+        balanceAsOf: '2026-09-05T12:00:00.000Z',
+      })
+
+      const added = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '2000',
+        transactedAt: '2026-09-02T12:00:00.000Z',
+        addToBalance: true,
+      })
+      expect(added.isOk()).toBe(true)
+      expect((await service.getAccount(account.id))?.balanceSats).toBe('8000')
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots)
+          .orderBy(manualBalanceSnapshots.timestamp),
+      ).resolves.toEqual([
+        { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+        { timestamp: '2026-09-02T12:00:00.000Z', balanceSats: '3000' },
+        { timestamp: '2026-09-03T12:00:00.000Z', balanceSats: '0' },
+        { timestamp: '2026-09-05T12:00:00.000Z', balanceSats: '8000' },
+      ])
+
+      const deleted = await service.deleteTransaction({ transactionId: added.unwrap().id, removeFromBalance: true })
+      expect(deleted.isOk()).toBe(true)
+      expect((await service.getAccount(account.id))?.balanceSats).toBe('10000')
+      await expect(history(service)).resolves.toEqual([
+        ['2026-09-01T12:00:00.000Z', '5000'],
+        ['2026-09-03T12:00:00.000Z', '-3000'],
+        ['2026-09-05T12:00:00.000Z', '8000'],
+      ])
+    },
+  )
+
+  it.each(['sell', 'transfer_out'] as const)(
+    'still accepts an unticked %s larger than the balance without moving the balance',
+    async (type) => {
+      const { db, service } = await setup()
+      const account = (
+        await service.createAccount({
+          displayName: 'Cold',
+          balanceSats: '5000',
+          balanceAsOf: '2026-09-01T12:00:00.000Z',
+        })
+      ).unwrap()
+
+      const added = await service.addTransaction({
+        accountId: account.id,
+        type,
+        amountSats: '8000',
+        transactedAt: '2026-09-02T12:00:00.000Z',
+      })
+      expect(added.isOk()).toBe(true)
+      const after = await service.getAccount(account.id)
+      expect(after?.balanceSats).toBe('5000')
+      expect(after?.balanceAsOf).toBe('2026-09-01T12:00:00.000Z')
+      await expect(service.listTransactions(account.id)).resolves.toHaveLength(1)
+      await expect(
+        db
+          .select({ timestamp: manualBalanceSnapshots.timestamp, balanceSats: manualBalanceSnapshots.balanceSats })
+          .from(manualBalanceSnapshots),
+      ).resolves.toEqual([{ timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' }])
+    },
+  )
+
+  it('clamps saved balances at zero when a ticked delete removes more than they hold', async () => {
     const { db, service } = await setup()
     const account = (
-      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+      await service.createAccount({ displayName: 'Cold', balanceSats: '3000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
     ).unwrap()
-    await service.recordSnapshot(account.id, '2026-09-03T15:00:00.000Z')
     await service.addTransaction({
       accountId: account.id,
       type: 'sell',
-      amountSats: '8000',
-      transactedAt: '2026-09-02T12:00:00.000Z',
-      addToBalance: true,
+      amountSats: '4000',
+      transactedAt: '2026-09-01T13:00:00.000Z',
     })
+    const buy = await service.addTransaction({
+      accountId: account.id,
+      type: 'buy',
+      amountSats: '4000',
+      transactedAt: '2026-09-02T12:00:00.000Z',
+    })
+    await service.updateBalance({
+      accountId: account.id,
+      balanceSats: '2000',
+      balanceAsOf: '2026-09-03T12:00:00.000Z',
+    })
+
+    const deleted = await service.deleteTransaction({ transactionId: buy.unwrap().id, removeFromBalance: true })
+    expect(deleted.isOk()).toBe(true)
     expect((await service.getAccount(account.id))?.balanceSats).toBe('0')
     await expect(
       db
@@ -352,14 +804,38 @@ describe('portfolio history entries', () => {
         .from(manualBalanceSnapshots)
         .orderBy(manualBalanceSnapshots.timestamp),
     ).resolves.toEqual([
-      { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '5000' },
+      { timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '3000' },
       { timestamp: '2026-09-02T12:00:00.000Z', balanceSats: '0' },
-      { timestamp: '2026-09-03T15:00:00.000Z', balanceSats: '0' },
+      { timestamp: '2026-09-03T12:00:00.000Z', balanceSats: '0' },
     ])
     await expect(history(service)).resolves.toEqual([
-      ['2026-09-01T12:00:00.000Z', '5000'],
-      ['2026-09-02T12:00:00.000Z', '-5000'],
+      ['2026-09-01T12:00:00.000Z', '3000'],
+      ['2026-09-02T12:00:00.000Z', '-3000'],
     ])
+  })
+
+  it('does not let concurrent checked sells take the balance below zero', async () => {
+    const { service } = await setup()
+    const account = (
+      await service.createAccount({ displayName: 'Cold', balanceSats: '5000', balanceAsOf: '2026-09-01T12:00:00.000Z' })
+    ).unwrap()
+    const results = await Promise.all(
+      [1, 2].map(async () =>
+        service.addTransaction({
+          accountId: account.id,
+          type: 'sell',
+          amountSats: '3000',
+          transactedAt: '2026-09-02T12:00:00.000Z',
+          addToBalance: true,
+        }),
+      ),
+    )
+    expect(results.map((result) => result.isOk())).toEqual([true, false])
+    expect(results[1]?.unwrapErr().message).toBe(
+      'This would take the balance below zero. Update the balance first, then log the sell.',
+    )
+    expect((await service.getAccount(account.id))?.balanceSats).toBe('2000')
+    await expect(service.listTransactions(account.id)).resolves.toHaveLength(1)
   })
 
   it('counts a transaction logged at the same time as the first balance as part of it', async () => {
