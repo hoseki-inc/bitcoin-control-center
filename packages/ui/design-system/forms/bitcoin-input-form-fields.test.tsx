@@ -246,3 +246,25 @@ it.each([1, 2])('preserves Chakra visibility styles across test documents (%s)',
     expect(getComputedStyle(probe).display).toBe('flex')
   })
 })
+
+it('explains how to abandon and re-add when the script-type balance looks wrong', async () => {
+  await withTestSetup(async () => {
+    await render()
+    await changeValue('#bitcoin-source', Wallets.legacyXpub.toString())
+    const label = host.querySelector('label[for="encoding"]')
+    assert.exists(label)
+    const trigger = label.parentElement?.querySelector('svg')
+    assert.exists(trigger)
+    await act(async () => {
+      trigger.dispatchEvent(new window.MouseEvent('pointerover', { bubbles: true }))
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 0)
+      })
+    })
+    const tooltip = document.querySelector('[role="tooltip"]')
+    assert.exists(tooltip)
+    expect(tooltip.textContent).toBe(
+      "Select your wallet's script type. If you're unsure, add the account and check its balance. If the balance looks wrong, open the pending account from Accounts, click Abandon, then add it again with another script type.",
+    )
+  })
+})
