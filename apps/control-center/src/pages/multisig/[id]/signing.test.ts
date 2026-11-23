@@ -23,7 +23,7 @@ import { MultisigPageWrapper, getIndicatorKeystores } from '../../../components/
 import { type QrCamera, type QrCameraFactory, QrCameraProvider } from '../../../components/qr/bbqr-scanner'
 import { useLedgerStore } from '../../../hooks/use-ledger-store'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
-import { TestTrpcProvider, createTestTrpcClient } from '../../../testing/trpc'
+import { TestTrpcProvider, badRequest, createTestTrpcClient, internalError } from '../../../testing/trpc'
 import { type RouterOutput, trpc } from '../../../trpc'
 import type { ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
 import { MultisigDetailsPage } from './index'
@@ -1070,6 +1070,68 @@ describe.each(['coldcard-file', 'coldcard-qr', 'keystone'] as const)('%s multisi
       expect(mocks.fetchClaim).not.toHaveBeenCalled()
     }, setupAirgappedSigning)
   })
+
+  it('surfaces the server reason in the banner and toast when challengeMessages.complete rejects with BAD_REQUEST', async () => {
+    await withTestSetup(async () => {
+      mocks.completeMessage.mockRejectedValueOnce(badRequest('Invalid signature'))
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      await waitForText('Invalid signature')
+      expect(mocks.toastError).toHaveBeenCalledWith('The signing process did not complete successfully.', {
+        description: 'Invalid signature',
+      })
+      expect(mocks.fetchClaim).not.toHaveBeenCalled()
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      expect(mocks.navigate).not.toHaveBeenCalled()
+    }, setupAirgappedSigning)
+  })
+
+  it('falls back to generic copy without leaking internal errors on challengeMessages.complete', async () => {
+    await withTestSetup(async () => {
+      mocks.completeMessage.mockRejectedValueOnce(internalError('SQLITE_BUSY: database is locked'))
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      await waitForText('Error completing challenge message')
+      expect(mocks.toastError).toHaveBeenCalledWith('The signing process did not complete successfully.')
+      expect(mocks.toastError.mock.calls).toEqual([['The signing process did not complete successfully.']])
+      expect(container.textContent).not.toContain('SQLITE_BUSY')
+      expect(document.body.textContent).not.toContain('SQLITE_BUSY')
+      expect(mocks.fetchClaim).not.toHaveBeenCalled()
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      expect(mocks.navigate).not.toHaveBeenCalled()
+    }, setupAirgappedSigning)
+  })
+
+  it('includes the server reason in the multisig completion toast when challenges.complete rejects with BAD_REQUEST', async () => {
+    await withTestSetup(async () => {
+      const challenge = mocks.claim.latestChallenge
+      assert.exists(challenge, 'Expected the claim challenge')
+      assert.exists(challenge.messages[0], 'Expected the first challenge message')
+      assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
+      challenge.messages.push({
+        ...challenge.messages[0],
+        keystoreId: mocks.claim.keystores[1].id,
+        signedMessageId: 're_mesg_message0',
+        signed: true,
+      })
+      mocks.completeChallenge.mockRejectedValueOnce(badRequest('Challenge is not satisfied'))
+      await renderSigningRoute()
+      await reachAirgappedSigning(flow)
+      await submitAirgappedSignature(flow)
+      await vi.waitFor(() => {
+        expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim', {
+          description: 'Challenge is not satisfied',
+        })
+      })
+      expect(mocks.toastError).toHaveBeenCalledWith('The signing process did not complete successfully.', {
+        description: 'Challenge is not satisfied',
+      })
+      expect(mocks.navigate).not.toHaveBeenCalled()
+      expect(mocks.fetchClaim).not.toHaveBeenCalled()
+    }, setupAirgappedSigning)
+  })
 })
 
 describe('Trezor connection callback', () => {
@@ -1208,6 +1270,35 @@ it('resumes final verification from saved signatures and permits retry without s
     expect(mocks.ledger.signMessage).not.toHaveBeenCalled()
     expect(mocks.trezorSign).not.toHaveBeenCalled()
     expect(mocks.completeChallenge).toHaveBeenCalledTimes(2)
+  })
+})
+
+it('shows the server reason when FinishSavedChallenge rejects with BAD_REQUEST', async () => {
+  await withTestSetup(async () => {
+    const challenge = mocks.claim.latestChallenge
+    assert.exists(challenge, 'Expected the claim challenge')
+    assert.exists(challenge.messages[0], 'Expected the first challenge message')
+    assert.exists(mocks.claim.keystores[1], 'Expected the second keystore')
+    mocks.claim = {
+      ...mocks.claim,
+      latestChallenge: {
+        ...challenge,
+        messages: [
+          { ...challenge.messages[0], signed: true },
+          { ...challenge.messages[0], keystoreId: mocks.claim.keystores[1].id, signed: true },
+        ],
+      },
+    }
+    mocks.fetchClaim.mockResolvedValue(mocks.claim)
+    mocks.completeChallenge.mockRejectedValueOnce(badRequest('Archived claims cannot complete verification'))
+    await renderSigningRoute(true)
+    await clickButton('Finish verification')
+    await vi.waitFor(() => {
+      expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim', {
+        description: 'Archived claims cannot complete verification',
+      })
+    })
+    expect(mocks.navigate).not.toHaveBeenCalled()
   })
 })
 

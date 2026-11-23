@@ -303,6 +303,7 @@
     "control-center/exchange-provider-errors": "error",
     "control-center/feature-boundary": "error",
     "control-center/format-usd-rounds": "error",
+    "control-center/no-swallowed-signing-error": "error",
     "control-center/use-text-style": "error"
   },
   "overrides": [

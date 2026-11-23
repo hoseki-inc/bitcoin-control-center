@@ -8,11 +8,11 @@ import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/util
 import type { BitcoinInput } from '@hoseki/packages/ui/utils/bitcoin'
 import { WizardFooter } from '@hoseki/packages/ui/wallet-ui'
 import { useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { useBitcoinAccountBalances } from '../../../lib/balance/bitcoin-account'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
+import { toastSigningError } from '../../../utils/signing-error-message'
 import type { ClaimingState } from './shared'
 
 export function ManualSigning({
@@ -78,8 +78,8 @@ function BitcoinSigningStep({
       await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
 
       onSuccess(claimingState.claimId)
-    } catch {
-      toast.error("Couldn't verify this account")
+    } catch (cause) {
+      toastSigningError(cause, "Couldn't verify this account")
     }
   }
 
