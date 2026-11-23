@@ -28,12 +28,24 @@ interface CapturedRequest {
   method: string
 }
 
-async function stubRobinhoodHttps(responder: (args: CapturedRequest) => { status: number; body: string }) {
+async function stubRobinhoodHttps(
+  responder: (args: CapturedRequest) => { status: number; body: string; truncate?: boolean },
+) {
   const requests: CapturedRequest[] = []
   const server = http.createServer((req, res) => {
     const captured = { path: req.url ?? '', method: req.method ?? 'GET' }
     requests.push(captured)
     const reply = responder(captured)
+    if (reply.truncate === true) {
+      res.writeHead(reply.status, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(reply.body) + 100,
+      })
+      res.write(reply.body, () => {
+        res.destroy()
+      })
+      return
+    }
     res.writeHead(reply.status, { 'Content-Type': 'application/json' })
     res.end(reply.body)
   })
@@ -136,6 +148,19 @@ describe('RobinhoodClient', () => {
     if (err instanceof RobinhoodApiError) {
       expect(err.status).toBe(429)
     }
+  })
+
+  it('returns an error when a holdings response is cut off mid-body', async () => {
+    await stubRobinhoodHttps(() => ({
+      status: 200,
+      body: '{"results":[{"account_number":"123"',
+      truncate: true,
+    }))
+
+    const client = new RobinhoodClient(makeTestCredentials())
+    const result = await client.getHoldings()
+
+    expect(result.isErr()).toBe(true)
   })
 
   it('returns an error when /accounts/ response is missing account_number', async () => {

@@ -99,6 +99,12 @@ async function httpsRequest(options: {
         res.on('data', (chunk: Uint8Array) => {
           chunks.push(chunk)
         })
+        res.on('error', reject)
+        res.on('close', () => {
+          if (!res.complete) {
+            reject(new Error('Robinhood response closed before it was complete'))
+          }
+        })
         res.on('end', () => {
           resolve({
             status: res.statusCode ?? 0,
