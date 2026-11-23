@@ -1,24 +1,19 @@
-import { Box, Button, HStack, Icon, Stack, type StackProps, Text, chakra } from '@chakra-ui/react'
+import { Box, Button, HStack, Stack, type StackProps, Text, chakra } from '@chakra-ui/react'
 import { HowDoesThisWork } from '@hoseki/packages/ui/design-system'
 import {
-  AccountsList,
   type ColdcardGenericJsonFile,
   type ColdcardModel,
   type HardwareWallet,
-  IconWrapper,
   NavigationArrows,
-  ScanningInProgress,
-  SingleAccount,
   WalletAnimation,
   WizardFooter,
   getColdcardAnimation,
   parseGenericJsonFile,
 } from '@hoseki/packages/ui/wallet-ui'
-import { CircleXIcon } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { BBQrScanner } from '../../qr/bbqr-scanner'
-import { ClaimErrorMessage } from '../claim-error-message'
+import { ScannedAccounts, findMatchingWallet } from '../scanned-accounts'
 import { ColdcardModelImage } from './coldcard-steps'
 import { useColdcardAccountsWithBalances } from './use-coldcard-accounts-with-balances'
 
@@ -288,40 +283,39 @@ function AccountSelectionStep({
   isLoadingOnNext: boolean
   onNext: () => void
 } & StackProps): JSX.Element {
-  const { isLoading, error, data: wallets } = useColdcardAccountsWithBalances(coldcardJson, model)
+  const { isLoading, isFetching, error, data: wallets, refetch } = useColdcardAccountsWithBalances(coldcardJson, model)
+  const isScanning = isLoading || isFetching
+  const matchingSelectedWallet = findMatchingWallet(wallets, selectedWallet)
 
   useEffect(() => {
-    if (wallets.length === 1 && wallets[0] && !selectedWallet) {
-      setSelectedWallet(wallets[0])
+    if (isScanning || error) {
+      return
     }
-  }, [wallets, selectedWallet, setSelectedWallet])
+    if (matchingSelectedWallet) {
+      return
+    }
+    if (wallets.length === 1 && wallets[0]) {
+      setSelectedWallet(wallets[0])
+    } else if (selectedWallet) {
+      setSelectedWallet(null)
+    }
+  }, [isScanning, error, wallets, selectedWallet, matchingSelectedWallet, setSelectedWallet])
 
   return (
     <Stack pt={16} gap={4} alignItems="center" {...rest}>
       <ColdcardModelImage model={model} />
 
-      {isLoading && <ScanningInProgress />}
-      {error && <ClaimErrorMessage error={error.message} />}
-
-      {wallets[0] && wallets.length === 1 && <SingleAccount wallet={wallets[0]} setWallet={setSelectedWallet} />}
-
-      {wallets.length > 1 && (
-        <AccountsList wallets={wallets} selectedWallet={selectedWallet} setWallet={setSelectedWallet} />
-      )}
-
-      {!isLoading && wallets.length === 0 && (
-        <Stack align="center" gap={2}>
-          <IconWrapper>
-            <Icon as={CircleXIcon} stroke="error.500" boxSize="38px" />
-          </IconWrapper>
-          <Text textStyle="text/2xl" fontWeight="medium" color="neutral.900">
-            Scan complete.
-          </Text>
-          <Text textStyle="text/md" color="neutral.900">
-            We were unable to find any accounts with a non-zero balance.
-          </Text>
-        </Stack>
-      )}
+      <ScannedAccounts
+        isLoading={isLoading}
+        isFetching={isFetching}
+        error={error}
+        wallets={wallets}
+        selectedWallet={selectedWallet}
+        setSelectedWallet={setSelectedWallet}
+        onRetry={() => {
+          void refetch()
+        }}
+      />
 
       <WizardFooter
         leftButton={
@@ -330,7 +324,10 @@ function AccountSelectionStep({
           </Button>
         }
         rightButton={
-          selectedWallet && (
+          !isScanning &&
+          !error &&
+          wallets.length > 0 &&
+          matchingSelectedWallet && (
             <Button onClick={onNext} isDisabled={isLoadingOnNext}>
               Yes, Continue
             </Button>

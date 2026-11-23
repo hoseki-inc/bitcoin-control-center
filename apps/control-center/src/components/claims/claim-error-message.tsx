@@ -1,18 +1,36 @@
-import { Text } from '@chakra-ui/react'
+import { Text, chakra } from '@chakra-ui/react'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
 import { Link } from 'react-router'
 
-export function ClaimErrorMessage({ error }: { error: unknown }): JSX.Element {
-  const message = error instanceof Error ? error.message : 'An unexpected error occurred'
+export type ClaimError = { readonly message: string }
+
+export function ClaimErrorMessage({ error, onRetry }: { error: ClaimError; onRetry?: () => void }): JSX.Element {
+  const trimmed = error.message.trim()
+  const message = trimmed !== '' ? trimmed : 'An unexpected error occurred'
 
   return (
     <ErrorBanner
       mb={4}
+      w="full"
       message={message}
       rightContent={
-        <Text as={Link} to="/accounts">
-          Retry
-        </Text>
+        onRetry ? (
+          <chakra.button
+            type="button"
+            textStyle="text/sm"
+            fontWeight="semibold"
+            flexShrink={0}
+            cursor="pointer"
+            _hover={{ textDecoration: 'underline' }}
+            onClick={onRetry}
+          >
+            Retry
+          </chakra.button>
+        ) : (
+          <Text as={Link} to="/accounts" textStyle="text/sm" fontWeight="semibold" flexShrink={0}>
+            Retry
+          </Text>
+        )
       }
     />
   )

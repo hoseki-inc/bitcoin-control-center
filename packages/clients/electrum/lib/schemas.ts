@@ -39,8 +39,8 @@ export type HeaderNotification = z.infer<typeof HeaderNotificationSchema>
 
 /** Response from `blockchain.scripthash.get_balance` */
 export const ScripthashBalanceSchema = z.object({
-  confirmed: z.number(),
-  unconfirmed: z.number(),
+  confirmed: z.number().int(),
+  unconfirmed: z.number().int(),
 })
 export type ScripthashBalance = z.infer<typeof ScripthashBalanceSchema>
 
