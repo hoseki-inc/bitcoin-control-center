@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { trpc } from '../../../trpc'
 import type { ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
+import { toastSigningError } from '../../../utils/signing-error-message'
 import { GenericError } from '../../errors/generic-error'
 import { BBQrDisplay } from '../../qr/bbqr-display'
 import { BBQrScanner } from '../../qr/bbqr-scanner'
@@ -260,8 +261,8 @@ function KeystoneSignScanSignature({
         await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
         onSigningComplete()
       }
-    } catch {
-      toast.error('The signing process did not complete successfully.')
+    } catch (cause) {
+      toastSigningError(cause, 'The signing process did not complete successfully.')
       setIsSubmitting(false)
     }
   }
