@@ -27,13 +27,23 @@ const RobinhoodHoldingSchema = z.object({
 
 export type RobinhoodHolding = z.infer<typeof RobinhoodHoldingSchema>
 
+const RobinhoodAccountSchema = z.object({
+  account_number: z.string(),
+  status: z.string().optional(),
+  buying_power: z.string().optional(),
+  buying_power_currency: z.string().optional(),
+})
+
+export type RobinhoodAccount = z.infer<typeof RobinhoodAccountSchema>
+
 const RobinhoodOrderSchema = z.object({
   id: z.string(),
+  account_number: z.string().optional(),
   state: z.string(),
   symbol: z.string(),
   side: z.string(),
   type: z.string(),
-  average_price: z.string().optional(),
+  average_price: z.string().nullable().optional(),
   filled_asset_quantity: z.string().optional(),
   created_at: z.string().optional(),
   updated_at: z.string().optional(),
@@ -184,23 +194,13 @@ export class RobinhoodClient {
     }
 
     if (response.status === 401 || response.status === 403) {
-      return Err(
-        new RobinhoodApiError(
-          response.status,
-          `Robinhood API auth failed (${response.status}): ${response.body || 'Unknown error'}`,
-        ),
-      )
+      return Err(new RobinhoodApiError(response.status, `Robinhood API auth failed (${response.status})`))
     }
     if (response.status === 429) {
-      return Err(new RobinhoodApiError(429, 'Robinhood API rate limit exceeded. Try again later.'))
+      return Err(new RobinhoodApiError(429, 'Robinhood API rate limit exceeded'))
     }
     if (response.status < 200 || response.status >= 300) {
-      return Err(
-        new RobinhoodApiError(
-          response.status,
-          `Robinhood API error: ${response.status}${response.body ? ` — ${response.body}` : ''}`,
-        ),
-      )
+      return Err(new RobinhoodApiError(response.status, `Robinhood API error (${response.status})`))
     }
 
     let responseBody: unknown
@@ -236,6 +236,34 @@ export class RobinhoodClient {
     }
 
     return Ok(allResults)
+  }
+
+  public async getAccount(): Promise<Result<RobinhoodAccount, Error>> {
+    return this.request('/api/v1/crypto/trading/accounts/', RobinhoodAccountSchema)
+  }
+
+  public async findAccountNumberFromOrders(): Promise<Result<string | null, Error>> {
+    const schema = paginatedSchema(RobinhoodOrderSchema)
+    let nextUrl: string | null = '/api/v1/crypto/trading/orders/'
+
+    while (nextUrl != null && nextUrl !== '') {
+      const fullPath: string = nextUrl.startsWith('http') ? nextUrl.replace(`https://${BASE_HOST}`, '') : nextUrl
+      const result: Result<PaginatedResponse<RobinhoodOrder>, Error> = await this.request(fullPath, schema)
+      if (result.isErr()) {
+        return Err(result.unwrapErr())
+      }
+
+      const page = result.unwrap()
+      for (const order of page.results) {
+        const accountNumber = order.account_number?.trim()
+        if (accountNumber != null && accountNumber !== '') {
+          return Ok(accountNumber)
+        }
+      }
+      nextUrl = page.next
+    }
+
+    return Ok(null)
   }
 
   /**

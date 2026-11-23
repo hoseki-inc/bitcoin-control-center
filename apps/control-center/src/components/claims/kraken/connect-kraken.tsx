@@ -20,6 +20,11 @@ import { z } from 'zod'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
 import { ExchangeConnected, ExchangeConnecting } from '../exchange-connection'
+import {
+  type ExchangeConnectErrorState,
+  ExchangeReconnectError,
+  parseExchangeConnectError,
+} from '../exchange-reconnect-error'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchanges']['kraken']['connect']
 
@@ -41,6 +46,8 @@ export function ConnectKraken(): JSX.Element {
   const isReconnect = Boolean(replaceAccountId)
   const [step, setStep] = useState<Step>('form')
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null)
+  const [completedAsReconnect, setCompletedAsReconnect] = useState(isReconnect)
+  const [submitError, setSubmitError] = useState<ExchangeConnectErrorState | null>(null)
 
   const utils = trpc.useUtils()
   const connectMutation = trpc.portalProve.exchanges.kraken.connect.useMutation()
@@ -48,29 +55,50 @@ export function ConnectKraken(): JSX.Element {
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<KrakenFormData>({
     resolver: zodResolver(krakenFormSchema),
     defaultValues: { apiKey: '', secretKey: '' },
   })
 
-  async function onSubmit(data: KrakenFormData): Promise<void> {
+  async function submitConnection(data: KrakenFormData, options: { asNewAccount: boolean }): Promise<void> {
+    setSubmitError(null)
     setStep('loading')
+    const targetReplaceId = options.asNewAccount ? undefined : replaceAccountId
     try {
       const account = await connectMutation.mutateAsync({
         apiKey: data.apiKey,
         secretKey: data.secretKey,
-        replaceAccountId,
+        replaceAccountId: targetReplaceId,
       })
       setConnectedAccount(account)
+      setCompletedAsReconnect(Boolean(targetReplaceId))
       setStep('success')
       void utils.portalProve.portfolio.getData.invalidate()
       void utils.portalProve.exchanges.list.invalidate()
+      void utils.portalProve.exchanges.kraken.list.invalidate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to connect Kraken account'
-      toast.error(message)
+      const parsed =
+        err instanceof Error
+          ? parseExchangeConnectError(err, 'Failed to connect Kraken account')
+          : { message: 'Failed to connect Kraken account', isMismatch: false }
+      reset(data)
+      setSubmitError(parsed)
       setStep('form')
     }
+  }
+
+  async function onSubmit(data: KrakenFormData): Promise<void> {
+    await submitConnection(data, { asNewAccount: false })
+  }
+
+  function handleConnectAsNew(): void {
+    handleSubmit(async (data) => {
+      await submitConnection(data, { asNewAccount: true })
+    })().catch(() => {
+      toast.error('Unable to submit the connection form. Please try again.')
+    })
   }
 
   if (step === 'loading') {
@@ -79,7 +107,12 @@ export function ConnectKraken(): JSX.Element {
 
   if (step === 'success' && connectedAccount) {
     return (
-      <ExchangeConnected exchange="kraken" account={connectedAccount} isReconnect={isReconnect} returnTo={returnTo} />
+      <ExchangeConnected
+        exchange="kraken"
+        account={connectedAccount}
+        isReconnect={completedAsReconnect}
+        returnTo={completedAsReconnect ? returnTo : '/accounts'}
+      />
     )
   }
 
@@ -103,6 +136,10 @@ export function ConnectKraken(): JSX.Element {
           <Text textStyle="text/md" color="neutral.600">
             Enter your Kraken API credentials to import your Bitcoin balance. Only read-only access is required.
           </Text>
+
+          {submitError !== null ? (
+            <ExchangeReconnectError exchangeName="Kraken" error={submitError} onConnectAsNew={handleConnectAsNew} />
+          ) : null}
 
           {/* Form fields */}
           <Stack gap={4}>

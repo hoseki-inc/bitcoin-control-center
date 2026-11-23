@@ -6,8 +6,8 @@
     "fault": "Needs helpers/verify fault, which makes a fake fail on demand, or a Sentinel restart mid-run.",
     "pin": "Needs helpers/verify launch --pin: PINs on with Umbrel's rules and the run's test PIN.",
     "desktop-web": "Needs helpers/verify launch --desktop: the desktop web app and Sentinel's --desktop options, driven in a browser.",
-    "electron": "Needs the Electron app run from source with its own data folder, driven with computer use.",
-    "packaged": "Needs a packaged desktop build.",
+    "electron": "Needs helpers/verify launch --electron: the packaged macOS Electron app with its own scratch data folder, driven over CDP (or helpers/verify smoke).",
+    "packaged": "Needs helpers/verify launch --electron: a packaged macOS desktop build (use --release-tag <tag> for release-notice flows).",
     "emulator": "Needs a hardware wallet emulator.",
     "camera": "Needs QR camera input.",
     "exchange-fake": "Needs a local fake of the exchange APIs; Sentinel calls the real hosts today.",
@@ -405,7 +405,8 @@
             {
               "file": "onboarding-server-own-node.md",
               "proves": ["own-node-form", "own-node-validation", "own-node-connect-failed", "own-node-connected"]
-            }
+            },
+            { "file": "onboarding-server-tor.md", "proves": ["tor"] }
           ]
         }
       ]
@@ -1775,7 +1776,8 @@
               "file": "statement-details.md",
               "proves": ["format-switch", "delete", "close", "contact-na", "unknown-id"]
             },
-            { "file": "statement-details-failed.md", "proves": ["failed-statement"] }
+            { "file": "statement-details-failed.md", "proves": ["failed-statement"] },
+            { "file": "statement-pdf-download.md", "proves": ["pdf-preview", "download"] }
           ]
         }
       ]
@@ -2020,7 +2022,8 @@
                 "unsaved-changes",
                 "invalid"
               ]
-            }
+            },
+            { "file": "settings-electrum-tor.md", "proves": ["tor"] }
           ]
         }
       ]
@@ -2197,7 +2200,8 @@
           ],
           "recipes": [
             { "file": "notices-public-server.md", "proves": ["public-server", "public-hidden-on-own-node"] },
-            { "file": "notices-dismiss.md", "proves": ["public-dismiss"] }
+            { "file": "notices-dismiss.md", "proves": ["public-dismiss"] },
+            { "file": "notices-release.md", "proves": ["release", "release-dismiss"] }
           ]
         }
       ]
@@ -2237,7 +2241,8 @@
               "kind": "edge",
               "does": "The desktop app always asks for a PIN, so setup comes first"
             }
-          ]
+          ],
+          "recipes": [{ "file": "desktop-shell.md", "proves": ["close-to-hide", "single-instance", "pin-first"] }]
         },
         {
           "id": "desktop-ledger-picker",

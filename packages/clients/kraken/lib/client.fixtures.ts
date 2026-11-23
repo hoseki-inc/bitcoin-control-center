@@ -46,11 +46,20 @@ export function setupKrakenRequest(clockStep: number): SignatureScenario {
     vi.fn<typeof fetch>(async (input, init) => {
       outgoing = new Request(input, init)
       const path = new URL(outgoing.url).pathname
-      expect(['/0/private/Balance', '/0/private/Ledgers'], 'Unexpected Kraken endpoint').toContain(path)
+      expect(
+        ['/0/private/Balance', '/0/private/Ledgers', '/0/private/GetApiKeyInfo'],
+        'Unexpected Kraken endpoint',
+      ).toContain(path)
+
+      const result = path.endsWith('/Balance')
+        ? { XXBT: '1.0' }
+        : path.endsWith('/GetApiKeyInfo')
+          ? { iban: 'AA88 N84G WOAK NMOI', permissions: ['query-funds', 'query-ledger-entries'] }
+          : { ledger: {}, count: 0 }
 
       return Response.json({
         error: [],
-        result: path.endsWith('/Balance') ? { XXBT: '1.0' } : { ledger: {}, count: 0 },
+        result,
       })
     }),
   )
