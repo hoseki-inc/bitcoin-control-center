@@ -259,16 +259,32 @@ export type LaunchDecision = { action: 'start' } | { action: 'running' } | { act
 
 /** What launch should do with a run ID, given what already exists for it. */
 export function launchDecision(run: {
-  alive: { fresh: boolean; desktop: boolean; pin: boolean } | null
+  alive: {
+    fresh: boolean
+    desktop: boolean
+    pin: boolean
+    electron?: boolean
+    setupPinInUi?: boolean
+    releaseTag?: string
+  } | null
   folderExists: boolean
   evidenceExists: boolean
   fresh: boolean
   desktop: boolean
   pin: boolean
+  electron?: boolean
+  setupPinInUi?: boolean
+  releaseTag?: string
 }): LaunchDecision {
   if (run.alive !== null) {
     if (run.fresh && !run.alive.fresh) {
       return { action: 'refuse', reason: 'is already running seeded, not fresh. Launch a new run ID with --fresh.' }
+    }
+    const wantElectron = run.electron === true
+    const aliveElectron = run.alive.electron === true
+    if (wantElectron !== aliveElectron) {
+      const kind = aliveElectron ? 'as the packaged Electron app' : 'without the Electron shell'
+      return { action: 'refuse', reason: `is already running ${kind}. Launch a new run ID.` }
     }
     if (run.desktop !== run.alive.desktop) {
       const kind = run.alive.desktop ? 'as the desktop app' : 'as the standalone app'
@@ -277,6 +293,15 @@ export function launchDecision(run: {
     if (run.pin !== run.alive.pin) {
       const kind = run.alive.pin ? 'with PINs on' : 'with PINs off'
       return { action: 'refuse', reason: `is already running ${kind}. Launch a new run ID.` }
+    }
+    const wantSetupPin = run.setupPinInUi === true
+    const aliveSetupPin = run.alive.setupPinInUi === true
+    if (wantSetupPin !== aliveSetupPin) {
+      const kind = aliveSetupPin ? 'with --setup-pin-in-ui' : 'with PIN already set'
+      return { action: 'refuse', reason: `is already running ${kind}. Launch a new run ID.` }
+    }
+    if (run.releaseTag !== run.alive.releaseTag) {
+      return { action: 'refuse', reason: 'is already running with a different --release-tag. Launch a new run ID.' }
     }
     return { action: 'running' }
   }
@@ -287,6 +312,61 @@ export function launchDecision(run: {
     return { action: 'refuse', reason: 'already has evidence from an earlier run. Use a new run ID.' }
   }
   return { action: 'start' }
+}
+
+export type TorMode = 'online' | 'allow-offline'
+
+export interface TorOutcome {
+  status: 'connected' | 'offline-unverified' | 'failed'
+  detail: string
+}
+
+/**
+ * Classifies a Tor bootstrap outcome after polling `electrumStatus.tor`.
+ * In `allow-offline`, a missing binary, spawn error, unexpected exit, or failure before the local
+ * SOCKS listener binds is STILL a hard failure — only a post-SOCKS bootstrap timeout becomes `offline-unverified`.
+ */
+export function classifyTorOutcome(
+  mode: TorMode,
+  tor: {
+    state: 'stopped' | 'starting' | 'ready' | 'failed' | 'unavailable'
+    message?: string
+    socksReady?: boolean
+    progress?: number
+  },
+  torDataExists: boolean,
+): TorOutcome {
+  if (tor.state === 'unavailable') {
+    return { status: 'failed', detail: 'Bundled Tor is unavailable in Sentinel' }
+  }
+  if (!torDataExists) {
+    return { status: 'failed', detail: 'Scratch tor-data directory was not created' }
+  }
+  if (tor.state === 'ready') {
+    return tor.socksReady === true
+      ? { status: 'connected', detail: 'Bundled Tor bound local SOCKS listener and bootstrapped to 100%' }
+      : { status: 'failed', detail: 'Tor reported ready without binding its local SOCKS listener' }
+  }
+  if (tor.socksReady !== true) {
+    return {
+      status: 'failed',
+      detail: `Bundled Tor failed before binding local SOCKS listener (state=${tor.state}${tor.message !== undefined ? `: ${tor.message}` : ''})`,
+    }
+  }
+  if (tor.state === 'failed' && tor.message !== undefined && !tor.message.includes('two minutes')) {
+    return { status: 'failed', detail: `Bundled Tor failed after SOCKS bind: ${tor.message}` }
+  }
+  const progressText = tor.progress !== undefined ? ` at ${tor.progress}%` : ''
+  if (mode === 'allow-offline') {
+    return {
+      status: 'offline-unverified',
+      detail: `Bundled Tor binary started and bound SOCKS, but network bootstrap did not finish${progressText} (allow-offline)`,
+    }
+  }
+  return {
+    status: 'failed',
+    detail: `Bundled Tor bound SOCKS but did not finish bootstrapping${progressText}${tor.message !== undefined ? `: ${tor.message}` : ''}`,
+  }
 }
 
 /**

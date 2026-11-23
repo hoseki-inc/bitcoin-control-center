@@ -4,9 +4,9 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../../../.." && pwd)"
 command="${1:-}"
 case "$command" in
-  launch | seed | doctor | query | fault | evidence | cleanup) shift ;;
+  launch | seed | doctor | query | fault | evidence | cleanup | smoke) shift ;;
   *)
-    echo "Usage: helpers/verify launch|seed|doctor|query|fault|evidence|cleanup [args]" >&2
+    echo "Usage: helpers/verify launch|seed|doctor|query|fault|evidence|cleanup|smoke [args]" >&2
     exit 2
     ;;
 esac
