@@ -11,6 +11,8 @@ export interface TorStatus {
   progress?: number
   /** Counts start attempts, so callers can tell a new failure from an earlier one. */
   attempt?: number
+  /** True once Tor has bound its local loopback SOCKS listener. */
+  socksReady?: boolean
 }
 
 export class TorManager {
@@ -25,6 +27,7 @@ export class TorManager {
   // Tor chooses a free loopback port when it starts, so no other program can
   // claim the port between selection and binding.
   private socksPort: number | null = null
+  private socksBound = false
 
   private readonly appDataDir: string
   private readonly binaryPath: string
@@ -47,7 +50,11 @@ export class TorManager {
   }
 
   public getStatus(): TorStatus {
-    return { ...this.status, attempt: this.attempts }
+    const status: TorStatus = { ...this.status, attempt: this.attempts }
+    if (this.socksBound) {
+      status.socksReady = true
+    }
+    return status
   }
 
   /** The SOCKS proxy of a ready Tor process, or null while Tor is not ready. */
@@ -64,6 +71,7 @@ export class TorManager {
     }
     // Report the start immediately so a caller polling status never sees a stale failure.
     this.attempts += 1
+    this.socksBound = false
     this.status = { state: 'starting', progress: 0 }
     this.starting = this.launch().finally(() => {
       this.starting = null
@@ -76,6 +84,7 @@ export class TorManager {
     if (this.stopped) {
       return this.getStatus()
     }
+    this.socksBound = false
     this.status = { state: 'starting', progress: 0 }
     const dataDir = path.join(this.appDataDir, 'tor-data')
     try {
@@ -133,6 +142,7 @@ export class TorManager {
         const listener = /Opened Socks listener connection \(ready\) on 127\.0\.0\.1:(\d+)/.exec(buffer)
         if (listener && this.child === child) {
           this.socksPort = Number(listener[1])
+          this.socksBound = true
         }
         if (/Bootstrapped 100%[^\n]*Done/.test(buffer)) {
           if (this.socksPort === null) {
@@ -181,6 +191,7 @@ export class TorManager {
       return this.stopping
     }
     this.stopped = true
+    this.socksBound = false
     this.status = { state: 'stopped' }
     this.finishStart?.()
     this.stopping = this.terminateChild()

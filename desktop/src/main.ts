@@ -13,6 +13,7 @@ import { createQuitHandler } from './shutdown'
 import { configureDesktopTlsTrust } from './tls-trust'
 import { TorManager } from './tor'
 import { setupTray } from './tray'
+import { type DesktopVerifyConfig, VERIFY_CONFIG_ENV, loadDesktopVerifyConfig } from './verify-config'
 import { setupWalletAccess } from './wallet-access'
 import { setupWindowPolicy } from './window-policy'
 
@@ -30,6 +31,15 @@ let tray: Tray | null = null
 let quitting = false
 let startup: Promise<void> | null = null
 
+let verifyConfig: DesktopVerifyConfig | null = null
+try {
+  verifyConfig = loadDesktopVerifyConfig(process.env[VERIFY_CONFIG_ENV], app.getPath('appData'))
+} catch (error: unknown) {
+  const message = error instanceof Error ? error.message : String(error)
+  console.error(`Refusing to start with invalid ${VERIFY_CONFIG_ENV}: ${message}`)
+  app.exit(1)
+}
+
 function showMainWindow(): void {
   if (!mainWindow || mainWindow.isDestroyed()) {
     return
@@ -43,6 +53,10 @@ function showMainWindow(): void {
 
 function openExternal(url: string): void {
   void shell.openExternal(url).catch(() => {
+    if (verifyConfig) {
+      console.error('Could not open external link in verify mode')
+      return
+    }
     dialog.showErrorBox('Could not open link', 'Open your browser and try the link again.')
   })
 }
@@ -61,21 +75,40 @@ async function start(): Promise<void> {
   )
 
   const serverDir = path.join(__dirname, '..', 'server')
+  const electrumEnv = verifyConfig
+    ? {
+        ELECTRUM_HOST: verifyConfig.electrum.host,
+        ELECTRUM_PORT: String(verifyConfig.electrum.port),
+        ELECTRUM_PROTOCOL: verifyConfig.electrum.protocol,
+        MEMPOOL_API_URL: verifyConfig.mempoolApiUrl,
+      }
+    : {
+        ELECTRUM_HOST: 'electrum.blockstream.info',
+        ELECTRUM_PORT: '50002',
+        ELECTRUM_PROTOCOL: 'ssl',
+        MEMPOOL_API_URL: 'https://mempool.space',
+      }
   Object.assign(process.env, {
     DATA_DIR: dataDir,
     APP_DIR: serverDir,
     // Bind one explicit loopback address. With "localhost", Fastify ignores a failed
     // second address, so another service could answer the window on this port.
     HOST: LOOPBACK_HOST,
-    ELECTRUM_HOST: 'electrum.blockstream.info',
-    ELECTRUM_PORT: '50002',
-    ELECTRUM_PROTOCOL: 'ssl',
+    ...electrumEnv,
     BITCOIN_NETWORK: 'mainnet',
-    MEMPOOL_API_URL: 'https://mempool.space',
     NODE_ENV: 'production',
   })
   const serverModule = pathToFileURL(path.join(serverDir, 'main.js')).href
   const tor = torManager
+  const packagedVersion = app.isPackaged
+    ? (readReleaseVersion(path.join(app.getAppPath(), 'package.json')) ?? '')
+    : undefined
+  const releaseVersion =
+    verifyConfig !== null
+      ? verifyConfig.disableReleaseCheck || verifyConfig.releaseCheckUrl === undefined
+        ? undefined
+        : packagedVersion
+      : packagedVersion
   // Keep the development ports free; reuse this app's own port across launches.
   server = await startOnPreferredPort(path.join(app.getPath('userData'), 'port'), async (listenPort) =>
     startServer(serverModule, {
@@ -87,9 +120,9 @@ async function start(): Promise<void> {
       // The PIN is set in the app; a computer administrator can reset a forgotten one, keeping the data.
       pin: 'desktop',
       // A packaged build without a valid version passes an empty one, so Sentinel logs that checks are off.
-      releaseVersion: app.isPackaged
-        ? (readReleaseVersion(path.join(app.getAppPath(), 'package.json')) ?? '')
-        : undefined,
+      releaseVersion,
+      releaseCheckUrl: verifyConfig?.releaseCheckUrl,
+      registerSignalHandlers: false,
     }),
   )
   const origin = `http://${LOOPBACK_HOST}:${server.port}`
@@ -110,6 +143,31 @@ async function start(): Promise<void> {
     },
   })
   mainWindow = window
+  if (verifyConfig !== null) {
+    // In verify mode, SIGUSR2 requests a normal BrowserWindow.close() so automated CDP checks can exercise
+    // the real close-to-hide and pin:lock handlers without macOS Accessibility permissions.
+    const onVerifyClose = (): void => {
+      if (mainWindow !== null && !mainWindow.isDestroyed()) {
+        mainWindow.close()
+      }
+    }
+    process.on('SIGUSR2', onVerifyClose)
+    window.once('closed', () => {
+      process.off('SIGUSR2', onVerifyClose)
+    })
+  }
+  const downloadsDir = verifyConfig?.downloadsDir
+  if (downloadsDir !== undefined) {
+    fs.mkdirSync(downloadsDir, { recursive: true })
+    window.webContents.session.on('will-download', (_event, item) => {
+      const fileName = path.basename(item.getFilename()) || 'download.bin'
+      const savePath = path.join(downloadsDir, fileName)
+      item.setSavePath(savePath)
+      item.once('done', (_doneEvent, state) => {
+        console.log(`verify-download:${state}:${fileName}`)
+      })
+    })
+  }
   const trezorWindows = new Set<WebContents>()
   setupWalletAccess(window, origin, trezorWindows, (owner, name, selected) =>
     showDeviceChooser(
@@ -150,16 +208,32 @@ async function start(): Promise<void> {
 // Before anything reads the data folder (the single-instance lock does): keep it where it has
 // always been, then give the menus the product's name. Electron documents setPath as failing for
 // a folder that doesn't exist yet, as on a fresh install, so create it first.
-const userData = userDataPath(app.getPath('appData'), app.isPackaged)
+const userData = verifyConfig ? verifyConfig.userDataDir : userDataPath(app.getPath('appData'), app.isPackaged)
 fs.mkdirSync(userData, { recursive: true })
 app.setPath('userData', userData)
 app.setName(APP_DISPLAY_NAME)
 
+if (verifyConfig !== null) {
+  process.on('uncaughtException', (error) => {
+    console.error(`Desktop verify uncaughtException: ${error.stack ?? error.message}`)
+  })
+  process.on('unhandledRejection', (reason) => {
+    const message = reason instanceof Error ? (reason.stack ?? reason.message) : String(reason)
+    console.error(`Desktop verify unhandledRejection: ${message}`)
+  })
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
+  const onSignal = (): void => {
+    app.quit()
+  }
+  process.once('SIGTERM', onSignal)
+  process.once('SIGINT', onSignal)
   app.on('second-instance', showMainWindow)
   app.on('activate', showMainWindow)
+  let shutdownFailed = false
   const quit = createQuitHandler({
     shutdownServer: async () => {
       await startup
@@ -174,12 +248,23 @@ if (!app.requestSingleInstanceLock()) {
       tray?.destroy()
     },
     reportError: () => {
+      shutdownFailed = true
+      if (verifyConfig) {
+        console.error('Desktop verify shutdown failed')
+        return
+      }
       dialog.showErrorBox('Unable to finish shutting down', 'Bitcoin Control Center will now close.')
     },
     quit: () => {
+      if (verifyConfig && !shutdownFailed) {
+        console.log('verify-shutdown:clean')
+      }
       app.quit()
     },
     forceQuit: () => {
+      if (verifyConfig) {
+        console.error('Desktop verify shutdown forced')
+      }
       app.exit(1)
     },
   })
@@ -187,18 +272,29 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true
     quit(event)
   })
-  void app.whenReady().then(() => {
-    if (quitting) {
-      return
-    }
-    startup = start().catch(() => {
+  async function startSafely(): Promise<void> {
+    try {
+      await start()
+    } catch (error) {
       if (!quitting) {
+        if (verifyConfig) {
+          const message = error instanceof Error ? (error.stack ?? error.message) : String(error)
+          console.error(`Desktop verify startup failed: ${message}`)
+          app.exit(1)
+          return
+        }
         dialog.showErrorBox(
           'Control Center could not start',
           'The app could not finish starting. Close it and try again.',
         )
         app.quit()
       }
-    })
+    }
+  }
+  void app.whenReady().then(() => {
+    if (quitting) {
+      return
+    }
+    startup = startSafely()
   })
 }

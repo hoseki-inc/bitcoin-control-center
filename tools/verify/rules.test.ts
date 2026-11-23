@@ -14,6 +14,7 @@ import {
   SLOW_FAULT_MS,
   activeFaults,
   beginProblem,
+  classifyTorOutcome,
   faultedAnswer,
   freeAttemptNumber,
   latestRecorded,
@@ -38,6 +39,8 @@ function runState(startedAt: string): RunState {
     launchedAt: '',
     fresh: false,
     desktop: false,
+    electron: false,
+    setupPinInUi: false,
     pin: false,
     build,
     url: 'http://127.0.0.1:1',
@@ -336,6 +339,74 @@ describe('launchDecision', () => {
       })
       assert.equal(decision.action, 'refuse')
     }
+  })
+
+  it('refuses to switch a live run across electron, setupPinInUi, or releaseTag flags', () => {
+    assert.equal(
+      launchDecision({
+        alive: { fresh: false, desktop: false, pin: false, electron: true },
+        folderExists: true,
+        evidenceExists: false,
+        fresh: false,
+        desktop: false,
+        pin: false,
+        electron: false,
+      }).action,
+      'refuse',
+    )
+    assert.equal(
+      launchDecision({
+        alive: { fresh: false, desktop: false, pin: false, electron: true, setupPinInUi: true },
+        folderExists: true,
+        evidenceExists: false,
+        fresh: false,
+        desktop: false,
+        pin: false,
+        electron: true,
+        setupPinInUi: false,
+      }).action,
+      'refuse',
+    )
+    assert.equal(
+      launchDecision({
+        alive: { fresh: false, desktop: false, pin: false, electron: true, releaseTag: 'v9.9.9_0' },
+        folderExists: true,
+        evidenceExists: false,
+        fresh: false,
+        desktop: false,
+        pin: false,
+        electron: true,
+        releaseTag: 'v1.0.0_0',
+      }).action,
+      'refuse',
+    )
+  })
+})
+
+describe('classifyTorOutcome', () => {
+  it('returns connected when Tor is ready, SOCKS is bound, and tor-data exists', () => {
+    assert.equal(
+      classifyTorOutcome('online', { state: 'ready', socksReady: true, progress: 100 }, true).status,
+      'connected',
+    )
+  })
+
+  it('fails in allow-offline when binary fails before binding SOCKS or tor-data is missing', () => {
+    assert.equal(
+      classifyTorOutcome('allow-offline', { state: 'failed', socksReady: false, message: 'spawn ENOENT' }, true).status,
+      'failed',
+    )
+    assert.equal(
+      classifyTorOutcome('allow-offline', { state: 'ready', socksReady: true, progress: 100 }, false).status,
+      'failed',
+    )
+    assert.equal(classifyTorOutcome('allow-offline', { state: 'unavailable' }, true).status, 'failed')
+  })
+
+  it('classifies post-SOCKS bootstrap timeout as failed online and offline-unverified in allow-offline', () => {
+    const partial = { state: 'starting' as const, socksReady: true, progress: 15 }
+    assert.equal(classifyTorOutcome('online', partial, true).status, 'failed')
+    assert.equal(classifyTorOutcome('allow-offline', partial, true).status, 'offline-unverified')
   })
 })
 

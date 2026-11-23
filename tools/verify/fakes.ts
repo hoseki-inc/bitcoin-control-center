@@ -40,7 +40,9 @@ import {
 // which the doctor's `fake coverage` check reports. `helpers/verify fault` makes them fail on purpose: FAULT lines are
 // requests they failed that way.
 
-const runId = readArgs({ run: { type: 'string' } }).values.run ?? fail('Usage: fakes.ts --run <id>')
+const { values: fakeArgs } = readArgs({ run: { type: 'string' }, 'release-tag': { type: 'string' } })
+const runId = fakeArgs.run ?? fail('Usage: fakes.ts --run <id> [--release-tag <tag>]')
+const releaseTag = fakeArgs['release-tag'] ?? 'v0.0.0_0'
 const paths = runPaths(runId)
 mkdirSync(paths.logsDir, { recursive: true })
 
@@ -220,7 +222,10 @@ async function mempool(request: IncomingMessage, response: ServerResponse): Prom
     response.end(JSON.stringify({ error: 'Verify fault: the server failed this request' }))
     return
   }
-  const send = (status: number, body: MempoolTx | PricePoint | PriceHistory | { error: string }): void => {
+  const send = (
+    status: number,
+    body: MempoolTx | PricePoint | PriceHistory | { tag: string } | { error: string },
+  ): void => {
     log(`mempool ${request.method ?? 'GET'} ${url.pathname} ${status}${status >= 400 ? ' ERROR' : ''}`)
     response.writeHead(status, { 'content-type': 'application/json' })
     response.end(JSON.stringify(body))
@@ -230,6 +235,8 @@ async function mempool(request: IncomingMessage, response: ServerResponse): Prom
     send(200, currentPrice())
   } else if (url.pathname === '/api/v1/historical-price') {
     send(200, priceHistory())
+  } else if (url.pathname === '/latest.json') {
+    send(200, { tag: releaseTag })
   } else if (transaction?.[1] !== undefined) {
     const body = mempoolTransaction(transaction[1])
     send(body === null ? 404 : 200, body ?? { error: 'Transaction not found' })

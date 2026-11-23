@@ -71,6 +71,8 @@ export interface TorStatus {
   progress?: number
   /** Counts start attempts, so settings can tell a new failure from an earlier one. */
   attempt?: number
+  /** True once the bundled Tor daemon has bound its local loopback SOCKS listener. */
+  socksReady?: boolean
 }
 
 // A fresh Tor process may need well over the direct-connection limit to build its
@@ -134,6 +136,8 @@ export interface AppContextOptions {
   statementSourceSetting?: boolean
   /** The running desktop release, such as `0.6.0:0`. Desktop release builds pass it to check for newer releases. */
   releaseVersion?: string
+  /** Overrides the release check URL (used only by desktop local verify against a loopback fake). */
+  releaseCheckUrl?: string
   /** Set only by `src/dev.ts`; never by a distribution. */
   electrumLatency?: ElectrumLatency
   /** Distribution-owned Tor process; Sentinel owns connection policy. */
@@ -144,6 +148,7 @@ export interface AppContextOptions {
       message?: string
       progress?: number
       attempt?: number
+      socksReady?: boolean
     }
     /** Tor picks its port when it starts, so resolve the proxy for each connection. */
     getSocksProxy: () => { host: string; port: number } | null
@@ -313,7 +318,11 @@ export const createAppContext = asyncFn(
       logger,
       sourceSelectable: options.statementSourceSetting === true,
     })
-    const releaseCheckService = new ReleaseCheckService({ logger, installedVersion: options.releaseVersion })
+    const releaseCheckService = new ReleaseCheckService({
+      logger,
+      installedVersion: options.releaseVersion,
+      url: options.releaseCheckUrl,
+    })
 
     const interrupted = await statementService.failInterrupted()
     if (interrupted > 0) {
