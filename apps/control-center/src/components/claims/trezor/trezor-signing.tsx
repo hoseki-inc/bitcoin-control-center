@@ -7,6 +7,7 @@ import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto } from '../../../trpc/server-types'
+import { hardwareSigningErrorMessage } from '../../../utils/signing-error-message'
 import { trezorService } from './trezor-service-singleton'
 
 export function TrezorSigning({
@@ -77,12 +78,14 @@ export function TrezorSigning({
     }
   }
 
+  const error = signingError ?? completeChallengeMessageMutation.error ?? completeChallengeMutation.error
+
   return (
     <GenericSigningSteps
       walletType="Trezor"
       signingAnimation="trezorUniqueMessage"
       isLoading={completeChallengeMessageMutation.isLoading || completeChallengeMutation.isLoading}
-      error={signingError ?? completeChallengeMessageMutation.error ?? completeChallengeMutation.error ?? undefined}
+      error={error ? hardwareSigningErrorMessage(error, 'Error signing message') : undefined}
       signedMessage={{
         messageTextToSign: challengeMessage.signedMessage.messageTextToSign,
         address: Address.fromCheckedString(challengeMessage.signedMessage.address),

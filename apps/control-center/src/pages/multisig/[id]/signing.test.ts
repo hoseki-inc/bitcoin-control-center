@@ -716,13 +716,15 @@ describe.each(['ledger', 'trezor'] as const)('%s as the final multisig cosigner'
 
   it('displays final completion failures without navigating to the receipt', async () => {
     await withTestSetup(async () => {
-      mocks.completeChallenge.mockRejectedValueOnce(new Error('Sentinel could not complete verification'))
+      mocks.completeChallenge.mockRejectedValueOnce(badRequest('Sentinel could not complete verification'))
       await reachSigning()
       await clickSign()
       await waitForText('Sentinel could not complete verification')
       expect(container.textContent).not.toContain('Waiting for device confirmation')
       expect(mocks.completeChallenge).toHaveBeenCalledTimes(1)
-      expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim')
+      expect(mocks.toastError).toHaveBeenCalledWith('There was an error when completing your Multisig claim', {
+        description: 'Sentinel could not complete verification',
+      })
       expect(mocks.navigate).not.toHaveBeenCalled()
       expect(invalidateClaim).not.toHaveBeenCalled()
     }, setupFinalCosigner)
@@ -1166,12 +1168,112 @@ describe('Trezor singlesig callback', () => {
       await render(createElement(SinglesigTrezorSigning, props))
       await reachSigning()
       await clickSign()
-      await waitForText('Unexpected Trezor failure')
+      await waitForText('Error signing message')
+      expect(container.textContent).not.toContain('Unexpected Trezor failure')
       expect(container.textContent).not.toContain('Waiting for device confirmation')
       expect(mocks.completeMessage).not.toHaveBeenCalled()
       expect(mocks.completeChallenge).not.toHaveBeenCalled()
       expect(props.onSigningComplete).not.toHaveBeenCalled()
     })
+  })
+})
+
+describe.each(['ledger', 'trezor'] as const)('%s multisig signing errors', (walletType) => {
+  async function setup(): Promise<void> {
+    mocks.walletType = walletType
+    await render()
+  }
+
+  it('shows the fallback instead of an internal server error from challengeMessages.complete', async () => {
+    await withTestSetup(async () => {
+      mocks.completeMessage.mockRejectedValueOnce(internalError('Failed to parse account descriptor.'))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Error signing message')
+      expect(container.textContent).not.toContain('Failed to parse account descriptor.')
+      expect(container.textContent).not.toContain('Unknown error')
+      expect(mocks.completeChallenge).not.toHaveBeenCalled()
+      expect(mocks.navigate).not.toHaveBeenCalled()
+    }, setup)
+  })
+
+  it('shows a BAD_REQUEST reason from challengeMessages.complete without a prefix', async () => {
+    await withTestSetup(async () => {
+      mocks.completeMessage.mockRejectedValueOnce(badRequest('Invalid signature'))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Invalid signature')
+      expect(container.textContent).not.toContain('Unknown error')
+      expect(mocks.navigate).not.toHaveBeenCalled()
+    }, setup)
+  })
+})
+
+it('shows the Trezor device friendly message on the multisig page', async () => {
+  await withTestSetup(async () => {
+    mocks.walletType = 'trezor'
+    mocks.trezorSign.mockResolvedValue(
+      Err(
+        new HardwareDeviceError('Method_PermissionsNotGranted', 'trezor', 'The request was declined in Trezor Suite.'),
+      ),
+    )
+    await render()
+    await reachSigning()
+    await clickSign()
+    await waitForText('The request was declined in Trezor Suite.')
+    expect(container.textContent).not.toContain('Method_PermissionsNotGranted')
+    expect(mocks.completeMessage).not.toHaveBeenCalled()
+  })
+})
+
+describe.each(['ledger', 'trezor'] as const)('%s single-sig signing errors', (walletType) => {
+  async function setup(): Promise<void> {
+    mocks.walletType = walletType
+    const props = signingProps()
+    await render(createElement(walletType === 'ledger' ? SinglesigLedgerSigning : SinglesigTrezorSigning, props))
+  }
+
+  it.each([
+    ['challengeMessages.complete', () => mocks.completeMessage],
+    ['challenges.complete', () => mocks.completeChallenge],
+  ] as const)('shows the fallback instead of an internal server error from %s', async (_name, failing) => {
+    await withTestSetup(async () => {
+      failing().mockRejectedValueOnce(internalError('Failed to parse account descriptor.'))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Error signing message')
+      expect(container.textContent).not.toContain('Failed to parse account descriptor.')
+      expect(container.textContent).not.toContain('Unknown error')
+      expect(container.textContent).toContain('Retry')
+    }, setup)
+  })
+
+  it('shows a BAD_REQUEST reason without a prefix', async () => {
+    await withTestSetup(async () => {
+      mocks.completeMessage.mockRejectedValueOnce(badRequest('Invalid signature'))
+      await reachSigning()
+      await clickSign()
+      await waitForText('Invalid signature')
+      expect(container.textContent).not.toContain('Unknown error')
+      expect(container.textContent).toContain('Retry')
+    }, setup)
+  })
+
+  it('keeps the device friendly message', async () => {
+    await withTestSetup(async () => {
+      const deviceError = new HardwareDeviceError('raw-device-text', walletType, 'Signing canceled')
+      if (walletType === 'ledger') {
+        mocks.ledger.signMessage.mockResolvedValue(Err(deviceError))
+      } else {
+        mocks.trezorSign.mockResolvedValue(Err(deviceError))
+      }
+      await reachSigning()
+      await clickSign()
+      await waitForText('Signing canceled')
+      expect(container.textContent).not.toContain('raw-device-text')
+      expect(container.textContent).not.toContain('Unknown error')
+      expect(mocks.completeMessage).not.toHaveBeenCalled()
+    }, setup)
   })
 })
 

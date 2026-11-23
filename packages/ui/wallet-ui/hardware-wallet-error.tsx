@@ -4,10 +4,24 @@ import { ErrorBanner, type ErrorBannerProps, type ErrorVariant } from '../design
 import { RestartIcon } from '../prove-verify-ui'
 
 export type HardwareWalletErrorProps = {
-  error: Error | HardwareDeviceError | { message: string }
+  error: Error | HardwareDeviceError | { message: string } | string
   onRetry?: () => void
   variant?: ErrorVariant
 } & Omit<ErrorBannerProps, 'message' | 'variant' | 'rightContent'>
+
+function isErrorMessage(error: HardwareWalletErrorProps['error']): error is string {
+  return typeof error === 'string'
+}
+
+function hardwareWalletErrorMessage(error: HardwareWalletErrorProps['error']): string {
+  if (isErrorMessage(error)) {
+    return error
+  }
+  if (error instanceof HardwareDeviceError) {
+    return error.friendlyMessage
+  }
+  return `Unknown error: ${error.message}`
+}
 
 export function HardwareWalletError({
   error,
@@ -15,7 +29,7 @@ export function HardwareWalletError({
   variant = 'error',
   ...rest
 }: HardwareWalletErrorProps): JSX.Element {
-  const errorMessage = error instanceof HardwareDeviceError ? error.friendlyMessage : `Unknown error: ${error.message}`
+  const errorMessage = hardwareWalletErrorMessage(error)
 
   return (
     <ErrorBanner

@@ -1,8 +1,14 @@
+import { HardwareDeviceError } from '@hoseki/packages/wallet'
 import { TRPCClientError } from '@trpc/client'
 import { toast } from 'sonner'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { badRequest, internalError, notFound } from '../testing/trpc'
-import { getSigningErrorMessage, signingErrorReason, toastSigningError } from './signing-error-message'
+import {
+  getSigningErrorMessage,
+  hardwareSigningErrorMessage,
+  signingErrorReason,
+  toastSigningError,
+} from './signing-error-message'
 
 const LOCAL_SERVER_NETWORK_COPY =
   "Can't connect to Control Center's local server. Check that Control Center is running, then try again."
@@ -161,5 +167,27 @@ describe('toastSigningError', () => {
     expect(spy).toHaveBeenCalledTimes(2)
     expect(spy.mock.calls[0]).toEqual(['The signing process did not complete successfully.'])
     expect(spy.mock.calls[1]).toEqual(['Invalid signature'])
+  })
+})
+
+describe('hardwareSigningErrorMessage', () => {
+  it('returns the friendly message for a hardware device error', () => {
+    expect(hardwareSigningErrorMessage(new HardwareDeviceError('raw', 'ledger', 'Signing canceled'), 'Fallback')).toBe(
+      'Signing canceled',
+    )
+  })
+
+  it('returns the server reason for BAD_REQUEST', () => {
+    expect(hardwareSigningErrorMessage(badRequest('Invalid signature'), 'Fallback')).toBe('Invalid signature')
+  })
+
+  it('returns the fallback for an internal server error', () => {
+    expect(hardwareSigningErrorMessage(internalError('Failed to parse account descriptor.'), 'Fallback')).toBe(
+      'Fallback',
+    )
+  })
+
+  it('returns the fallback for a plain error', () => {
+    expect(hardwareSigningErrorMessage(new Error('Unexpected Trezor failure'), 'Fallback')).toBe('Fallback')
   })
 })

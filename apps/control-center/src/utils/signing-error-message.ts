@@ -1,4 +1,5 @@
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import { HardwareDeviceError } from '@hoseki/packages/wallet'
 import { TRPCClientError } from '@trpc/client'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -72,6 +73,10 @@ export function signingErrorReason(cause: unknown): string | undefined {
 
 export function getSigningErrorMessage(cause: unknown, fallback: string): string {
   return signingErrorReason(cause) ?? fallback
+}
+
+export function hardwareSigningErrorMessage(cause: unknown, fallback: string): string {
+  return cause instanceof HardwareDeviceError ? cause.friendlyMessage : getSigningErrorMessage(cause, fallback)
 }
 
 export function toastSigningError(cause: unknown, fallbackTitle: string): void {

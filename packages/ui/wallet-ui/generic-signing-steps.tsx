@@ -1,7 +1,6 @@
 import { Box, Button, HStack, Stack, Text } from '@chakra-ui/react'
 import { useState } from 'react'
 import type { Address } from '../../bitcoin'
-import type { HardwareDeviceError } from '../../wallet'
 import { LabelWithTooltip, Spinner } from '../design-system'
 import { HardwareWalletError } from './hardware-wallet-error'
 import { NavigationArrows } from './navigation-arrows'
@@ -13,7 +12,7 @@ export function GenericSigningSteps(props: {
   walletType: WalletType
   signingAnimation: WalletAnimationType
   isLoading: boolean
-  error?: Error | HardwareDeviceError | { message: string }
+  error?: string
   signedMessage: { messageTextToSign: string; address: Address; signingPath: string | null }
   onProveControl: () => void
   onBack: () => void
@@ -62,7 +61,7 @@ export function ControlledGenericSigningSteps({
   walletType: WalletType
   signingAnimation: WalletAnimationType
   isLoading: boolean
-  error?: Error | HardwareDeviceError | { message: string }
+  error?: string
   signedMessage: { messageTextToSign: string; address: Address; signingPath: string | null }
   onProveControl: () => void
   onExit: () => void
@@ -74,7 +73,7 @@ export function ControlledGenericSigningSteps({
 
   return (
     <>
-      {error && (
+      {error != null && error !== '' && (
         <HardwareWalletError
           error={error}
           mt={4}

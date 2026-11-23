@@ -27,7 +27,11 @@ import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ClaimDto, KeystoreDto } from '../../../trpc/server-types'
 import { getNumberOfMissingSignatures } from '../../../utils/multisig-utils'
-import { getSigningErrorMessage, toastSigningError } from '../../../utils/signing-error-message'
+import {
+  getSigningErrorMessage,
+  hardwareSigningErrorMessage,
+  toastSigningError,
+} from '../../../utils/signing-error-message'
 
 export function MultisigSigningPage(): JSX.Element {
   const { keystoreId, walletType } = useParams<{ keystoreId: string; walletType: string }>()
@@ -161,11 +165,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`, { replace: true })
     } catch (caughtError) {
       console.error('error', caughtError)
-      if (caughtError instanceof Error) {
-        setError(caughtError.message)
-      } else {
-        setError('Error signing message')
-      }
+      setError(hardwareSigningErrorMessage(caughtError, 'Error signing message'))
     } finally {
       setSigningInProgress(false)
     }
@@ -204,7 +204,7 @@ function TrezorSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
 
 function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: KeystoreDto }) {
   const navigate = useNavigate()
-  const [signingError, setSigningError] = useState<Error | null>(null)
+  const [signingError, setSigningError] = useState<string | null>(null)
   const [signingInProgress, setSigningInProgress] = useState(false)
   const [step, setStep] = useState(1)
   const { signMessage, initLedger, isInitialized, resetLedger } = useLedgerStore(
@@ -231,6 +231,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
   })
 
   const error = initiateLedgerMutation.error ?? signingError
+  const hasError = error != null && error !== ''
 
   const claimQuery = trpc.portalProve.accounts.get.byId.useQuery({ id: claim.id })
   const latestMessage = claim.latestChallenge?.messages.find((m) => m.keystoreId === keystore.id)
@@ -248,17 +249,17 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
 
   async function handleLedgerSign() {
     if (!keystore.derivationPath) {
-      setSigningError(new Error('No derivation path found'))
+      setSigningError('No derivation path found')
       return
     }
     if (!signedMessage) {
-      setSigningError(new Error('Could not find signedMessage'))
+      setSigningError('Could not find signedMessage')
       return
     }
 
     const signingPath = getSigningPath(keystore)
     if (signingPath == null || signingPath === '') {
-      setSigningError(new Error('No signing path found'))
+      setSigningError('No signing path found')
       return
     }
 
@@ -291,11 +292,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       await claimQuery.refetch()
       void navigate(`/multisig/verify/receipt/${claim.id}/${keystore.id}`, { replace: true })
     } catch (caughtError) {
-      if (caughtError instanceof Error) {
-        setSigningError(caughtError)
-      } else {
-        setSigningError(new Error('Error signing message'))
-      }
+      setSigningError(hardwareSigningErrorMessage(caughtError, 'Error signing message'))
     } finally {
       setSigningInProgress(false)
     }
@@ -314,7 +311,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
 
   return (
     <>
-      {error && (
+      {error != null && error !== '' && (
         <HardwareWalletError
           error={error}
           mt={4}
@@ -332,7 +329,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
       <ControlledGenericSigningSteps
         step={step}
         onNext={() => {
-          if (step === 1 && !error) {
+          if (step === 1 && !hasError) {
             initiateLedgerMutation.mutate(undefined, {
               onSuccess: () => {
                 setStep(2)
@@ -341,7 +338,7 @@ function LedgerSigning({ claim, keystore }: { claim: ClaimDto; keystore: Keystor
             return
           }
           setStep((prev) => {
-            if (error) {
+            if (hasError) {
               return prev
             }
             return Math.min(prev + 1, 3)

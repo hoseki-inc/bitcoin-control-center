@@ -60,7 +60,7 @@ export const Error: Story = () => (
     walletType="Ledger"
     signingAnimation="ledgerUniqueMessage"
     isLoading={false}
-    error={{ message: 'Oh dear, an error occurred' }}
+    error="Oh dear, an error occurred"
     signedMessage={signedMessage}
     onProveControl={() => {}}
     onBack={() => {}}

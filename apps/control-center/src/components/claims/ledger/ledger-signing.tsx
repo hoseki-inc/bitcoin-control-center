@@ -16,6 +16,7 @@ import { closeDesktopLedger } from '../../../lib/open-desktop-ledger'
 import { browserLogger, captureHardwareWalletError } from '../../../logger'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto } from '../../../trpc/server-types'
+import { getSigningErrorMessage } from '../../../utils/signing-error-message'
 
 export function LedgerSigning({
   keystore,
@@ -104,6 +105,7 @@ export function LedgerSigning({
   }
 
   const error = initiateLedgerMutation.error ?? signingError
+  const completionError = completeChallengeMessageMutation.error ?? completeChallengeMutation.error
 
   const handleNext = () => {
     setStep((prev) => {
@@ -153,7 +155,7 @@ export function LedgerSigning({
         walletType="Ledger"
         signingAnimation="ledgerUniqueMessage"
         isLoading={completeChallengeMessageMutation.isLoading || completeChallengeMutation.isLoading}
-        error={completeChallengeMessageMutation.error ?? completeChallengeMutation.error ?? undefined}
+        error={completionError ? getSigningErrorMessage(completionError, 'Error signing message') : undefined}
         signedMessage={{
           messageTextToSign: challengeMessage.signedMessage.messageTextToSign,
           address: Address.fromCheckedString(challengeMessage.signedMessage.address),
