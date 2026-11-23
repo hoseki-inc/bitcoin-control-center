@@ -18,12 +18,11 @@ import {
 } from '@chakra-ui/react'
 import { getRecordValue } from '@hoseki/packages/lib'
 import { ErrorBanner } from '@hoseki/packages/ui/design-system'
-import { CheckCircleFilledIcon, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
-import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
 import { useCallback, useRef, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { ExchangeAccountDetails } from '../../../components/claims/exchange-account-details'
 import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { parseStrikeCsv } from '../../../lib/strike-csv'
 import { trpc } from '../../../trpc'
@@ -80,8 +79,6 @@ export function StrikeAccountDetailsPage(): JSX.Element {
     return <ErrorBanner mt={8} mb={4} message="Strike account not found." />
   }
 
-  const btcSats = account.balance != null && account.balance !== '' ? Number(account.balance) : 0
-  const btcAmount = (btcSats / 100_000_000).toFixed(8)
   const needsReconnect = needsExchangeReconnect(account)
   const accountDisplayName = account.displayName
 
@@ -107,8 +104,12 @@ export function StrikeAccountDetailsPage(): JSX.Element {
       await refreshMutation.mutateAsync({ accountId })
       await utils.portalProve.exchanges.strike.list.invalidate()
       await utils.portalProve.exchanges.list.invalidate()
+      await utils.portalProve.portfolio.invalidate()
       toast.success('Balance refreshed')
     } catch (err) {
+      await utils.portalProve.exchanges.strike.list.invalidate()
+      await utils.portalProve.exchanges.list.invalidate()
+      await utils.portalProve.portfolio.invalidate()
       const message = err instanceof Error ? err.message : 'Failed to refresh balance'
       toast.error(message)
     } finally {
@@ -193,293 +194,175 @@ export function StrikeAccountDetailsPage(): JSX.Element {
   }
 
   return (
-    <Box py={6}>
-      {/* Top bar */}
-      <TopBar mb={6}>
-        <TopBar.Item as={Link} to="/accounts">
-          Back to Accounts
-        </TopBar.Item>
-        <TopBar.Item
-          as="button"
-          color="error.600"
-          onClick={() => {
-            void handleDelete()
+    <ExchangeAccountDetails
+      exchangeName="Strike"
+      logoSrc="/images/exchanges/strike-icon.svg"
+      displayName={account.displayName}
+      balance={account.balance}
+      createdAt={account.createdAt}
+      needsReconnect={needsReconnect}
+      isRefreshing={isRefreshing}
+      isDeleting={isDeleting}
+      onReconnect={handleReconnect}
+      onRefresh={() => {
+        void handleRefresh()
+      }}
+      onDelete={() => {
+        void handleDelete()
+      }}
+    >
+      <hr />
+
+      <Box maxW="640px" mx="auto" w="100%">
+        <Heading textStyle="text/lg" fontWeight="semibold" mb={1}>
+          Account Statements
+        </Heading>
+        <Text textStyle="text/xs" color="neutral.500" mb={4}>
+          Import your Strike statements as CSV files to add transaction detail. Any data imported here will appear on
+          your Bitcoin Control Center statements.
+        </Text>
+
+        {/* CSV Drop Zone */}
+        <CsvDropZone
+          isDragging={isDragging}
+          setIsDragging={setIsDragging}
+          isImporting={isImporting}
+          fileInputRef={fileInputRef}
+          onFile={(file) => {
+            void handleCsvFile(file)
           }}
-        >
-          {isDeleting ? 'Removing...' : 'Remove Account'}
-        </TopBar.Item>
-      </TopBar>
+        />
 
-      <Stack spacing={4}>
-        {/* Account name + status row */}
-        <Box>
-          <Text textStyle="text/md" fontWeight="medium">
-            {account.displayName}
-          </Text>
-          <HStack spacing={1}>
-            <Box w={2} h={2} bg="success.600" borderRadius="full" />
-            <Text textStyle="text/xs" color="neutral.600">
-              First Connected
+        {/* Imported Months */}
+        {monthsQuery.data && monthsQuery.data.length > 0 && (
+          <Box mt={6}>
+            <Text textStyle="label/sm" fontWeight="semibold" mb={2}>
+              Imported Statements
             </Text>
-            <Text textStyle="text/xs" color="neutral.900" fontWeight="medium">
-              {format(new Date(account.createdAt), 'MMMM do, yyyy')}
-            </Text>
-          </HStack>
-        </Box>
-
-        <hr />
-
-        {/* Floating logo + metadata */}
-        <Stack align="center" justify="center" w="640px" mx="auto" mt={-4}>
-          <Box
-            mx="auto"
-            pt={10}
-            pb={6}
-            sx={{
-              animation: 'float 4s ease-in-out infinite',
-              '@keyframes float': {
-                '0%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-6px)' },
-                '100%': { transform: 'translateY(0)' },
-              },
-            }}
-          >
-            <chakra.img
-              src="/images/exchanges/strike-icon.svg"
-              alt="Strike"
-              h="100px"
-              display="block"
-              opacity={needsReconnect ? 0.55 : 1}
-              filter={needsReconnect ? 'grayscale(1)' : 'drop-shadow(-4px 6px 10px rgba(0, 0, 0, 0.2))'}
-            />
-          </Box>
-
-          <HStack spacing={4} mb={4} w="100%" alignItems="flex-start">
-            {/* Amount */}
-            <Box w={['100%', '50%', '25%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Amount
-              </Text>
-              {account.balance === null ? (
-                <Text textStyle="label/sm" color="neutral.400" fontWeight="medium">
-                  —
-                </Text>
-              ) : (
-                <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                  {btcAmount} BTC
-                </Text>
-              )}
-            </Box>
-
-            {/* Status */}
-            <Box w={['100%', '50%', '25%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Status
-              </Text>
-              {needsReconnect ? (
-                <StatusBadge status="warning" label="Reconnect Required" w="fit-content" />
-              ) : (
-                <StatusBadge status="success" label="Connected" icon={CheckCircleFilledIcon} w="fit-content" />
-              )}
-            </Box>
-
-            {/* Account Type */}
-            <Box w={['100%', '50%', '25%']}>
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Account Type
-              </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                Custodial
-              </Text>
-            </Box>
-
-            {/* Date Added */}
-            <Box w={['100%', '50%', '25%']} textAlign="right">
-              <Text textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={1}>
-                Date Added
-              </Text>
-              <Text textStyle="label/sm" color="neutral.900" fontWeight="medium">
-                {format(new Date(account.createdAt), 'MMMM do, yyyy')}
-              </Text>
-            </Box>
-          </HStack>
-
-          {/* Refresh Balance */}
-          <Box w="100%">
-            {needsReconnect ? (
-              <Button size="sm" onClick={handleReconnect}>
-                Reconnect Account
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  void handleRefresh()
-                }}
-                isLoading={isRefreshing}
-                loadingText="Refreshing..."
-              >
-                Refresh Balance
-              </Button>
-            )}
-          </Box>
-        </Stack>
-
-        <hr />
-
-        {/* Statement Import Section */}
-        <Box maxW="640px" mx="auto" w="100%">
-          <Heading textStyle="text/lg" fontWeight="semibold" mb={1}>
-            Account Statements
-          </Heading>
-          <Text textStyle="text/xs" color="neutral.500" mb={4}>
-            Import your Strike statements as CSV files to add transaction detail. Any data imported here will appear on
-            your Bitcoin Control Center statements.
-          </Text>
-
-          {/* CSV Drop Zone */}
-          <CsvDropZone
-            isDragging={isDragging}
-            setIsDragging={setIsDragging}
-            isImporting={isImporting}
-            fileInputRef={fileInputRef}
-            onFile={(file) => {
-              void handleCsvFile(file)
-            }}
-          />
-
-          {/* Imported Months */}
-          {monthsQuery.data && monthsQuery.data.length > 0 && (
-            <Box mt={6}>
-              <Text textStyle="label/sm" fontWeight="semibold" mb={2}>
-                Imported Statements
-              </Text>
-              <Stack spacing={2}>
-                {monthsQuery.data.map((month) => (
-                  <Flex
-                    key={month}
-                    align="center"
-                    justify="space-between"
-                    px={4}
-                    py={2.5}
-                    borderWidth="1px"
-                    borderColor={selectedMonth === month ? 'neutral.900' : 'neutral.200'}
-                    borderRadius="md"
-                    cursor="pointer"
-                    bg={selectedMonth === month ? 'neutral.50' : 'shades.0'}
-                    _hover={{ borderColor: 'neutral.400' }}
-                    transition="all 0.15s ease"
+            <Stack spacing={2}>
+              {monthsQuery.data.map((month) => (
+                <Flex
+                  key={month}
+                  align="center"
+                  justify="space-between"
+                  px={4}
+                  py={2.5}
+                  borderWidth="1px"
+                  borderColor={selectedMonth === month ? 'neutral.900' : 'neutral.200'}
+                  borderRadius="md"
+                  cursor="pointer"
+                  bg={selectedMonth === month ? 'neutral.50' : 'shades.0'}
+                  _hover={{ borderColor: 'neutral.400' }}
+                  transition="all 0.15s ease"
+                >
+                  <Text
+                    as="button"
+                    type="button"
+                    flex={1}
+                    textAlign="left"
+                    textStyle="text/sm"
+                    fontWeight="medium"
+                    aria-pressed={selectedMonth === month}
+                    onClick={() => {
+                      setSelectedMonth(selectedMonth === month ? null : month)
+                    }}
                   >
-                    <Text
-                      as="button"
-                      type="button"
-                      flex={1}
-                      textAlign="left"
-                      textStyle="text/sm"
-                      fontWeight="medium"
-                      aria-pressed={selectedMonth === month}
-                      onClick={() => {
-                        setSelectedMonth(selectedMonth === month ? null : month)
-                      }}
-                    >
-                      {formatMonth(month)}
-                    </Text>
-                    <Button
-                      size="xs"
-                      variant="ghost"
-                      color="error.500"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void handleDeleteMonth(month)
-                      }}
-                    >
-                      Remove
-                    </Button>
-                  </Flex>
-                ))}
-              </Stack>
-            </Box>
-          )}
+                    {formatMonth(month)}
+                  </Text>
+                  <Button
+                    size="xs"
+                    variant="ghost"
+                    color="error.500"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleDeleteMonth(month)
+                    }}
+                  >
+                    Remove
+                  </Button>
+                </Flex>
+              ))}
+            </Stack>
+          </Box>
+        )}
 
-          {/* Transaction Table */}
-          {selectedMonth != null && selectedMonth !== '' && txQuery.data && txQuery.data.length > 0 && (
-            <Box mt={4}>
-              <Text textStyle="label/sm" fontWeight="semibold" mb={2}>
-                {formatMonth(selectedMonth)} — {txQuery.data.length} transaction{txQuery.data.length !== 1 ? 's' : ''}
-              </Text>
-              <Box borderWidth="1px" borderColor="neutral.200" borderRadius="md" overflow="hidden">
-                <Box overflowX="auto">
-                  <Table size="sm">
-                    <Thead>
-                      <Tr>
-                        <Th>Date</Th>
-                        <Th>Type</Th>
-                        <Th isNumeric>BTC</Th>
-                        <Th isNumeric>USD</Th>
-                        <Th isNumeric>Rate</Th>
-                        <Th>Description</Th>
+        {/* Transaction Table */}
+        {selectedMonth != null && selectedMonth !== '' && txQuery.data && txQuery.data.length > 0 && (
+          <Box mt={4}>
+            <Text textStyle="label/sm" fontWeight="semibold" mb={2}>
+              {formatMonth(selectedMonth)} — {txQuery.data.length} transaction{txQuery.data.length !== 1 ? 's' : ''}
+            </Text>
+            <Box borderWidth="1px" borderColor="neutral.200" borderRadius="md" overflow="hidden">
+              <Box overflowX="auto">
+                <Table size="sm">
+                  <Thead>
+                    <Tr>
+                      <Th>Date</Th>
+                      <Th>Type</Th>
+                      <Th isNumeric>BTC</Th>
+                      <Th isNumeric>USD</Th>
+                      <Th isNumeric>Rate</Th>
+                      <Th>Description</Th>
+                    </Tr>
+                  </Thead>
+                  <Tbody>
+                    {txQuery.data.map((tx) => (
+                      <Tr key={tx.id}>
+                        <Td>
+                          <Text textStyle="text/xs" whiteSpace="nowrap">
+                            {format(new Date(tx.transactedAt), 'MMM d, HH:mm')}
+                          </Text>
+                        </Td>
+                        <Td>
+                          <Text
+                            textStyle="text/xs"
+                            fontWeight="medium"
+                            color={getRecordValue(TX_TYPE_COLORS, tx.type) ?? 'neutral.600'}
+                          >
+                            {getRecordValue(TX_TYPE_LABELS, tx.type) ?? tx.type}
+                          </Text>
+                        </Td>
+                        <Td isNumeric>
+                          <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {formatBtcAmount(tx.amountBtc)}
+                          </Text>
+                        </Td>
+                        <Td isNumeric>
+                          <Text textStyle="text/xs" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                            {tx.amountUsd != null && tx.amountUsd !== ''
+                              ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
+                              : '—'}
+                          </Text>
+                        </Td>
+                        <Td isNumeric>
+                          <Text textStyle="text/xs" color="neutral.500">
+                            {tx.exchangeRate != null && tx.exchangeRate !== ''
+                              ? `$${Number(tx.exchangeRate).toLocaleString()}`
+                              : '—'}
+                          </Text>
+                        </Td>
+                        <Td>
+                          <Text textStyle="text/xs" color="neutral.500" maxW="200px" isTruncated>
+                            {(tx.description != null && tx.description !== '') ||
+                            (tx.txHash != null && tx.txHash !== '')
+                              ? truncateHash(tx.txHash)
+                              : '—'}
+                          </Text>
+                        </Td>
                       </Tr>
-                    </Thead>
-                    <Tbody>
-                      {txQuery.data.map((tx) => (
-                        <Tr key={tx.id}>
-                          <Td>
-                            <Text textStyle="text/xs" whiteSpace="nowrap">
-                              {format(new Date(tx.transactedAt), 'MMM d, HH:mm')}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text
-                              textStyle="text/xs"
-                              fontWeight="medium"
-                              color={getRecordValue(TX_TYPE_COLORS, tx.type) ?? 'neutral.600'}
-                            >
-                              {getRecordValue(TX_TYPE_LABELS, tx.type) ?? tx.type}
-                            </Text>
-                          </Td>
-                          <Td isNumeric>
-                            <Text textStyle="text/xs" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                              {formatBtcAmount(tx.amountBtc)}
-                            </Text>
-                          </Td>
-                          <Td isNumeric>
-                            <Text textStyle="text/xs" color="neutral.500" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-                              {tx.amountUsd != null && tx.amountUsd !== ''
-                                ? `$${Math.abs(Number(tx.amountUsd)).toFixed(2)}`
-                                : '—'}
-                            </Text>
-                          </Td>
-                          <Td isNumeric>
-                            <Text textStyle="text/xs" color="neutral.500">
-                              {tx.exchangeRate != null && tx.exchangeRate !== ''
-                                ? `$${Number(tx.exchangeRate).toLocaleString()}`
-                                : '—'}
-                            </Text>
-                          </Td>
-                          <Td>
-                            <Text textStyle="text/xs" color="neutral.500" maxW="200px" isTruncated>
-                              {(tx.description != null && tx.description !== '') ||
-                              (tx.txHash != null && tx.txHash !== '')
-                                ? truncateHash(tx.txHash)
-                                : '—'}
-                            </Text>
-                          </Td>
-                        </Tr>
-                      ))}
-                    </Tbody>
-                  </Table>
-                </Box>
+                    ))}
+                  </Tbody>
+                </Table>
               </Box>
             </Box>
-          )}
+          </Box>
+        )}
 
-          {selectedMonth != null && selectedMonth !== '' && txQuery.isLoading && (
-            <Spinner mt={4} display="block" mx="auto" />
-          )}
-        </Box>
-      </Stack>
-    </Box>
+        {selectedMonth != null && selectedMonth !== '' && txQuery.isLoading && (
+          <Spinner mt={4} display="block" mx="auto" />
+        )}
+      </Box>
+    </ExchangeAccountDetails>
   )
 }
 

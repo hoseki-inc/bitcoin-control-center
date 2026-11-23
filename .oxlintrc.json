@@ -300,6 +300,7 @@
     "anti-slop/no-unsafe-dictionary-type": "error",
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error",
+    "control-center/exchange-provider-errors": "error",
     "control-center/feature-boundary": "error",
     "control-center/format-usd-rounds": "error",
     "control-center/use-text-style": "error"

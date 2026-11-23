@@ -1,10 +1,13 @@
+import type { Result } from '@hoseki/packages/result'
 import { TRPCError } from '@trpc/server'
+import type { Logger } from 'pino'
 import { z } from 'zod'
 import { protectedProcedure, router } from '../../modules/trpc/init'
+import { EXCHANGE_DISPLAY_NAMES, ExchangeUserError, type SupportedExchange } from './provider-errors'
 
 interface ExchangeAccountResponseDto {
   id: string
-  exchange: 'coinbase' | 'strike' | 'robinhood' | 'kraken'
+  exchange: SupportedExchange
   displayName: string
   currency: 'BTC'
   balance: string | null
@@ -15,7 +18,7 @@ interface ExchangeAccountResponseDto {
 
 function exchangeAccountToDto(account: {
   id: string
-  exchange: 'coinbase' | 'strike' | 'robinhood' | 'kraken'
+  exchange: SupportedExchange
   displayName: string
   balanceSats: string | null
   balanceAsOf: string | null
@@ -34,6 +37,60 @@ function exchangeAccountToDto(account: {
   }
 }
 
+function toConnectTrpcError(error: Error, provider: SupportedExchange): TRPCError {
+  if (error instanceof ExchangeUserError) {
+    return new TRPCError({ code: error.code, message: error.message })
+  }
+  return new TRPCError({
+    code: 'BAD_REQUEST',
+    message: `Couldn't connect to ${EXCHANGE_DISPLAY_NAMES[provider]} right now. Please check your credentials and try again.`,
+  })
+}
+
+function toRefreshTrpcError(error: Error): TRPCError {
+  if (error instanceof ExchangeUserError) {
+    return new TRPCError({ code: error.code, message: error.message })
+  }
+  return new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'Failed to refresh exchange balance. Please try again.',
+  })
+}
+
+async function runSanitizedConnect<T>(
+  provider: SupportedExchange,
+  logger: Logger,
+  action: () => PromiseLike<Result<T, Error>>,
+): Promise<T> {
+  let result: Result<T, Error>
+  try {
+    result = await action()
+  } catch (thrown) {
+    const error = thrown instanceof Error ? thrown : new Error('Unexpected error')
+    logger.debug({ provider, errorKind: error.name || 'Error' }, 'Exchange connect threw unexpectedly')
+    throw toConnectTrpcError(error, provider)
+  }
+  if (result.isErr()) {
+    throw toConnectTrpcError(result.unwrapErr(), provider)
+  }
+  return result.unwrap()
+}
+
+async function runSanitizedRefresh<T>(logger: Logger, action: () => PromiseLike<Result<T, Error>>): Promise<T> {
+  let result: Result<T, Error>
+  try {
+    result = await action()
+  } catch (thrown) {
+    const error = thrown instanceof Error ? thrown : new Error('Unexpected error')
+    logger.debug({ errorKind: error.name || 'Error' }, 'Exchange refresh threw unexpectedly')
+    throw toRefreshTrpcError(error)
+  }
+  if (result.isErr()) {
+    throw toRefreshTrpcError(result.unwrapErr())
+  }
+  return result.unwrap()
+}
+
 export const exchangesRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     const accounts = await ctx.app.exchangeService.listAccounts()
@@ -41,18 +98,11 @@ export const exchangesRouter = router({
   }),
 
   refreshBalance: protectedProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
-    const result = await ctx.app.exchangeService.refreshBalance(input.accountId)
-    if (result.isErr()) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
-    }
-    return result.unwrap()
+    return runSanitizedRefresh(ctx.app.logger, () => ctx.app.exchangeService.refreshBalance(input.accountId))
   }),
 
   refreshAllBalances: protectedProcedure.mutation(async ({ ctx }) => {
-    const result = await ctx.app.exchangeService.refreshAllBalances()
-    if (result.isErr()) {
-      throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: result.unwrapErr().message })
-    }
+    await runSanitizedRefresh(ctx.app.logger, () => ctx.app.exchangeService.refreshAllBalances())
   }),
 
   delete: protectedProcedure.input(z.object({ accountId: z.string() })).mutation(async ({ ctx, input }) => {
@@ -72,11 +122,7 @@ export const exchangesRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const result = await ctx.app.exchangeService.connectCoinbase(input)
-        if (result.isErr()) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
-        }
-        return result.unwrap()
+        return runSanitizedConnect('coinbase', ctx.app.logger, () => ctx.app.exchangeService.connectCoinbase(input))
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -95,11 +141,7 @@ export const exchangesRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const result = await ctx.app.exchangeService.connectStrike(input)
-        if (result.isErr()) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
-        }
-        return result.unwrap()
+        return runSanitizedConnect('strike', ctx.app.logger, () => ctx.app.exchangeService.connectStrike(input))
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -165,11 +207,7 @@ export const exchangesRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const result = await ctx.app.exchangeService.connectRobinhood(input)
-        if (result.isErr()) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
-        }
-        return result.unwrap()
+        return runSanitizedConnect('robinhood', ctx.app.logger, () => ctx.app.exchangeService.connectRobinhood(input))
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
@@ -188,11 +226,7 @@ export const exchangesRouter = router({
         }),
       )
       .mutation(async ({ ctx, input }) => {
-        const result = await ctx.app.exchangeService.connectKraken(input)
-        if (result.isErr()) {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: result.unwrapErr().message })
-        }
-        return result.unwrap()
+        return runSanitizedConnect('kraken', ctx.app.logger, () => ctx.app.exchangeService.connectKraken(input))
       }),
 
     list: protectedProcedure.query(async ({ ctx }) => {
