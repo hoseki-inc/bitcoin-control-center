@@ -96,23 +96,23 @@ importers:
         specifier: 11.14.1
         version: 11.14.1(@emotion/react@11.14.0(@types/react@18.3.31)(react@19.3.1))(@types/react@18.3.31)(react@19.3.1)
       '@fastify/cors':
-        specifier: 11.4.1
-        version: 11.4.1
+        specifier: 11.4.3
+        version: 11.4.3
       '@fastify/static':
-        specifier: 10.1.10
-        version: 10.1.10
+        specifier: 10.1.11
+        version: 10.1.11
       '@fontsource/roboto-mono':
         specifier: 5.3.0
         version: 5.3.0
       '@hookform/resolvers':
         specifier: 5.9.1
-        version: 5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.91.0(@types/react@18.3.31)(react@19.3.1))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)
+        version: 5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.92.0(@types/react@18.3.31)(react@19.3.1))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)
       '@ledgerhq/hw-app-btc':
         specifier: 10.22.1
         version: 10.22.1
       '@ledgerhq/hw-transport':
-        specifier: 6.36.1
-        version: 6.36.1
+        specifier: 6.37.0
+        version: 6.37.0
       '@ledgerhq/hw-transport-webhid':
         specifier: 6.36.0
         version: 6.36.0
@@ -180,8 +180,8 @@ importers:
         specifier: 2.4.1
         version: 2.4.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       lucide-react:
-        specifier: 1.70.0
-        version: 1.70.0(@types/react@18.3.31)(react@19.3.1)
+        specifier: 1.73.0
+        version: 1.73.0(@types/react@18.3.31)(react@19.3.1)
       nanoid:
         specifier: 5.1.16
         version: 5.1.16
@@ -207,8 +207,8 @@ importers:
         specifier: 19.3.1
         version: 19.3.1(react@19.3.1)
       react-hook-form:
-        specifier: 7.91.0
-        version: 7.91.0(@types/react@18.3.31)(react@19.3.1)
+        specifier: 7.92.0
+        version: 7.92.0(@types/react@18.3.31)(react@19.3.1)
       react-router:
         specifier: 8.5.1
         version: 8.5.1(@types/react-dom@18.3.7(@types/react@18.3.31))(@types/react@18.3.31)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
@@ -1492,8 +1492,8 @@ packages:
   '@fastify/ajv-compiler@4.0.6':
     resolution: {integrity: sha512-NtuzM0SfaMJbGlnjr9LWQUN5LzgSrbB8tf/wRZNas+4E1O/Nmzl53e7ruT61HDZyRCJGC6FxIogmNZO1c5ETBA==}
 
-  '@fastify/cors@11.4.1':
-    resolution: {integrity: sha512-WuPATGGyc3YzpOfumovBJ4xC2RPBBFyDFElwldFRBCgM2G27xH9DnXTho9+nc2Ho6gLD1hKTetdOntR+G38+7A==}
+  '@fastify/cors@11.4.3':
+    resolution: {integrity: sha512-6NNFNR1i9t1oG1WlQftwc2ugElFm4cG75ylYyGNiKKiyxlVGueneup9MQ9Nd3eI4lT6kVOJaxV1Jqa727/E4jg==}
 
   '@fastify/error@4.2.1':
     resolution: {integrity: sha512-MYBumuIwP+5MIpXSyKm6/o1Eigcoij186lWUssX3LH5U8KWqU0ktZhzC4CErIX9EJeQeRGI+zJZQWakBlFbUcg==}
@@ -1510,11 +1510,11 @@ packages:
   '@fastify/proxy-addr@5.1.1':
     resolution: {integrity: sha512-zv07Y9GEuDsJPegZoDFd4SDWaZOW8N2pa0GSrYmKpId/tjt1Hgo3BjZBVjdVpfVrHaA+Qv5jawtS2O50J5xM9g==}
 
-  '@fastify/send@4.2.0':
-    resolution: {integrity: sha512-B5Hr+IFsPbqJJQu6FHE2MFpnHfbPlCOVQUPTdm6PxCcilYGrEQsulbO0z9blgbjndIyLJwa2NWFIIjXpPhbwUg==}
+  '@fastify/send@4.2.1':
+    resolution: {integrity: sha512-zOB8L9z444PnGbd1Nd7gNXPz/7bnDR8Z4KNTNSwLVQuE3cTGsU9qUj1N4SjXKK0Tq4cauZYTwB+tqvlqosuKsw==}
 
-  '@fastify/static@10.1.10':
-    resolution: {integrity: sha512-CGwOoZiKg5m4SAqeiS8bzCSKDa71DMFQ7QeVsuWBOrfFu32DpVZWFFb0cpEg7e54YK6HZZsl4g/wfoKMnRQMUw==}
+  '@fastify/static@10.1.11':
+    resolution: {integrity: sha512-WjEpDqkzOziIipghh4ki3ZNfLCmI1kRWlYKar3+9FiuY2LzoeogKiDqxIH68r6vYUSxvUzyEiV1BOP0yfW+glQ==}
 
   '@fontsource/roboto-mono@5.3.0':
     resolution: {integrity: sha512-yhwplHMHW9dCk+1pZuERfcJe+K3rosGVZEoK0XktkxRSqQ9qsipSwwiuW2/8Qmtp9lzu3Ixa/ie4BMH3i8CkZQ==}
@@ -1701,8 +1701,8 @@ packages:
   '@ledgerhq/devices@8.16.0':
     resolution: {integrity: sha512-brXLPzkvGM3D5YNsWQ25P5G4SmWdSNBed9W8wKoOIRLGdRfvE+bg9mzFty0iZ+aRLBkLoXwX7xKIL9zUi6LBKQ==}
 
-  '@ledgerhq/devices@8.18.1':
-    resolution: {integrity: sha512-mOoW1neiE9/G+zbHbTkfRtYh7SHTUzxqVyCy4jMh2br/cBD56b6mFrQrj5xUXX6AYaw7yP1i/Wy/bGaHoBQkdA==}
+  '@ledgerhq/devices@8.19.0':
+    resolution: {integrity: sha512-tj5vHCXUXNd+4yePFd0+rwi39TaLDgBKxH0g5v+S0oDWk0UmaPolOVmQpy4Gt+DFTIG6Kx9AKEBaKYsreaVQKQ==}
 
   '@ledgerhq/errors@6.37.0':
     resolution: {integrity: sha512-T5yiKI5UX7ugeocdTF3TUsCIN2BH41Bio4ZeN410YFjFOf3es08n/5JyMzzKwzRgP0blG3HfBf7s7vJKqCSAeg==}
@@ -1721,11 +1721,14 @@ packages:
   '@ledgerhq/hw-transport@6.35.5':
     resolution: {integrity: sha512-P4+wtLewLWgxPtIb90h5kjpzXVlC6f4IBQBmvowVFkInvZt34ffXkX7wa5KfMzu4l3cqCcpNSqtPSCMp+0vuqg==}
 
-  '@ledgerhq/hw-transport@6.36.1':
-    resolution: {integrity: sha512-glmZmmqrC/M9CWGJQvkiNP7piKquH3oySyymA8s7TBkejyuZezDq44phk8njhkWzhntOCADKrEp36mWcwYeIFQ==}
+  '@ledgerhq/hw-transport@6.37.0':
+    resolution: {integrity: sha512-J5es/iRPEl24dT4XU9w2EQu5Z0fwkoQbLY2a0T7Pm3wq9aLiYkD02ALj1R+yqMUZgI8LQb+77GvPj557n0i0NQ==}
 
   '@ledgerhq/logs@6.19.0':
     resolution: {integrity: sha512-kmWj18C7eTtuytdaWygzVrQm9EoD4YWuYnd/kY8stVBBAzRdJzrGlm013ijQF6I/kGLKlGY7JKmll6j32KGpfQ==}
+
+  '@ledgerhq/logs@6.20.0':
+    resolution: {integrity: sha512-Pp+s24tGEGR3ANA+qQM50vlAUH/SmAaxkpCw0pmYYUa/fcGggko+7c1+RvgpjA6PhB3XPKTmu9vQdVrROJXjuw==}
 
   '@ledgerhq/psbtv2@0.5.0':
     resolution: {integrity: sha512-hKp6iIIvFX1KUZA6Uf7rvjBIjEqHBdqSsFzWGLNc9+F0qy+C5C0xLlPbw/lKR+x8Xuau1dhvmw52BvPMQQz41A==}
@@ -5184,8 +5187,8 @@ packages:
   lru-cache@5.1.1:
     resolution: {integrity: sha512-KpNARQA3Iwv+jTA0utUVVbrh+Jlrr1Fv0e56GGzAFOXN7dk/FviaDW8LHmK52DlcH4WP2n6gI8vN1aesBFgo9w==}
 
-  lucide-react@1.70.0:
-    resolution: {integrity: sha512-gCTPPN1MlQUBtUgdsUv+0CAUj+X8hifRUiRBw4E5v7lvDIOIpx0EZezdGQMSimS8pKA6esvullJub4GYr0mCHA==}
+  lucide-react@1.73.0:
+    resolution: {integrity: sha512-fVOzGviL9mTfHenG1PbCfIceavyGlnpYNSYr+aGZHLRymAJ7DTP6KHuqt0uBkCKAoenr1UVkwSbDIYt2xIesEQ==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
@@ -5420,6 +5423,10 @@ packages:
 
   minimatch@11.0.8:
     resolution: {integrity: sha512-nFQuYSTVrGvysVBps5Ih+0BdnYFN/Cj3C816r6+p7yK+FHrVLGE4O4N9AFwykrlNlvM2HYt+Rad1Uiro6h88Ig==}
+    engines: {node: 20 || >=22}
+
+  minimatch@11.0.9:
+    resolution: {integrity: sha512-KCFkfyjqerNlSstjlhIGNXIKZGA/6O4V4RlhZ+Dsr621SPPw0mzlypE9D9ZOoPiVefHID+j7/XuMMlqfD/F60Q==}
     engines: {node: 20 || >=22}
 
   minimatch@3.1.5:
@@ -5904,8 +5911,8 @@ packages:
       '@types/react':
         optional: true
 
-  react-hook-form@7.91.0:
-    resolution: {integrity: sha512-5BEBUnCBwa28AFXYTYmOaB/+CSpJ/+CWVASHEvIGUzFdHyUiPHeRhG7r5hOZ8nZi0yP7pbHdFNXO/p31EKTJFQ==}
+  react-hook-form@7.92.0:
+    resolution: {integrity: sha512-O5ILyY5fYHN7N13Pfxpe55KboyNFsJdM03BHpshQkClJd8raugiAUGY7VjifITrfhVxyx81ko25azXCoayhf1w==}
     engines: {node: '>=18.0.0'}
     peerDependencies:
       '@types/react': '*'
@@ -8332,7 +8339,7 @@ snapshots:
       ajv-formats: 3.0.1
       fast-uri: 4.2.3
 
-  '@fastify/cors@11.4.1':
+  '@fastify/cors@11.4.3':
     dependencies:
       fastify-plugin: 6.0.1
       toad-cache: 3.7.4
@@ -8354,7 +8361,7 @@ snapshots:
       '@fastify/forwarded': 3.0.2
       ipaddr.js: 2.5.0
 
-  '@fastify/send@4.2.0':
+  '@fastify/send@4.2.1':
     dependencies:
       '@lukeed/ms': 2.0.2
       escape-html: 1.0.3
@@ -8362,11 +8369,11 @@ snapshots:
       http-errors: 2.0.1
       mime: 3.0.0
 
-  '@fastify/static@10.1.10':
+  '@fastify/static@10.1.11':
     dependencies:
       '@fastify/accept-negotiator': 2.1.2
       '@fastify/error': 4.2.1
-      '@fastify/send': 4.2.0
+      '@fastify/send': 4.2.1
       content-disposition: 3.0.0
       fastify-plugin: 6.0.1
       fastq: 1.20.3
@@ -8374,10 +8381,10 @@ snapshots:
 
   '@fontsource/roboto-mono@5.3.0': {}
 
-  '@hookform/resolvers@5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.91.0(@types/react@18.3.31)(react@19.3.1))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)':
+  '@hookform/resolvers@5.9.1(@sinclair/typebox@0.34.52)(@standard-schema/spec@1.1.0)(ajv@8.18.0)(react-hook-form@7.92.0(@types/react@18.3.31)(react@19.3.1))(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)':
     dependencies:
       '@standard-schema/utils': 0.3.0
-      react-hook-form: 7.91.0(@types/react@18.3.31)(react@19.3.1)
+      react-hook-form: 7.92.0(@types/react@18.3.31)(react@19.3.1)
     optionalDependencies:
       '@sinclair/typebox': 0.34.52
       '@standard-schema/spec': 1.1.0
@@ -8528,7 +8535,7 @@ snapshots:
   '@ledgerhq/devices@8.14.2':
     dependencies:
       '@ledgerhq/errors': 6.37.0
-      '@ledgerhq/logs': 6.19.0
+      '@ledgerhq/logs': 6.20.0
       rxjs: 7.8.2
       semver: 7.7.3
 
@@ -8536,7 +8543,7 @@ snapshots:
     dependencies:
       semver: 7.7.3
 
-  '@ledgerhq/devices@8.18.1':
+  '@ledgerhq/devices@8.19.0':
     dependencies:
       semver: 7.8.5
 
@@ -8574,16 +8581,18 @@ snapshots:
     dependencies:
       '@ledgerhq/devices': 8.16.0
       '@ledgerhq/errors': 6.37.0
-      '@ledgerhq/logs': 6.19.0
+      '@ledgerhq/logs': 6.20.0
       events: 3.3.0
 
-  '@ledgerhq/hw-transport@6.36.1':
+  '@ledgerhq/hw-transport@6.37.0':
     dependencies:
-      '@ledgerhq/devices': 8.18.1
-      '@ledgerhq/logs': 6.19.0
+      '@ledgerhq/devices': 8.19.0
+      '@ledgerhq/logs': 6.20.0
       events: 3.3.0
 
   '@ledgerhq/logs@6.19.0': {}
+
+  '@ledgerhq/logs@6.20.0': {}
 
   '@ledgerhq/psbtv2@0.5.0':
     dependencies:
@@ -11242,7 +11251,7 @@ snapshots:
 
   glob@14.0.6:
     dependencies:
-      minimatch: 11.0.8
+      minimatch: 11.0.9
       minipass: 7.1.3
       path-scurry: 3.0.0
 
@@ -11990,7 +11999,7 @@ snapshots:
     dependencies:
       yallist: 3.1.1
 
-  lucide-react@1.70.0(@types/react@18.3.31)(react@19.3.1):
+  lucide-react@1.73.0(@types/react@18.3.31)(react@19.3.1):
     dependencies:
       react: 19.3.1
     optionalDependencies:
@@ -12480,6 +12489,11 @@ snapshots:
   minimalistic-crypto-utils@1.0.1: {}
 
   minimatch@11.0.8:
+    dependencies:
+      '@isaacs/nonrecursive-glob-match': 1.1.0
+      brace-expansion: 5.0.13
+
+  minimatch@11.0.9:
     dependencies:
       '@isaacs/nonrecursive-glob-match': 1.1.0
       brace-expansion: 5.0.13
@@ -13066,7 +13080,7 @@ snapshots:
     optionalDependencies:
       '@types/react': 18.3.31
 
-  react-hook-form@7.91.0(@types/react@18.3.31)(react@19.3.1):
+  react-hook-form@7.92.0(@types/react@18.3.31)(react@19.3.1):
     dependencies:
       react: 19.3.1
     optionalDependencies:
