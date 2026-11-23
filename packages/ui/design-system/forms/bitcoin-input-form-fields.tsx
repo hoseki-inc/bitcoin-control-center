@@ -175,7 +175,7 @@ export function BitcoinInputFormFields({
           <LabelWithTooltip
             htmlFor="encoding"
             labelText="Select script type"
-            tooltipText="Not sure? Add the account and check its balance. If the balance is wrong, abandon the pending account and add it again with another script type."
+            tooltipText="Not sure? Pick one and check the balance. If it's wrong, abandon it and try another."
           />
           <RadioCardGroup
             options={Object.keys(labelsToEncodings)}
