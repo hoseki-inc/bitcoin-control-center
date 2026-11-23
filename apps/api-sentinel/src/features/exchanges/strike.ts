@@ -3,6 +3,7 @@ import type { Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import type { Logger } from 'pino'
 import { z } from 'zod'
+import { type ValidatedSats, parseBtcBalanceSats } from './amounts'
 
 const StrikeBalanceSchema = z.array(
   z.object({
@@ -28,6 +29,24 @@ export class StrikeApiError extends Error {
   }
 }
 
+export class StrikeTransportError extends Error {
+  public readonly tag = 'StrikeTransportError'
+
+  public constructor(message = 'Strike API request failed') {
+    super(message)
+    this.name = 'StrikeTransportError'
+  }
+}
+
+export class StrikeResponseError extends Error {
+  public readonly tag = 'StrikeResponseError'
+
+  public constructor(message = 'Invalid Strike API response') {
+    super(message)
+    this.name = 'StrikeResponseError'
+  }
+}
+
 async function fetchStrikeBalances(apiKey: string): Promise<Result<StrikeBalance[], Error>> {
   let response: Response
   try {
@@ -39,7 +58,7 @@ async function fetchStrikeBalances(apiKey: string): Promise<Result<StrikeBalance
       },
     })
   } catch {
-    return Err(new Error('Strike API request failed'))
+    return Err(new StrikeTransportError())
   }
 
   if (!response.ok) {
@@ -50,30 +69,35 @@ async function fetchStrikeBalances(apiKey: string): Promise<Result<StrikeBalance
   try {
     json = await response.json()
   } catch {
-    return Err(new Error('Invalid Strike API response'))
+    return Err(new StrikeResponseError())
   }
   const parsed = parseUnknown(StrikeBalanceSchema, json)
   if (parsed.isErr()) {
-    return Err(new Error(`Invalid Strike API response: ${parsed.unwrapErr().message}`))
+    return Err(new StrikeResponseError())
   }
   return Ok(parsed.unwrap())
 }
 
-export const getStrikeBtcBalance = asyncFn(async (apiKey: string, logger: Logger): Promise<Result<bigint, Error>> => {
-  const balances = await fetchStrikeBalances(apiKey)
-  if (balances.isErr()) {
-    return Err(balances.unwrapErr())
-  }
+export const getStrikeBtcBalance = asyncFn(
+  async (apiKey: string, logger: Logger): Promise<Result<ValidatedSats, Error>> => {
+    const balances = await fetchStrikeBalances(apiKey)
+    if (balances.isErr()) {
+      return Err(balances.unwrapErr())
+    }
 
-  const btcBalance = balances.unwrap().find((b) => b.currency === 'BTC')
-  if (!btcBalance) {
-    return Err(new Error('No BTC balance found in Strike account'))
-  }
+    const btcBalance = balances.unwrap().find((b) => b.currency === 'BTC')
+    if (!btcBalance) {
+      return Err(new Error('No BTC balance found in Strike account'))
+    }
 
-  const sats = BigInt(Math.round(Number(btcBalance.total) * 1e8))
-  logger.debug({ sats: sats.toString() }, 'Fetched Strike BTC balance')
-  return Ok(sats)
-})
+    const sats = parseBtcBalanceSats(btcBalance.total)
+    if (sats.isErr()) {
+      return Err(sats.unwrapErr())
+    }
+    logger.debug({ sats: sats.unwrap() }, 'Fetched Strike BTC balance')
+    return Ok(sats.unwrap())
+  },
+)
 
 export const validateStrikeApiKey = asyncFn(
   async (apiKey: string, logger: Logger): Promise<Result<StrikeBalance[], Error>> => {

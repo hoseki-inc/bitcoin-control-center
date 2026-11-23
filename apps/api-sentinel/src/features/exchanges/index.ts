@@ -1,3 +1,4 @@
-// The only entry point for code outside the exchanges feature.
-export { ExchangeService } from './service'
+export { parseStoredBalanceSats } from './amounts'
+export { describeSafeProviderFailure } from './provider-errors'
 export { exchangesRouter } from './router'
+export { ExchangeService } from './service'

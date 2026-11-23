@@ -6,16 +6,17 @@ import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_prov
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { StatementQuoteCurrency } from '@hoseki/packages/schemas/statement-quote'
-import { eq, sql } from 'drizzle-orm'
+import { asc, eq, sql } from 'drizzle-orm'
 import pino, { type Logger } from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { AppContext } from '../../context'
 import { type SentinelDb, openDrizzleDatabase } from '../../db/drizzle'
-import { statements } from '../../db/schema'
+import { exchangeAccounts, exchangeBalanceSnapshots, statements } from '../../db/schema'
 import { EtfService } from '../../features/etf'
 import { DailyRatesService } from '../../features/price'
 import { PriceHistoryService } from '../../features/price'
 import { PriceService } from '../../features/price'
+import { Encrypted, generateEncryptionKey, initEncryption } from '../../lib/encrypted'
 import { AuthService } from '../../modules/auth/service'
 import { appRouter } from '../../modules/trpc/router'
 import { WalletBalanceService } from '../../modules/wallet_balances/service'
@@ -615,4 +616,76 @@ it('persists mixed provider attribution and exposes it in both PDF formats after
     expect(summary.closingBalance.providerUrl).toBe('https://mempool.space')
   }
   expect(fetch).not.toHaveBeenCalled()
+})
+
+it('skips corrupt exchange snapshots during statement generation without throwing or deleting raw rows', async () => {
+  await setup()
+  initEncryption(generateEncryptionKey())
+  const { service } = harness()
+  const encrypted = JSON.stringify({
+    type: 'apiKey',
+    data: { apiKey: { blob: Encrypted.encrypt('strike-key').unwrap().blob } },
+  })
+  const connectedAt = '2026-09-08T12:00:00.000Z'
+  const corruptId = 'ex_corrupt_stmt'
+  const healthyId = 'ex_healthy_stmt'
+
+  await database.insert(exchangeAccounts).values([
+    {
+      id: corruptId,
+      provider: 'strike',
+      displayName: 'Strike Corrupt',
+      encryptedCredentials: encrypted,
+      balanceSats: 'NaN',
+      balanceAsOf: connectedAt,
+      createdAt: connectedAt,
+      credentialsConnectedAt: connectedAt,
+    },
+    {
+      id: healthyId,
+      provider: 'strike',
+      displayName: 'Strike Healthy',
+      encryptedCredentials: encrypted,
+      balanceSats: '40000000',
+      balanceAsOf: connectedAt,
+      createdAt: connectedAt,
+      credentialsConnectedAt: connectedAt,
+    },
+  ])
+
+  await database.insert(exchangeBalanceSnapshots).values([
+    { accountId: corruptId, timestamp: '2026-08-02T12:00:00.000Z', balanceSats: '10000000' },
+    { accountId: corruptId, timestamp: '2026-08-10T12:00:00.000Z', balanceSats: 'NaN' },
+    { accountId: corruptId, timestamp: '2026-08-20T12:00:00.000Z', balanceSats: '25000000' },
+    { accountId: healthyId, timestamp: '2026-08-05T12:00:00.000Z', balanceSats: '40000000' },
+  ])
+
+  const stmtInput: GenerateStatementInput = {
+    claimIds: [],
+    exchangeAccountIds: [corruptId, healthyId],
+    openingDate: opening,
+    closingDate: closing,
+    timezone: 'UTC',
+  }
+  const api = statementCaller(service)
+  const created = await api.initiateGeneration(stmtInput)
+  await vi.waitFor(async () => {
+    await expect(service.findById(created.id)).resolves.toMatchObject({ status: 'completed' })
+  })
+  const loaded = await service.loadCompleted(created.id)
+  expect(loaded?.transactionMap[corruptId]?.transactions.map((tx) => tx.balanceChange)).toEqual([10000000n, 15000000n])
+  expect(loaded?.transactionMap[healthyId]?.transactions.map((tx) => tx.balanceChange)).toEqual([40000000n])
+  const pdf = await api.retrieveDocumentData({ statementId: created.id, format: 'custom' })
+  expect(pdf.format).toBe('custom')
+  if (pdf.format === 'custom') {
+    expect(pdf.summary.closingBalance.sats).toBe(65000000n)
+  }
+
+  await expect(
+    database
+      .select({ balanceSats: exchangeBalanceSnapshots.balanceSats })
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, corruptId))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp)),
+  ).resolves.toEqual([{ balanceSats: '10000000' }, { balanceSats: 'NaN' }, { balanceSats: '25000000' }])
 })

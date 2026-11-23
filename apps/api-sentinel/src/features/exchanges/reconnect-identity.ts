@@ -1,4 +1,5 @@
 import { Err, Ok, type Result } from '@hoseki/packages/result'
+import type { ValidatedSats } from './amounts'
 import {
   EXCHANGE_DISPLAY_NAMES,
   ExchangeAccountMismatchError,
@@ -23,7 +24,7 @@ export interface VerifiedReconnectIdentity {
 export interface ReconnectReplacementPayload {
   readonly displayName: string
   readonly encryptedCredentials: string
-  readonly balanceSats: string
+  readonly balanceSats: ValidatedSats
   readonly balanceAsOf: string
   readonly credentialsConnectedAt: string
 }
@@ -45,6 +46,7 @@ export interface ReconnectIdentityInput {
   accountId: string
   provider: SupportedExchange
   existingExternalAccountId: string | null | undefined
+  dbExternalAccountId?: string | null
   existingPortfolioUuid: string | undefined
   incomingExternalAccountId: string | null | undefined
   incomingPortfolioUuid: string | undefined
@@ -73,13 +75,15 @@ export function verifyReconnectIdentity(
   const incomingExternalRaw = nonEmpty(input.incomingExternalAccountId)
   const existingPortfolioUuid = nonEmpty(input.existingPortfolioUuid)
   const incomingPortfolioUuid = nonEmpty(input.incomingPortfolioUuid)
+  const persistedExternalAccountId =
+    input.dbExternalAccountId !== undefined ? input.dbExternalAccountId : (input.existingExternalAccountId ?? null)
 
   if (input.provider === 'strike') {
     return Ok({
       [verifiedReconnectBrand]: 'replacement',
       accountId: input.accountId,
       provider: input.provider,
-      existingExternalAccountId: input.existingExternalAccountId ?? null,
+      existingExternalAccountId: persistedExternalAccountId,
       nextExternalAccountId: null,
       nextPortfolioUuid: existingPortfolioUuid ?? incomingPortfolioUuid,
     })
@@ -125,7 +129,7 @@ export function verifyReconnectIdentity(
     [verifiedReconnectBrand]: 'replacement',
     accountId: input.accountId,
     provider: input.provider,
-    existingExternalAccountId: input.existingExternalAccountId ?? null,
+    existingExternalAccountId: persistedExternalAccountId,
     nextExternalAccountId: existingExternalRaw ?? incomingExternalRaw ?? null,
     nextPortfolioUuid: existingPortfolioUuid ?? incomingPortfolioUuid,
   })

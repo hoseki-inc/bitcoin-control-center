@@ -9,10 +9,12 @@ import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { Ok, asyncFn, parseUnknown } from '@hoseki/packages/result'
 import { TRPCError } from '@trpc/server'
 import { getHTTPStatusCodeFromError } from '@trpc/server/http'
+import { eq } from 'drizzle-orm'
 import pino from 'pino'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { createAppContext } from '../../context'
+import { exchangeAccounts } from '../../db/schema'
 import * as env from '../../env'
 import { appRouter } from '../../modules/trpc/router'
 
@@ -87,14 +89,18 @@ function generateRobinhoodPrivateKeyBase64(): string {
 }
 
 async function stubRobinhoodHttps(
-  responder: (args: { path: string; apiKey: string }) => { status: number; body: string },
+  responder: (args: {
+    path: string
+    apiKey: string
+  }) => { status: number; body: string } | Promise<{ status: number; body: string }>,
 ): Promise<void> {
   const server = http.createServer((req, res) => {
     const rawApiKey = req.headers['x-api-key']
     const apiKey = Array.isArray(rawApiKey) ? (rawApiKey[0] ?? '') : (rawApiKey ?? '')
-    const reply = responder({ path: req.url ?? '', apiKey })
-    res.writeHead(reply.status, { 'Content-Type': 'application/json' })
-    res.end(reply.body)
+    void Promise.resolve(responder({ path: req.url ?? '', apiKey })).then((reply) => {
+      res.writeHead(reply.status, { 'Content-Type': 'application/json' })
+      res.end(reply.body)
+    })
   })
   await new Promise<void>((resolve) => {
     server.listen(0, '127.0.0.1', () => {
@@ -629,26 +635,30 @@ it('maps raw validateStrikeApiKey errors in strike.connect through toConnectTrpc
   )
 
   await expectTrpcError(exchanges.strike.connect({ apiKey: 'strike-bad', displayName: 'Strike' }), {
-    code: 'BAD_REQUEST',
-    message: "Couldn't connect to Strike right now. Please check your credentials and try again.",
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: "Couldn't connect to Strike right now. Please try again.",
     forbiddenText: secretCanary,
   })
 
   mode = 'malformed'
   await expectTrpcError(exchanges.strike.connect({ apiKey: 'strike-bad', displayName: 'Strike' }), {
-    code: 'BAD_REQUEST',
-    message: "Couldn't connect to Strike right now. Please check your credentials and try again.",
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: "Couldn't connect to Strike right now. Please try again.",
     forbiddenText: secretCanary,
   })
 
   expect(logs.join('\n')).not.toContain(secretCanary)
 })
 
-it('sanitizes thrown transport errors and invalid header API keys in strike.connect and coinbase.connect without leaking secrets', async () => {
+it('sanitizes thrown transport errors and invalid header API keys in strike.connect, coinbase.connect, kraken.connect, and robinhood.connect without leaking secrets', async () => {
   const { exchanges, logs } = await setup({ captureLogs: true })
   const strikeThrownCanary = 'STRIKE_THROWN_CANARY_991122'
   const strikeHeaderCanary = 'STRIKE_HEADER_KEY_CANARY_334455'
   const coinbaseHeaderCanary = 'CB_HEADER_KEY_CANARY_774422'
+  const krakenHeaderCanary = 'KR_HEADER_KEY_CANARY_556677'
+  const robinhoodHeaderCanary = 'RH_HEADER_KEY_CANARY_889900'
 
   vi.stubGlobal(
     'fetch',
@@ -658,8 +668,9 @@ it('sanitizes thrown transport errors and invalid header API keys in strike.conn
   )
 
   await expectTrpcError(exchanges.strike.connect({ apiKey: 'strike-key', displayName: 'Strike' }), {
-    code: 'BAD_REQUEST',
-    message: "Couldn't connect to Strike right now. Please check your credentials and try again.",
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: "Couldn't connect to Strike right now. Please try again.",
     forbiddenText: strikeThrownCanary,
   })
 
@@ -668,7 +679,8 @@ it('sanitizes thrown transport errors and invalid header API keys in strike.conn
     exchanges.strike.connect({ apiKey: `${strikeHeaderCanary}\r\ninjected`, displayName: 'Strike' }),
     {
       code: 'BAD_REQUEST',
-      message: "Couldn't connect to Strike right now. Please check your credentials and try again.",
+      httpStatus: 400,
+      message: 'Invalid Strike API credentials. Check your key and permissions, then try again.',
       forbiddenText: strikeHeaderCanary,
     },
   )
@@ -677,7 +689,8 @@ it('sanitizes thrown transport errors and invalid header API keys in strike.conn
     exchanges.coinbase.connect({ apiKey: `${coinbaseHeaderCanary}\r\ninjected`, secretKey: 'coinbase-secret' }),
     {
       code: 'BAD_REQUEST',
-      message: "Couldn't connect to Coinbase right now. Please check your credentials and try again.",
+      httpStatus: 400,
+      message: 'Invalid Coinbase API credentials. Check your key and permissions, then try again.',
       forbiddenText: coinbaseHeaderCanary,
     },
   )
@@ -686,8 +699,35 @@ it('sanitizes thrown transport errors and invalid header API keys in strike.conn
     exchanges.coinbase.connect({ apiKey: `${coinbaseHeaderCanary}\u0100`, secretKey: 'coinbase-secret' }),
     {
       code: 'BAD_REQUEST',
-      message: "Couldn't connect to Coinbase right now. Please check your credentials and try again.",
+      httpStatus: 400,
+      message: 'Invalid Coinbase API credentials. Check your key and permissions, then try again.',
       forbiddenText: coinbaseHeaderCanary,
+    },
+  )
+
+  await expectTrpcError(
+    exchanges.kraken.connect({
+      apiKey: `${krakenHeaderCanary}\r\ninjected`,
+      secretKey: Buffer.from('sec').toString('base64'),
+    }),
+    {
+      code: 'BAD_REQUEST',
+      httpStatus: 400,
+      message: 'Invalid Kraken API credentials. Check your key and permissions, then try again.',
+      forbiddenText: krakenHeaderCanary,
+    },
+  )
+
+  await expectTrpcError(
+    exchanges.robinhood.connect({
+      apiKey: `${robinhoodHeaderCanary}\u0100`,
+      privateKeyBase64: generateRobinhoodPrivateKeyBase64(),
+    }),
+    {
+      code: 'BAD_REQUEST',
+      httpStatus: 400,
+      message: 'Invalid Robinhood API credentials. Check your key and permissions, then try again.',
+      forbiddenText: robinhoodHeaderCanary,
     },
   )
 
@@ -695,6 +735,8 @@ it('sanitizes thrown transport errors and invalid header API keys in strike.conn
   expect(combinedLogs).not.toContain(strikeThrownCanary)
   expect(combinedLogs).not.toContain(strikeHeaderCanary)
   expect(combinedLogs).not.toContain(coinbaseHeaderCanary)
+  expect(combinedLogs).not.toContain(krakenHeaderCanary)
+  expect(combinedLogs).not.toContain(robinhoodHeaderCanary)
 })
 
 it('catches unexpected thrown exceptions at the router boundary for connect and refresh mutations without leaking secrets', async () => {
@@ -702,7 +744,9 @@ it('catches unexpected thrown exceptions at the router boundary for connect and 
   const canary = 'ROUTER_THROW_BOUNDARY_CANARY_619204'
 
   vi.spyOn(app.exchangeService, 'connectCoinbase').mockImplementation(async () => {
-    throw new Error(`unexpected coinbase throw ${canary}`)
+    const err = new Error(`unexpected coinbase throw ${canary}`)
+    err.name = `CustomName_${canary}`
+    throw err
   })
   vi.spyOn(app.exchangeService, 'connectStrike').mockImplementation(async () => {
     throw new Error(`unexpected strike throw ${canary}`)
@@ -712,20 +756,553 @@ it('catches unexpected thrown exceptions at the router boundary for connect and 
   })
 
   await expectTrpcError(exchanges.coinbase.connect({ apiKey: 'k', secretKey: 's' }), {
-    code: 'BAD_REQUEST',
-    message: "Couldn't connect to Coinbase right now. Please check your credentials and try again.",
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: "Couldn't connect to Coinbase right now. Please try again.",
     forbiddenText: canary,
   })
   await expectTrpcError(exchanges.strike.connect({ apiKey: 'k', displayName: 'Strike' }), {
-    code: 'BAD_REQUEST',
-    message: "Couldn't connect to Strike right now. Please check your credentials and try again.",
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: "Couldn't connect to Strike right now. Please try again.",
     forbiddenText: canary,
   })
   await expectTrpcError(exchanges.refreshBalance({ accountId: 'acct-1' }), {
     code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
     message: 'Failed to refresh exchange balance. Please try again.',
     forbiddenText: canary,
   })
 
   expect(logs.join('\n')).not.toContain(canary)
+})
+
+it('rejects malformed Kraken XXBT balance on connect with INTERNAL_SERVER_ERROR, hides canary, and creates no account', async () => {
+  const { exchanges, logs } = await setup({ captureLogs: true })
+  const amountCanary = 'NaN_CANARY_481920'
+  const keyCanary = 'KRAKEN_KEY_CANARY_592031'
+  const krakenSecret = Buffer.from('kraken-secret-canary').toString('base64')
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => jsonResponse(JSON.stringify({ error: [], result: { XXBT: amountCanary } }))),
+  )
+
+  await expectTrpcError(exchanges.kraken.connect({ apiKey: keyCanary, secretKey: krakenSecret }), {
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: "Couldn't connect to Kraken right now. Please try again.",
+    forbiddenText: amountCanary,
+  })
+
+  await expect(exchanges.list()).resolves.toEqual([])
+  const combinedLogs = logs.join('\n')
+  expect(combinedLogs).not.toContain(amountCanary)
+  expect(combinedLogs).not.toContain(keyCanary)
+})
+
+it('resolves refreshAllBalances when one account returns a malformed amount and updates healthy accounts', async () => {
+  const { exchanges, logs } = await setup({ captureLogs: true })
+  const badAmountCanary = 'NaN_STRIKE_CANARY_773311'
+  const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+  let strikePhase: 'connect' | 'refresh' = 'connect'
+  let krakenBalance = '0.25'
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (url.includes('api.strike.me')) {
+        const total = strikePhase === 'connect' ? '0.4' : badAmountCanary
+        return jsonResponse(JSON.stringify([{ currency: 'BTC', total, available: total }]))
+      }
+      if (url.endsWith('/0/private/Balance')) {
+        return jsonResponse(JSON.stringify({ error: [], result: { XXBT: krakenBalance } }))
+      }
+      if (url.endsWith('/0/private/GetApiKeyInfo')) {
+        return jsonResponse(JSON.stringify({ error: [], result: { iban: 'KR-GOOD-1' } }))
+      }
+      return jsonResponse(JSON.stringify({ error: ['unknown'] }), 404)
+    }),
+  )
+
+  const strikeAccount = await exchanges.strike.connect({ apiKey: 'strike-k', displayName: 'Strike' })
+  const krakenAccount = await exchanges.kraken.connect({ apiKey: 'kraken-k', secretKey: krakenSecret })
+
+  strikePhase = 'refresh'
+  krakenBalance = '0.75'
+
+  await expect(exchanges.refreshAllBalances()).resolves.toBeUndefined()
+
+  const accounts = await exchanges.list()
+  const updatedStrike = accounts.find((a) => a.id === strikeAccount.id)
+  const updatedKraken = accounts.find((a) => a.id === krakenAccount.id)
+  expect(updatedStrike?.balance).toBe('40000000')
+  expect(updatedKraken?.balance).toBe('75000000')
+  expect(logs.join('\n')).not.toContain(badAmountCanary)
+})
+
+it('maps Coinbase 503 connect to HTTP 500 without leaking HTML, status text, or credentials', async () => {
+  const { exchanges, logs } = await setup({ captureLogs: true })
+  const htmlCanary = 'CB_HTML_CANARY_102938'
+  const statusCanary = 'CB_STATUS_CANARY_475610'
+  const credCanary = 'CB_CRED_CANARY_918273'
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(
+      async () =>
+        new Response(`<html><body>Gateway ${htmlCanary}</body></html>`, {
+          status: 503,
+          statusText: `Unavailable ${statusCanary}`,
+          headers: { 'Content-Type': 'text/html' },
+        }),
+    ),
+  )
+
+  let caught: unknown
+  try {
+    await exchanges.coinbase.connect({ apiKey: credCanary, secretKey: `secret-${credCanary}` })
+  } catch (err: unknown) {
+    caught = err
+  }
+
+  expect(caught).toBeInstanceOf(TRPCError)
+  if (caught instanceof TRPCError) {
+    expect(caught.code).toBe('INTERNAL_SERVER_ERROR')
+    expect(getHTTPStatusCodeFromError(caught)).toBe(500)
+    expect(caught.message).toBe("Couldn't connect to Coinbase right now. Please try again.")
+    const serialized = JSON.stringify({ code: caught.code, message: caught.message })
+    expect(serialized).not.toContain(htmlCanary)
+    expect(serialized).not.toContain(statusCanary)
+    expect(serialized).not.toContain(credCanary)
+  }
+
+  const combinedLogs = logs.join('\n')
+  expect(combinedLogs).not.toContain(htmlCanary)
+  expect(combinedLogs).not.toContain(statusCanary)
+  expect(combinedLogs).not.toContain(credCanary)
+})
+
+it('maps stale reconnect generation change to INTERNAL_SERVER_ERROR instead of CONFLICT and preserves newer generation', async () => {
+  const { exchanges } = await setup()
+  let releaseStaleDetail: (() => void) | undefined
+  const staleDetailReached = new Promise<void>((resolve) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = extractUrl(input)
+        const accessKey = extractHeader(input, init, 'CB-ACCESS-KEY')
+        const accountBody = (name: string, balance: string) => ({
+          uuid: 'cb-btc-gen',
+          name,
+          currency: 'BTC',
+          available_balance: { value: balance, currency: 'BTC' },
+          default: true,
+          active: true,
+          created_at: '2025-01-01T00:00:00Z',
+          updated_at: '2025-01-01T00:00:00Z',
+          deleted_at: null,
+          type: 'ACCOUNT_TYPE_CRYPTO',
+          ready: true,
+          hold: { value: '0', currency: 'BTC' },
+        })
+        if (url.includes('/api/v3/brokerage/key_permissions')) {
+          return jsonResponse(
+            JSON.stringify({
+              can_view: true,
+              can_trade: false,
+              can_transfer: false,
+              portfolio_uuid: 'port-gen',
+              portfolio_type: 'DEFAULT',
+            }),
+          )
+        }
+        if (url.includes('/api/v3/brokerage/accounts/cb-btc-gen')) {
+          if (accessKey === 'cb-stale-key') {
+            resolve()
+            await new Promise<void>((done) => {
+              releaseStaleDetail = done
+            })
+            return jsonResponse(JSON.stringify({ account: accountBody('Stale Name', '0.1') }))
+          }
+          if (accessKey === 'cb-newer-key') {
+            return jsonResponse(JSON.stringify({ account: accountBody('Newer Name', '1.25') }))
+          }
+          return jsonResponse(JSON.stringify({ account: accountBody('Initial Name', '0.5') }))
+        }
+        if (url.includes('/api/v3/brokerage/accounts')) {
+          const name =
+            accessKey === 'cb-stale-key' ? 'Stale Name' : accessKey === 'cb-newer-key' ? 'Newer Name' : 'Initial Name'
+          return jsonResponse(
+            JSON.stringify({
+              accounts: [accountBody(name, '0.5')],
+              has_next: false,
+              cursor: '',
+              size: 1,
+            }),
+          )
+        }
+        return jsonResponse(JSON.stringify({ error: 'not found' }), 404)
+      }),
+    )
+  })
+
+  const initial = await exchanges.coinbase.connect({ apiKey: 'cb-gen1-key', secretKey: 'cb-gen1-secret' })
+
+  const stalePromise = exchanges.coinbase.connect({
+    apiKey: 'cb-stale-key',
+    secretKey: 'cb-stale-secret',
+    replaceAccountId: initial.id,
+  })
+
+  await staleDetailReached
+
+  const newer = await exchanges.coinbase.connect({
+    apiKey: 'cb-newer-key',
+    secretKey: 'cb-newer-secret',
+    replaceAccountId: initial.id,
+  })
+  expect(newer.id).toBe(initial.id)
+
+  releaseStaleDetail?.()
+  await expectTrpcError(stalePromise, {
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: 'Exchange account credentials changed during reconnect. Please try again.',
+    forbiddenText: 'different',
+  })
+
+  const listed = await exchanges.coinbase.list()
+  expect(listed).toHaveLength(1)
+  expect(listed[0]?.displayName).toBe('Newer Name')
+  expect(listed[0]?.balance).toBe('125000000')
+})
+
+it('maps mixed Kraken credential and service errors on connect to BAD_REQUEST while keeping service-only and rate-limit-only errors retryable', async () => {
+  const { exchanges } = await setup()
+  const krakenSecret = Buffer.from('secret').toString('base64')
+  let errors: string[] = []
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => jsonResponse(JSON.stringify({ error: errors }), 200)),
+  )
+
+  const invalidCredentialsMessage = 'Invalid Kraken API credentials. Check your key and permissions, then try again.'
+  const retryableMessage = "Couldn't connect to Kraken right now. Please try again."
+
+  for (const mixed of [
+    ['EAPI:Invalid key', 'EService:Unavailable'],
+    ['EService:Unavailable', 'EAPI:Invalid key'],
+    ['EGeneral:Permission denied', 'EService:Busy'],
+    ['EAPI:Rate limit exceeded', 'EGeneral:Permission denied'],
+  ]) {
+    errors = mixed
+    await expectTrpcError(exchanges.kraken.connect({ apiKey: 'kr-mixed', secretKey: krakenSecret }), {
+      code: 'BAD_REQUEST',
+      httpStatus: 400,
+      message: invalidCredentialsMessage,
+    })
+  }
+
+  for (const transient of [['EAPI:Rate limit exceeded'], ['EService:Unavailable']]) {
+    errors = transient
+    await expectTrpcError(exchanges.kraken.connect({ apiKey: 'kr-transient', secretKey: krakenSecret }), {
+      code: 'INTERNAL_SERVER_ERROR',
+      httpStatus: 500,
+      message: retryableMessage,
+    })
+  }
+})
+
+it('Coinbase: stale reconnect whose old-key lookup finishes after a newer matching reconnect returns INTERNAL_SERVER_ERROR instead of CONFLICT', async () => {
+  const { app, exchanges } = await setup()
+  let pauseNextOldKeyList = false
+  let releaseStaleOldKeyLookup: (() => void) | undefined
+  let markStaleOldKeyLookupReached: (() => void) | undefined
+  const staleOldKeyLookupReached = new Promise<void>((resolve) => {
+    markStaleOldKeyLookupReached = resolve
+  })
+
+  const accountBody = (uuid: string, name: string, balance: string, portfolioUuid: string) => ({
+    uuid,
+    name,
+    currency: 'BTC',
+    available_balance: { value: balance, currency: 'BTC' },
+    default: true,
+    active: true,
+    created_at: '2025-01-01T00:00:00Z',
+    updated_at: '2025-01-01T00:00:00Z',
+    deleted_at: null,
+    type: 'ACCOUNT_TYPE_CRYPTO',
+    ready: true,
+    hold: { value: '0', currency: 'BTC' },
+    retail_portfolio_id: portfolioUuid,
+  })
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = extractUrl(input)
+      const accessKey = extractHeader(input, init, 'CB-ACCESS-KEY')
+
+      if (url.includes('/api/v3/brokerage/key_permissions')) {
+        return jsonResponse(
+          JSON.stringify({
+            can_view: true,
+            can_trade: false,
+            can_transfer: false,
+            portfolio_uuid: accessKey === 'cb-stale-key' ? 'port-stale' : 'port-gen',
+            portfolio_type: 'DEFAULT',
+          }),
+        )
+      }
+      if (url.includes('/api/v3/brokerage/accounts/cb-btc-gen')) {
+        const isNewer = accessKey === 'cb-newer-key'
+        return jsonResponse(
+          JSON.stringify({
+            account: accountBody(
+              'cb-btc-gen',
+              isNewer ? 'Newer Name' : 'Initial Name',
+              isNewer ? '1.25' : '0.5',
+              'port-gen',
+            ),
+          }),
+        )
+      }
+      if (url.includes('/api/v3/brokerage/accounts')) {
+        if (accessKey === 'cb-gen1-key' && pauseNextOldKeyList) {
+          pauseNextOldKeyList = false
+          markStaleOldKeyLookupReached?.()
+          await new Promise<void>((done) => {
+            releaseStaleOldKeyLookup = done
+          })
+        }
+        if (accessKey === 'cb-stale-key') {
+          return jsonResponse(
+            JSON.stringify({
+              accounts: [accountBody('cb-stale-btc', 'Stale Name', '0.1', 'port-stale')],
+              has_next: false,
+              cursor: '',
+              size: 1,
+            }),
+          )
+        }
+        const isNewer = accessKey === 'cb-newer-key'
+        return jsonResponse(
+          JSON.stringify({
+            accounts: [
+              accountBody('cb-btc-gen', isNewer ? 'Newer Name' : 'Initial Name', isNewer ? '1.25' : '0.5', 'port-gen'),
+            ],
+            has_next: false,
+            cursor: '',
+            size: 1,
+          }),
+        )
+      }
+      return jsonResponse(JSON.stringify({ error: 'not found' }), 404)
+    }),
+  )
+
+  const initial = await exchanges.coinbase.connect({ apiKey: 'cb-gen1-key', secretKey: 'cb-gen1-secret' })
+  await app.database
+    .update(exchangeAccounts)
+    .set({ externalAccountId: null })
+    .where(eq(exchangeAccounts.id, initial.id))
+
+  pauseNextOldKeyList = true
+  const stalePromise = exchanges.coinbase.connect({
+    apiKey: 'cb-stale-key',
+    secretKey: 'cb-stale-secret',
+    replaceAccountId: initial.id,
+  })
+
+  await staleOldKeyLookupReached
+
+  const newer = await exchanges.coinbase.connect({
+    apiKey: 'cb-newer-key',
+    secretKey: 'cb-newer-secret',
+    replaceAccountId: initial.id,
+  })
+  expect(newer.id).toBe(initial.id)
+
+  releaseStaleOldKeyLookup?.()
+  await expectTrpcError(stalePromise, {
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: 'Exchange account credentials changed during reconnect. Please try again.',
+    forbiddenText: 'different',
+  })
+
+  const listed = await exchanges.coinbase.list()
+  expect(listed).toHaveLength(1)
+  expect(listed[0]?.displayName).toBe('Newer Name')
+  expect(listed[0]?.balance).toBe('125000000')
+})
+
+it('Kraken: stale reconnect whose old-key lookup finishes after a newer matching reconnect returns INTERNAL_SERVER_ERROR instead of CONFLICT', async () => {
+  const { app, exchanges } = await setup()
+  const krakenSecret = Buffer.from('secret').toString('base64')
+  let pauseNextOldKeyInfo = false
+  let releaseStaleOldKeyLookup: (() => void) | undefined
+  let markStaleOldKeyLookupReached: (() => void) | undefined
+  const staleOldKeyLookupReached = new Promise<void>((resolve) => {
+    markStaleOldKeyLookupReached = resolve
+  })
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = extractUrl(input)
+      const apiKey = extractHeader(input, init, 'API-Key')
+
+      if (url.endsWith('/0/private/Balance')) {
+        const balance = apiKey === 'kr-newer-key' ? '1.25' : apiKey === 'kr-stale-key' ? '0.1' : '0.5'
+        return jsonResponse(JSON.stringify({ error: [], result: { XXBT: balance } }))
+      }
+      if (url.endsWith('/0/private/GetApiKeyInfo')) {
+        if (apiKey === 'kr-gen1-key' && pauseNextOldKeyInfo) {
+          pauseNextOldKeyInfo = false
+          markStaleOldKeyLookupReached?.()
+          await new Promise<void>((done) => {
+            releaseStaleOldKeyLookup = done
+          })
+        }
+        return jsonResponse(
+          JSON.stringify({
+            error: [],
+            result: { iban: apiKey === 'kr-stale-key' ? 'KR-IBAN-STALE' : 'KR-IBAN-GEN' },
+          }),
+        )
+      }
+      return jsonResponse(JSON.stringify({ error: ['unknown'] }), 404)
+    }),
+  )
+
+  const initial = await exchanges.kraken.connect({ apiKey: 'kr-gen1-key', secretKey: krakenSecret })
+  await app.database
+    .update(exchangeAccounts)
+    .set({ externalAccountId: null })
+    .where(eq(exchangeAccounts.id, initial.id))
+
+  pauseNextOldKeyInfo = true
+  const stalePromise = exchanges.kraken.connect({
+    apiKey: 'kr-stale-key',
+    secretKey: krakenSecret,
+    replaceAccountId: initial.id,
+  })
+
+  await staleOldKeyLookupReached
+
+  const newer = await exchanges.kraken.connect({
+    apiKey: 'kr-newer-key',
+    secretKey: krakenSecret,
+    replaceAccountId: initial.id,
+  })
+  expect(newer.id).toBe(initial.id)
+
+  releaseStaleOldKeyLookup?.()
+  await expectTrpcError(stalePromise, {
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: 'Exchange account credentials changed during reconnect. Please try again.',
+    forbiddenText: 'different',
+  })
+
+  const listed = await exchanges.kraken.list()
+  expect(listed).toHaveLength(1)
+  expect(listed[0]?.displayName).toBe('Kraken')
+  expect(listed[0]?.balance).toBe('125000000')
+})
+
+it('Robinhood: stale reconnect whose old-key lookup finishes after a newer matching reconnect returns INTERNAL_SERVER_ERROR instead of CONFLICT', async () => {
+  const { app, exchanges } = await setup()
+  const privateKeyBase64 = generateRobinhoodPrivateKeyBase64()
+  let pauseNextOldKeyAccount = false
+  let releaseStaleOldKeyLookup: (() => void) | undefined
+  let markStaleOldKeyLookupReached: (() => void) | undefined
+  const staleOldKeyLookupReached = new Promise<void>((resolve) => {
+    markStaleOldKeyLookupReached = resolve
+  })
+
+  await stubRobinhoodHttps(async ({ path, apiKey }) => {
+    if (path.startsWith('/api/v1/crypto/trading/accounts/')) {
+      if (apiKey === 'rh-gen1-key' && pauseNextOldKeyAccount) {
+        pauseNextOldKeyAccount = false
+        markStaleOldKeyLookupReached?.()
+        await new Promise<void>((done) => {
+          releaseStaleOldKeyLookup = done
+        })
+      }
+      return {
+        status: 200,
+        body: JSON.stringify({
+          account_number: apiKey === 'rh-stale-key' ? 'rh-acct-stale' : 'rh-acct-gen',
+          status: 'active',
+        }),
+      }
+    }
+    if (path.startsWith('/api/v1/crypto/trading/holdings/')) {
+      const quantity = apiKey === 'rh-newer-key' ? '1.25' : apiKey === 'rh-stale-key' ? '0.1' : '0.5'
+      const accountNumber = apiKey === 'rh-stale-key' ? 'rh-acct-stale' : 'rh-acct-gen'
+      return {
+        status: 200,
+        body: JSON.stringify({
+          previous: null,
+          next: null,
+          results: [
+            {
+              account_number: accountNumber,
+              asset_code: 'BTC',
+              total_quantity: quantity,
+              quantity_available_for_trading: quantity,
+            },
+          ],
+        }),
+      }
+    }
+    return { status: 200, body: JSON.stringify({ previous: null, next: null, results: [] }) }
+  })
+
+  const initial = await exchanges.robinhood.connect({
+    apiKey: 'rh-gen1-key',
+    privateKeyBase64,
+    displayName: 'Initial Robinhood',
+  })
+  await app.database
+    .update(exchangeAccounts)
+    .set({ externalAccountId: null })
+    .where(eq(exchangeAccounts.id, initial.id))
+
+  pauseNextOldKeyAccount = true
+  const stalePromise = exchanges.robinhood.connect({
+    apiKey: 'rh-stale-key',
+    privateKeyBase64,
+    displayName: 'Stale Robinhood',
+    replaceAccountId: initial.id,
+  })
+
+  await staleOldKeyLookupReached
+
+  const newer = await exchanges.robinhood.connect({
+    apiKey: 'rh-newer-key',
+    privateKeyBase64,
+    displayName: 'Newer Robinhood',
+    replaceAccountId: initial.id,
+  })
+  expect(newer.id).toBe(initial.id)
+
+  releaseStaleOldKeyLookup?.()
+  await expectTrpcError(stalePromise, {
+    code: 'INTERNAL_SERVER_ERROR',
+    httpStatus: 500,
+    message: 'Exchange account credentials changed during reconnect. Please try again.',
+    forbiddenText: 'different',
+  })
+
+  const listed = await exchanges.robinhood.list()
+  expect(listed).toHaveLength(1)
+  expect(listed[0]?.displayName).toBe('Newer Robinhood')
+  expect(listed[0]?.balance).toBe('125000000')
 })

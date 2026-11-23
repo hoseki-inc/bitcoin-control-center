@@ -5,8 +5,8 @@ import https from 'node:https'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Writable } from 'node:stream'
-import { parseUnknown } from '@hoseki/packages/result'
-import { eq, sql } from 'drizzle-orm'
+import { asyncFn, parseUnknown } from '@hoseki/packages/result'
+import { asc, eq, sql } from 'drizzle-orm'
 import pino from 'pino'
 import { expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
@@ -22,6 +22,7 @@ import {
   ExchangeUserError,
   ExchangeVerificationRetryableError,
   RobinhoodAccountUnverifiableError,
+  type SupportedExchange,
 } from './service'
 
 const HttpsRequestOptionsSchema = z.object({
@@ -2258,34 +2259,87 @@ it('Strike: keeps account connected when refreshBalance hits a transient 503', a
 it('never leaks raw provider error text or secrets into returned errors or debug logs', async () => {
   const { service, logs } = await setup({ captureLogs: true })
   const secretCanary = 'CANARY_PROVIDER_SECRET_948271'
+  const htmlCanary = 'CANARY_CONNECT_HTML_512903'
+  const amountCanary = 'NaN_CANARY_CONNECT_617382'
   const krakenSecret = Buffer.from('kraken-secret').toString('base64')
   const robinhoodPrivateKey = generateRobinhoodPrivateKeyBase64()
+  let mode: 'error' | 'html' | 'amount' = 'error'
 
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: string | URL | Request) => {
       const url = extractUrl(input)
+      if (mode === 'html') {
+        return new Response(`<html><body>${htmlCanary}</body></html>`, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        })
+      }
+      if (mode === 'amount') {
+        if (url.includes('/api/v3/brokerage/accounts/cb-bad')) {
+          return jsonResponse({ account: makeCoinbaseAccount({ uuid: 'cb-bad', name: 'BTC', balance: amountCanary }) })
+        }
+        if (url.includes('/api/v3/brokerage/accounts')) {
+          return jsonResponse({
+            accounts: [makeCoinbaseAccount({ uuid: 'cb-bad', name: 'BTC', balance: '0.1' })],
+            has_next: false,
+            cursor: '',
+            size: 1,
+          })
+        }
+        if (url.includes('/api/v3/brokerage/key_permissions')) {
+          return jsonResponse({
+            can_view: true,
+            can_trade: false,
+            can_transfer: false,
+            portfolio_uuid: 'port-1',
+            portfolio_type: 'DEFAULT',
+          })
+        }
+        if (url.includes('strike')) {
+          return jsonResponse([{ currency: 'BTC', total: amountCanary, available: amountCanary }])
+        }
+        return jsonResponse({ error: [], result: { XXBT: amountCanary } })
+      }
       if (url.includes('coinbase')) {
         return jsonResponse({ error: `leak ${secretCanary}` }, 500, `status ${secretCanary}`)
+      }
+      if (url.includes('strike')) {
+        return jsonResponse({ error: `strike-leak ${secretCanary}` }, 500, `status ${secretCanary}`)
       }
       return jsonResponse({ error: [`EGeneral:Internal ${secretCanary}`] }, 200)
     }),
   )
-  await stubRobinhoodHttps(() => ({
-    status: 500,
-    body: { detail: `rh-leak ${secretCanary}` },
-  }))
+  await stubRobinhoodHttps(() => {
+    if (mode === 'html') {
+      return { status: 200, rawBody: `<html><body>${htmlCanary}</body></html>` }
+    }
+    if (mode === 'amount') {
+      return { status: 200, body: { results: [{ asset_code: 'BTC', total_quantity: amountCanary }] } }
+    }
+    return { status: 500, body: { detail: `rh-leak ${secretCanary}` } }
+  })
 
-  const cbErr = (await service.connectCoinbase({ apiKey: 'cb-key', secretKey: 'cb-secret' })).unwrapErr()
-  const krErr = (await service.connectKraken({ apiKey: 'kr-key', secretKey: krakenSecret })).unwrapErr()
-  const rhErr = (
-    await service.connectRobinhood({ apiKey: 'rh-key', privateKeyBase64: robinhoodPrivateKey })
-  ).unwrapErr()
-
-  for (const err of [cbErr, krErr, rhErr]) {
-    expect(err.message).not.toContain(secretCanary)
+  const errors: Error[] = []
+  for (const nextMode of ['error', 'html', 'amount'] as const) {
+    mode = nextMode
+    errors.push(
+      (await service.connectCoinbase({ apiKey: 'cb-key', secretKey: 'cb-secret' })).unwrapErr(),
+      (await service.connectKraken({ apiKey: 'kr-key', secretKey: krakenSecret })).unwrapErr(),
+      (await service.connectRobinhood({ apiKey: 'rh-key', privateKeyBase64: robinhoodPrivateKey })).unwrapErr(),
+      (await service.connectStrike({ apiKey: 'st-key', displayName: 'Strike' })).unwrapErr(),
+    )
   }
-  expect(logs.join('\n')).not.toContain(secretCanary)
+
+  for (const err of errors) {
+    expect(err.message).not.toContain(secretCanary)
+    expect(err.message).not.toContain(htmlCanary)
+    expect(err.message).not.toContain(amountCanary)
+  }
+  const output = logs.join('\n')
+  expect(output).not.toContain(secretCanary)
+  expect(output).not.toContain(htmlCanary)
+  expect(output).not.toContain(amountCanary)
 })
 
 it('Strike: reconnect accepts replacement key while preserving id and statements and writing null externalAccountId', async () => {
@@ -2416,9 +2470,23 @@ it('handles concurrent legacy reconnects safely: revoked ID-less rows fail close
     service.connectKraken({ apiKey: 'kr-race-b', secretKey: secretBase64, replaceAccountId: 'kr-race-working' }),
   ])
   expect(workingA.isOk()).toBe(true)
-  expect(workingB.unwrapErr()).toBeInstanceOf(ExchangeAccountMismatchError)
+  expect(workingB.isErr()).toBe(true)
+  const workingBErr = workingB.unwrapErr()
+  expect(workingBErr).toBeInstanceOf(ExchangeUserError)
+  expect(workingBErr).not.toBeInstanceOf(ExchangeAccountMismatchError)
+  if (workingBErr instanceof ExchangeUserError) {
+    expect(workingBErr.code).toBe('INTERNAL_SERVER_ERROR')
+    expect(workingBErr.message).toBe('Exchange account credentials changed during reconnect. Please try again.')
+  }
   const [workingRow] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'kr-race-working'))
   expect(workingRow?.externalAccountId).toBe('RACE-A')
+
+  const postRaceMismatch = await service.connectKraken({
+    apiKey: 'kr-race-b',
+    secretKey: secretBase64,
+    replaceAccountId: 'kr-race-working',
+  })
+  expect(postRaceMismatch.unwrapErr()).toBeInstanceOf(ExchangeAccountMismatchError)
 })
 
 it('Robinhood: fails closed when working legacy old key has empty holdings and orders after /accounts/ 403', async () => {
@@ -3216,9 +3284,12 @@ it.each([
 it('never leaks raw provider error text or secrets during refreshBalance or old-key verification', async () => {
   const { db, service, logs } = await setup({ captureLogs: true })
   const secretCanary = 'REFRESH_VERIFY_CANARY_774411'
+  const htmlCanary = 'REFRESH_HTML_CANARY_883322'
+  const amountCanary = 'NaN_REFRESH_CANARY_992211'
   const krakenSecret = Buffer.from('kraken-secret').toString('base64')
   const robinhoodPrivateKey = generateRobinhoodPrivateKeyBase64()
   const now = new Date().toISOString()
+  let mode: 'error' | 'html' | 'amount' = 'error'
 
   await db.insert(exchangeAccounts).values([
     {
@@ -3268,6 +3339,23 @@ it('never leaks raw provider error text or secrets during refreshBalance or old-
     vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
       const url = extractUrl(input)
       const krKey = extractHeader(input, init, 'API-Key')
+      if (mode === 'html') {
+        return new Response(`<html><body>${htmlCanary}</body></html>`, {
+          status: 200,
+          headers: { 'Content-Type': 'text/html' },
+        })
+      }
+      if (mode === 'amount') {
+        if (url.includes('coinbase')) {
+          return jsonResponse({
+            account: makeCoinbaseAccount({ uuid: 'cb-uuid-1', name: 'Coinbase', balance: amountCanary }),
+          })
+        }
+        if (url.includes('strike')) {
+          return jsonResponse([{ currency: 'BTC', total: amountCanary, available: amountCanary }])
+        }
+        return jsonResponse({ error: [], result: { XXBT: amountCanary } })
+      }
       if (url.includes('coinbase')) {
         return jsonResponse({ error: `cb-refresh ${secretCanary}` }, 503, `cb-status ${secretCanary}`)
       }
@@ -3283,29 +3371,47 @@ it('never leaks raw provider error text or secrets during refreshBalance or old-
       return jsonResponse({ error: [`EGeneral:Internal ${secretCanary}`] }, 503)
     }),
   )
-  await stubRobinhoodHttps(() => ({
-    status: 503,
-    body: { detail: `rh-refresh ${secretCanary}` },
-  }))
+  await stubRobinhoodHttps(() => {
+    if (mode === 'html') {
+      return { status: 200, rawBody: `<html><body>${htmlCanary}</body></html>` }
+    }
+    if (mode === 'amount') {
+      return { status: 200, body: { results: [{ asset_code: 'BTC', total_quantity: amountCanary }] } }
+    }
+    return { status: 503, body: { detail: `rh-refresh ${secretCanary}` } }
+  })
 
-  const errors = [
-    (await service.refreshBalance('cb-canary')).unwrapErr(),
-    (await service.refreshBalance('kr-canary')).unwrapErr(),
-    (await service.refreshBalance('rh-canary')).unwrapErr(),
-    (await service.refreshBalance('st-canary')).unwrapErr(),
-    (
-      await service.connectKraken({
-        apiKey: 'kr-new',
-        secretKey: krakenSecret,
-        replaceAccountId: 'kr-canary',
-      })
-    ).unwrapErr(),
-  ]
+  const errors: Error[] = []
+  for (const nextMode of ['error', 'html', 'amount'] as const) {
+    mode = nextMode
+    errors.push(
+      (await service.refreshBalance('cb-canary')).unwrapErr(),
+      (await service.refreshBalance('kr-canary')).unwrapErr(),
+      (await service.refreshBalance('rh-canary')).unwrapErr(),
+      (await service.refreshBalance('st-canary')).unwrapErr(),
+    )
+    if (nextMode === 'error') {
+      errors.push(
+        (
+          await service.connectKraken({
+            apiKey: 'kr-new',
+            secretKey: krakenSecret,
+            replaceAccountId: 'kr-canary',
+          })
+        ).unwrapErr(),
+      )
+    }
+  }
 
   for (const err of errors) {
     expect(err.message).not.toContain(secretCanary)
+    expect(err.message).not.toContain(htmlCanary)
+    expect(err.message).not.toContain(amountCanary)
   }
-  expect(logs.join('\n')).not.toContain(secretCanary)
+  const output = logs.join('\n')
+  expect(output).not.toContain(secretCanary)
+  expect(output).not.toContain(htmlCanary)
+  expect(output).not.toContain(amountCanary)
 })
 
 it.each(['coinbase', 'kraken', 'robinhood'] as const)(
@@ -3513,3 +3619,919 @@ it.each(['info', 'debug'] as const)(
     expect(output).not.toContain(secretCanary)
   },
 )
+
+const MALFORMED_BALANCES = ['NaN', 'Infinity', 'abc', '0x10', '-0.5', '1e10000000'] as const
+
+const ALL_PROVIDERS: readonly SupportedExchange[] = ['coinbase', 'kraken', 'robinhood', 'strike']
+
+const MALFORMED_CONNECT_CASES = ALL_PROVIDERS.flatMap((provider) =>
+  MALFORMED_BALANCES.map((badValue) => ({ provider, badValue })),
+)
+
+it.each(MALFORMED_CONNECT_CASES)(
+  'rejects malformed balance $badValue on $provider connect with INTERNAL_SERVER_ERROR and writes no row or snapshot',
+  async ({ provider, badValue }) => {
+    const { db, service } = await setup()
+    const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+    const robinhoodPrivateKey = generateRobinhoodPrivateKeyBase64()
+
+    if (provider === 'robinhood') {
+      await stubRobinhoodHttps(() => ({
+        status: 200,
+        body: { results: [{ asset_code: 'BTC', total_quantity: badValue, account_number: 'rh-acct-1' }] },
+      }))
+    } else {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL | Request) => {
+          const url = extractUrl(input)
+          if (provider === 'coinbase') {
+            if (url.includes('/api/v3/brokerage/accounts/cb-bad')) {
+              return jsonResponse({ account: makeCoinbaseAccount({ uuid: 'cb-bad', name: 'BTC', balance: badValue }) })
+            }
+            if (url.includes('/api/v3/brokerage/accounts')) {
+              return jsonResponse({
+                accounts: [makeCoinbaseAccount({ uuid: 'cb-bad', name: 'BTC', balance: '0.1' })],
+                has_next: false,
+                cursor: '',
+                size: 1,
+              })
+            }
+            return jsonResponse({
+              can_view: true,
+              can_trade: false,
+              can_transfer: false,
+              portfolio_uuid: 'port-1',
+              portfolio_type: 'DEFAULT',
+            })
+          }
+          if (provider === 'kraken') {
+            if (url.endsWith('/0/private/Balance')) {
+              return jsonResponse({ error: [], result: { XXBT: badValue } })
+            }
+            return jsonResponse({ error: [], result: { iban: 'KR-1' } })
+          }
+          return jsonResponse([{ currency: 'BTC', total: badValue, available: badValue }])
+        }),
+      )
+    }
+
+    const result =
+      provider === 'coinbase'
+        ? await service.connectCoinbase({ apiKey: 'cb-k', secretKey: 'cb-s' })
+        : provider === 'kraken'
+          ? await service.connectKraken({ apiKey: 'kr-k', secretKey: krakenSecret })
+          : provider === 'robinhood'
+            ? await service.connectRobinhood({ apiKey: 'rh-k', privateKeyBase64: robinhoodPrivateKey })
+            : await service.connectStrike({ apiKey: 'st-k', displayName: 'Strike' })
+
+    expect(result.isErr()).toBe(true)
+    const err = result.unwrapErr()
+    expect(err).toBeInstanceOf(ExchangeUserError)
+    if (err instanceof ExchangeUserError) {
+      expect(err.code).toBe('INTERNAL_SERVER_ERROR')
+    }
+    expect(err.message).not.toContain(badValue)
+
+    const rows = await db.select().from(exchangeAccounts)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.id).toBe('exchange')
+    const snapshots = await db.select().from(exchangeBalanceSnapshots)
+    expect(snapshots).toHaveLength(0)
+  },
+)
+
+it.each(MALFORMED_CONNECT_CASES)(
+  'rejects malformed balance $badValue on $provider refresh with INTERNAL_SERVER_ERROR and preserves existing row and snapshots',
+  async ({ provider, badValue }) => {
+    const { db, service } = await setup()
+    const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+    const robinhoodPrivateKey = generateRobinhoodPrivateKeyBase64()
+    const now = new Date().toISOString()
+    const accountId = `malformed-refresh-${provider}`
+
+    const encryptedCredentials =
+      provider === 'strike'
+        ? makeEncryptedApiKeyJson({ apiKey: 'st-k' })
+        : provider === 'robinhood'
+          ? makeEncryptedApiKeyJson({ apiKey: 'rh-k', privateKey: robinhoodPrivateKey })
+          : makeEncryptedApiKeyJson({
+              apiKey: `${provider}-k`,
+              secretKey: provider === 'kraken' ? krakenSecret : 'cb-s',
+            })
+
+    await db.insert(exchangeAccounts).values({
+      id: accountId,
+      provider,
+      displayName: `${provider} Account`,
+      encryptedCredentials,
+      externalAccountId: provider === 'strike' ? null : `${provider}-ext-1`,
+      balanceSats: '40000000',
+      balanceAsOf: now,
+      credentialsConnectedAt: now,
+    })
+    await db.insert(exchangeBalanceSnapshots).values({
+      accountId,
+      timestamp: now,
+      balanceSats: '40000000',
+    })
+
+    const [rowBefore] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, accountId))
+    const snapshotsBefore = await db
+      .select()
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, accountId))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+
+    if (provider === 'robinhood') {
+      await stubRobinhoodHttps(() => ({
+        status: 200,
+        body: { results: [{ asset_code: 'BTC', total_quantity: badValue, account_number: 'rh-ext-1' }] },
+      }))
+    } else {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (input: string | URL | Request) => {
+          const url = extractUrl(input)
+          if (provider === 'coinbase') {
+            if (url.includes('/api/v3/brokerage/accounts/coinbase-ext-1')) {
+              return jsonResponse({
+                account: makeCoinbaseAccount({ uuid: 'coinbase-ext-1', name: 'BTC', balance: badValue }),
+              })
+            }
+            return jsonResponse({
+              can_view: true,
+              can_trade: false,
+              can_transfer: false,
+              portfolio_uuid: 'port-1',
+              portfolio_type: 'DEFAULT',
+            })
+          }
+          if (provider === 'kraken') {
+            return jsonResponse({ error: [], result: { XXBT: badValue } })
+          }
+          return jsonResponse([{ currency: 'BTC', total: badValue, available: badValue }])
+        }),
+      )
+    }
+
+    const result = await service.refreshBalance(accountId)
+    expect(result.isErr()).toBe(true)
+    const err = result.unwrapErr()
+    expect(err).toBeInstanceOf(ExchangeUserError)
+    if (err instanceof ExchangeUserError) {
+      expect(err.code).toBe('INTERNAL_SERVER_ERROR')
+    }
+    expect(err.message).not.toContain(badValue)
+
+    const [rowAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, accountId))
+    const snapshotsAfter = await db
+      .select()
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, accountId))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+
+    expect(rowAfter).toEqual(rowBefore)
+    expect(snapshotsAfter).toEqual(snapshotsBefore)
+
+    const listed = (await service.listAccounts()).find((a) => a.id === accountId)
+    expect(listed?.connectionStatus).toBe('connected')
+    expect(listed?.balanceSats).toBe('40000000')
+  },
+)
+
+it.each(['network', 'html200', 'NaN', 'abc', 'injectedThrow'] as const)(
+  'refreshAllBalances continues past failing Strike (%s) and refreshes healthy Kraken account',
+  async (failureMode) => {
+    const { db, service } = await setup()
+    const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+    const now = new Date().toISOString()
+
+    await db.insert(exchangeAccounts).values([
+      {
+        id: 'st-first',
+        provider: 'strike',
+        displayName: 'Strike Failing',
+        encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'st-key' }),
+        externalAccountId: null,
+        balanceSats: '40000000',
+        balanceAsOf: '2025-01-01T00:00:00.000Z',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        credentialsConnectedAt: now,
+      },
+      {
+        id: 'kr-second',
+        provider: 'kraken',
+        displayName: 'Kraken Healthy',
+        encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-key', secretKey: krakenSecret }),
+        externalAccountId: 'KR-IBAN-HEALTHY',
+        balanceSats: '10000000',
+        balanceAsOf: '2025-01-01T00:00:00.000Z',
+        createdAt: '2025-01-02T00:00:00.000Z',
+        credentialsConnectedAt: now,
+      },
+    ])
+    await db.insert(exchangeBalanceSnapshots).values([
+      { accountId: 'st-first', timestamp: '2025-01-01T00:00:00.000Z', balanceSats: '40000000' },
+      { accountId: 'kr-second', timestamp: '2025-01-01T00:00:00.000Z', balanceSats: '10000000' },
+    ])
+
+    const [strikeBefore] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'st-first'))
+    let strikeCalled = false
+    let krakenCalled = false
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = extractUrl(input)
+        if (url.includes('strike')) {
+          strikeCalled = true
+          if (failureMode === 'network') {
+            throw new TypeError('strike socket closed')
+          }
+          if (failureMode === 'html200') {
+            return new Response('<html><body>502</body></html>', {
+              status: 200,
+              headers: { 'Content-Type': 'text/html' },
+            })
+          }
+          return jsonResponse([{ currency: 'BTC', total: failureMode, available: failureMode }])
+        }
+        krakenCalled = true
+        return jsonResponse({ error: [], result: { XXBT: '0.85' } })
+      }),
+    )
+
+    if (failureMode === 'injectedThrow') {
+      const originalRefresh = service.refreshBalance
+      vi.spyOn(service, 'refreshBalance').mockImplementation(
+        asyncFn(async (id: string) => {
+          if (id === 'st-first') {
+            strikeCalled = true
+            throw new Error('injected unexpected rejection')
+          }
+          return originalRefresh(id)
+        }),
+      )
+    }
+
+    const res = await service.refreshAllBalances()
+    expect(res.isOk()).toBe(true)
+    expect(strikeCalled).toBe(true)
+    expect(krakenCalled).toBe(true)
+
+    const [strikeAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'st-first'))
+    const [krakenAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'kr-second'))
+    const krakenSnapshots = await db
+      .select()
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, 'kr-second'))
+
+    expect(strikeAfter).toEqual(strikeBefore)
+    expect(krakenAfter?.balanceSats).toBe('85000000')
+    expect(krakenSnapshots).toHaveLength(2)
+  },
+)
+
+it('refreshAllBalances handles empty accounts and sanitizes aggregate all-failed errors', async () => {
+  const { db, service, logs } = await setup({ captureLogs: true })
+  const emptyResult = await service.refreshAllBalances()
+  expect(emptyResult.isOk()).toBe(true)
+
+  const now = new Date().toISOString()
+  const accountNameCanary = 'SECRET_ACCOUNT_LABEL_991188'
+  const thrownCanary = 'SECRET_THROWN_MSG_445566'
+
+  await db.insert(exchangeAccounts).values({
+    id: 'st-only',
+    provider: 'strike',
+    displayName: accountNameCanary,
+    encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'st-key' }),
+    externalAccountId: null,
+    balanceSats: '1000',
+    balanceAsOf: now,
+    credentialsConnectedAt: now,
+  })
+
+  vi.spyOn(service, 'refreshBalance').mockImplementation(
+    asyncFn(async () => {
+      throw new Error(`boom ${thrownCanary}`)
+    }),
+  )
+
+  const failedResult = await service.refreshAllBalances()
+  expect(failedResult.isErr()).toBe(true)
+  const err = failedResult.unwrapErr()
+  expect(err).toBeInstanceOf(ExchangeUserError)
+  if (err instanceof ExchangeUserError) {
+    expect(err.code).toBe('INTERNAL_SERVER_ERROR')
+  }
+  expect(err.message).not.toContain(accountNameCanary)
+  expect(err.message).not.toContain(thrownCanary)
+  expect(logs.join('\n')).not.toContain(thrownCanary)
+})
+
+it.each(['http503', 'http429', 'network', 'nanBalance'] as const)(
+  'Coinbase: late detail GET failure (%s) on legacy ID-less reconnect writes nothing to row or snapshots',
+  async (failureMode) => {
+    const { db, service } = await setup()
+    const now = '2025-01-01T00:00:00.000Z'
+    const oldCreds = makeEncryptedApiKeyJson({ apiKey: 'cb-old-key', secretKey: 'cb-old-secret' })
+
+    await db.insert(exchangeAccounts).values({
+      id: 'cb-legacy-late',
+      provider: 'coinbase',
+      displayName: 'Coinbase Legacy',
+      encryptedCredentials: oldCreds,
+      externalAccountId: null,
+      balanceSats: '50000000',
+      balanceAsOf: now,
+      credentialsConnectedAt: now,
+    })
+    await db.insert(exchangeBalanceSnapshots).values({
+      accountId: 'cb-legacy-late',
+      timestamp: now,
+      balanceSats: '50000000',
+    })
+
+    const [rowBefore] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-late'))
+    const snapshotsBefore = await db
+      .select()
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, 'cb-legacy-late'))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+
+    let detailReached = false
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = extractUrl(input)
+        if (url.includes('/api/v3/brokerage/accounts/cb-btc-1')) {
+          detailReached = true
+          if (failureMode === 'http503') {
+            return jsonResponse({ error: 'service unavailable' }, 503)
+          }
+          if (failureMode === 'http429') {
+            return jsonResponse({ error: 'rate limited' }, 429)
+          }
+          if (failureMode === 'network') {
+            throw new TypeError('connection reset')
+          }
+          return jsonResponse({
+            account: makeCoinbaseAccount({
+              uuid: 'cb-btc-1',
+              name: 'BTC Wallet',
+              balance: 'NaN',
+              retail_portfolio_id: 'port-same',
+            }),
+          })
+        }
+        if (url.includes('/api/v3/brokerage/accounts')) {
+          return jsonResponse({
+            accounts: [
+              makeCoinbaseAccount({
+                uuid: 'cb-btc-1',
+                name: 'BTC Wallet',
+                balance: '0.5',
+                retail_portfolio_id: 'port-same',
+              }),
+            ],
+            has_next: false,
+            cursor: '',
+            size: 1,
+          })
+        }
+        if (url.includes('/api/v3/brokerage/key_permissions')) {
+          return jsonResponse({
+            can_view: true,
+            can_trade: false,
+            can_transfer: false,
+            portfolio_uuid: 'port-same',
+            portfolio_type: 'DEFAULT',
+          })
+        }
+        return jsonResponse({ error: 'unknown' }, 404)
+      }),
+    )
+
+    const result = await service.connectCoinbase({
+      apiKey: 'cb-new-key',
+      secretKey: 'cb-new-secret',
+      replaceAccountId: 'cb-legacy-late',
+    })
+
+    expect(detailReached).toBe(true)
+    expect(result.isErr()).toBe(true)
+    const err = result.unwrapErr()
+    expect(err).toBeInstanceOf(ExchangeUserError)
+    if (err instanceof ExchangeUserError) {
+      expect(err.code).toBe('INTERNAL_SERVER_ERROR')
+    }
+
+    const [rowAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-late'))
+    const snapshotsAfter = await db
+      .select()
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, 'cb-legacy-late'))
+      .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+
+    expect(rowAfter).toEqual(rowBefore)
+    expect(snapshotsAfter).toEqual(snapshotsBefore)
+  },
+)
+
+it('Coinbase: late failure followed by successful retry on legacy ID-less row pins identity and updates balance in one step', async () => {
+  const { db, service } = await setup()
+  const now = '2025-01-01T00:00:00.000Z'
+  const oldCreds = makeEncryptedApiKeyJson({ apiKey: 'cb-old-key', secretKey: 'cb-old-secret' })
+
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-legacy-retry',
+    provider: 'coinbase',
+    displayName: 'Coinbase Legacy',
+    encryptedCredentials: oldCreds,
+    externalAccountId: null,
+    balanceSats: '50000000',
+    balanceAsOf: now,
+    credentialsConnectedAt: now,
+  })
+  await db.insert(exchangeBalanceSnapshots).values({
+    accountId: 'cb-legacy-retry',
+    timestamp: now,
+    balanceSats: '50000000',
+  })
+
+  let failDetail = true
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (url.includes('/api/v3/brokerage/accounts/cb-btc-retry')) {
+        if (failDetail) {
+          return jsonResponse({ error: 'service unavailable' }, 503)
+        }
+        return jsonResponse({
+          account: makeCoinbaseAccount({
+            uuid: 'cb-btc-retry',
+            name: 'BTC Wallet',
+            balance: '0.9',
+            retail_portfolio_id: 'port-retry',
+          }),
+        })
+      }
+      if (url.includes('/api/v3/brokerage/accounts')) {
+        return jsonResponse({
+          accounts: [
+            makeCoinbaseAccount({
+              uuid: 'cb-btc-retry',
+              name: 'BTC Wallet',
+              balance: '0.9',
+              retail_portfolio_id: 'port-retry',
+            }),
+          ],
+          has_next: false,
+          cursor: '',
+          size: 1,
+        })
+      }
+      return jsonResponse({
+        can_view: true,
+        can_trade: false,
+        can_transfer: false,
+        portfolio_uuid: 'port-retry',
+        portfolio_type: 'DEFAULT',
+      })
+    }),
+  )
+
+  const firstAttempt = await service.connectCoinbase({
+    apiKey: 'cb-new-key',
+    secretKey: 'cb-new-secret',
+    replaceAccountId: 'cb-legacy-retry',
+  })
+  expect(firstAttempt.isErr()).toBe(true)
+
+  const [rowAfterFirst] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-retry'))
+  expect(rowAfterFirst?.externalAccountId).toBeNull()
+  expect(rowAfterFirst?.encryptedCredentials).toBe(oldCreds)
+
+  failDetail = false
+  const secondAttempt = await service.connectCoinbase({
+    apiKey: 'cb-new-key',
+    secretKey: 'cb-new-secret',
+    replaceAccountId: 'cb-legacy-retry',
+  })
+  expect(secondAttempt.isOk()).toBe(true)
+  expect(secondAttempt.unwrap().balanceSats).toBe('90000000')
+
+  const [rowAfterSecond] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-retry'))
+  expect(rowAfterSecond?.externalAccountId).toBe('cb-btc-retry')
+  expect(rowAfterSecond?.encryptedCredentials).toContain('port-retry')
+  expect(rowAfterSecond?.balanceSats).toBe('90000000')
+})
+
+it('Coinbase: stale reconnect whose final detail GET finishes after a newer replacement cannot overwrite the newer generation', async () => {
+  const { db, service } = await setup()
+  const now = '2025-01-01T00:00:00.000Z'
+  const oldCreds = makeEncryptedApiKeyJson({ apiKey: 'cb-gen1-key', secretKey: 'cb-gen1-secret' })
+
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-stale-gen',
+    provider: 'coinbase',
+    displayName: 'Coinbase Gen1',
+    encryptedCredentials: oldCreds,
+    externalAccountId: null,
+    balanceSats: '50000000',
+    balanceAsOf: now,
+    credentialsConnectedAt: now,
+  })
+
+  let releaseStaleDetail: (() => void) | undefined
+  const staleDetailReached = new Promise<void>((resolve) => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = extractUrl(input)
+        const accessKey = extractHeader(input, init, 'CB-ACCESS-KEY')
+        if (url.includes('/api/v3/brokerage/accounts/cb-btc-gen')) {
+          if (accessKey === 'cb-stale-key') {
+            resolve()
+            await new Promise<void>((done) => {
+              releaseStaleDetail = done
+            })
+            return jsonResponse({
+              account: makeCoinbaseAccount({
+                uuid: 'cb-btc-gen',
+                name: 'Stale Name',
+                balance: '0.1',
+                retail_portfolio_id: 'port-gen',
+              }),
+            })
+          }
+          return jsonResponse({
+            account: makeCoinbaseAccount({
+              uuid: 'cb-btc-gen',
+              name: 'Newer Name',
+              balance: '1.25',
+              retail_portfolio_id: 'port-gen',
+            }),
+          })
+        }
+        if (url.includes('/api/v3/brokerage/accounts')) {
+          return jsonResponse({
+            accounts: [
+              makeCoinbaseAccount({
+                uuid: 'cb-btc-gen',
+                name: accessKey === 'cb-stale-key' ? 'Stale Name' : 'Newer Name',
+                balance: '0.5',
+                retail_portfolio_id: 'port-gen',
+              }),
+            ],
+            has_next: false,
+            cursor: '',
+            size: 1,
+          })
+        }
+        return jsonResponse({
+          can_view: true,
+          can_trade: false,
+          can_transfer: false,
+          portfolio_uuid: 'port-gen',
+          portfolio_type: 'DEFAULT',
+        })
+      }),
+    )
+  })
+
+  const stalePromise = service.connectCoinbase({
+    apiKey: 'cb-stale-key',
+    secretKey: 'cb-stale-secret',
+    replaceAccountId: 'cb-stale-gen',
+  })
+
+  await staleDetailReached
+
+  const newerResult = await service.connectCoinbase({
+    apiKey: 'cb-newer-key',
+    secretKey: 'cb-newer-secret',
+    replaceAccountId: 'cb-stale-gen',
+  })
+  expect(newerResult.isOk()).toBe(true)
+
+  releaseStaleDetail?.()
+  const staleResult = await stalePromise
+  expect(staleResult.isErr()).toBe(true)
+  const staleErr = staleResult.unwrapErr()
+  expect(staleErr).toBeInstanceOf(ExchangeUserError)
+  if (staleErr instanceof ExchangeUserError) {
+    expect(staleErr.code).toBe('INTERNAL_SERVER_ERROR')
+    expect(staleErr.message).toBe('Exchange account credentials changed during reconnect. Please try again.')
+  }
+
+  const [rowAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-stale-gen'))
+  expect(rowAfter?.displayName).toBe('Newer Name')
+  expect(rowAfter?.balanceSats).toBe('125000000')
+})
+
+it('skips malformed Coinbase and Kraken history entries, keeps valid siblings, and omits canaries from logs', async () => {
+  const { db, service, logs } = await setup({ captureLogs: true })
+  const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+  const now = new Date().toISOString()
+  const cbCanary = 'NaN_CB_HIST_CANARY_112233'
+  const krCanary = 'abc_KR_HIST_CANARY_445566'
+  const krFeeCanary = 'Infinity_KR_FEE_CANARY_778899'
+
+  await db.insert(exchangeAccounts).values([
+    {
+      id: 'cb-hist',
+      provider: 'coinbase',
+      displayName: 'Coinbase History',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-k', secretKey: 'cb-s' }),
+      externalAccountId: 'cb-uuid-hist',
+      balanceSats: '1000',
+      balanceAsOf: now,
+      credentialsConnectedAt: now,
+    },
+    {
+      id: 'kr-hist',
+      provider: 'kraken',
+      displayName: 'Kraken History',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-k', secretKey: krakenSecret }),
+      externalAccountId: 'KR-IBAN-HIST',
+      balanceSats: '1000',
+      balanceAsOf: now,
+      credentialsConnectedAt: now,
+    },
+  ])
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (url.includes('/v2/accounts/cb-uuid-hist/transactions')) {
+        return jsonResponse({
+          pagination: { next_uri: null },
+          data: [
+            {
+              id: 'tx-1',
+              type: 'buy',
+              status: 'completed',
+              amount: { amount: '0.5', currency: 'BTC' },
+              native_amount: { amount: '30000', currency: 'USD' },
+              created_at: '2025-01-01T00:00:00Z',
+              resource: 'transaction',
+              resource_path: '/v2/accounts/cb-uuid-hist/transactions/tx-1',
+            },
+            {
+              id: 'tx-bad',
+              type: 'buy',
+              status: 'completed',
+              amount: { amount: cbCanary, currency: 'BTC' },
+              native_amount: { amount: '0', currency: 'USD' },
+              created_at: '2025-01-02T00:00:00Z',
+              resource: 'transaction',
+              resource_path: '/v2/accounts/cb-uuid-hist/transactions/tx-bad',
+            },
+            {
+              id: 'tx-2',
+              type: 'send',
+              status: 'completed',
+              amount: { amount: '-0.1', currency: 'BTC' },
+              native_amount: { amount: '-6000', currency: 'USD' },
+              created_at: '2025-01-03T00:00:00Z',
+              resource: 'transaction',
+              resource_path: '/v2/accounts/cb-uuid-hist/transactions/tx-2',
+            },
+          ],
+        })
+      }
+      return jsonResponse({
+        error: [],
+        result: {
+          count: 4,
+          ledger: {
+            L1: {
+              refid: 'R1',
+              time: 1700000000,
+              type: 'deposit',
+              subtype: '',
+              aclass: 'currency',
+              asset: 'XXBT',
+              amount: '0.5',
+              fee: '0.01',
+              balance: '0.49',
+            },
+            L2: {
+              refid: 'R2',
+              time: 1700000100,
+              type: 'deposit',
+              subtype: '',
+              aclass: 'currency',
+              asset: 'XXBT',
+              amount: krCanary,
+              fee: '0',
+              balance: '0.49',
+            },
+            L3: {
+              refid: 'R3',
+              time: 1700000200,
+              type: 'withdrawal',
+              subtype: '',
+              aclass: 'currency',
+              asset: 'XXBT',
+              amount: '-0.2',
+              fee: krFeeCanary,
+              balance: '0.29',
+            },
+            L4: {
+              refid: 'R4',
+              time: 1700000300,
+              type: 'withdrawal',
+              subtype: '',
+              aclass: 'currency',
+              asset: 'XXBT',
+              amount: '-0.25',
+              fee: '0.005',
+              balance: '0.235',
+            },
+          },
+        },
+      })
+    }),
+  )
+
+  const cbEntries = (await service.getCoinbaseTransactionEntries(['cb-hist'])).unwrap()
+  expect(cbEntries.map((e) => e.value)).toEqual([50000000n, -10000000n])
+
+  const krEntries = (await service.getKrakenTransactionEntries(['kr-hist'])).unwrap()
+  expect(krEntries.map((e) => e.value)).toEqual([49000000n, -25500000n])
+
+  const output = logs.join('\n')
+  expect(output).toContain('Skipped Coinbase transaction with invalid amount')
+  expect(output).toContain('Skipped Kraken ledger entry with invalid amount')
+  expect(output).not.toContain(cbCanary)
+  expect(output).not.toContain(krCanary)
+  expect(output).not.toContain(krFeeCanary)
+})
+
+const RETRYABLE_CONNECT_CASES = ALL_PROVIDERS.flatMap((provider) =>
+  (['http429', 'http503', 'network', 'html200'] as const).map((mode) => ({ provider, mode })),
+)
+
+it.each(RETRYABLE_CONNECT_CASES)(
+  'maps $provider connect $mode failure to INTERNAL_SERVER_ERROR with retryable copy',
+  async ({ provider, mode }) => {
+    const { service } = await setup()
+    const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+    const robinhoodPrivateKey = generateRobinhoodPrivateKeyBase64()
+
+    if (provider === 'robinhood') {
+      await stubRobinhoodHttps(() => {
+        if (mode === 'network') {
+          return { status: 200, destroySocket: true }
+        }
+        if (mode === 'html200') {
+          return { status: 200, rawBody: '<html><body>gateway</body></html>' }
+        }
+        return { status: mode === 'http429' ? 429 : 503, body: { detail: 'busy' } }
+      })
+    } else {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => {
+          if (mode === 'network') {
+            throw new TypeError('network down')
+          }
+          if (mode === 'html200') {
+            return new Response('<html><body>gateway</body></html>', {
+              status: 200,
+              headers: { 'Content-Type': 'text/html' },
+            })
+          }
+          return jsonResponse({ error: ['unavailable'] }, mode === 'http429' ? 429 : 503)
+        }),
+      )
+    }
+
+    const result =
+      provider === 'coinbase'
+        ? await service.connectCoinbase({ apiKey: 'cb-k', secretKey: 'cb-s' })
+        : provider === 'kraken'
+          ? await service.connectKraken({ apiKey: 'kr-k', secretKey: krakenSecret })
+          : provider === 'robinhood'
+            ? await service.connectRobinhood({ apiKey: 'rh-k', privateKeyBase64: robinhoodPrivateKey })
+            : await service.connectStrike({ apiKey: 'st-k', displayName: 'Strike' })
+
+    expect(result.isErr()).toBe(true)
+    const err = result.unwrapErr()
+    expect(err).toBeInstanceOf(ExchangeUserError)
+    if (err instanceof ExchangeUserError) {
+      expect(err.code).toBe('INTERNAL_SERVER_ERROR')
+    }
+    expect(err.message).toMatch(/^Couldn't connect to .+ right now\. Please try again\.$/)
+  },
+)
+
+it.each<{ provider: SupportedExchange; mode: 'http401' | 'krakenInvalidKey' }>([
+  { provider: 'coinbase', mode: 'http401' },
+  { provider: 'kraken', mode: 'http401' },
+  { provider: 'kraken', mode: 'krakenInvalidKey' },
+  { provider: 'robinhood', mode: 'http401' },
+  { provider: 'strike', mode: 'http401' },
+])('maps $provider connect $mode credential rejection to BAD_REQUEST', async ({ provider, mode }) => {
+  const { service } = await setup()
+  const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+  const robinhoodPrivateKey = generateRobinhoodPrivateKeyBase64()
+
+  if (provider === 'robinhood') {
+    await stubRobinhoodHttps(() => ({ status: 401, body: { detail: 'unauthorized' } }))
+  } else {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        if (mode === 'krakenInvalidKey') {
+          return jsonResponse({ error: ['EAPI:Invalid key'] }, 200)
+        }
+        return jsonResponse({ error: 'unauthorized' }, 401)
+      }),
+    )
+  }
+
+  const result =
+    provider === 'coinbase'
+      ? await service.connectCoinbase({ apiKey: 'cb-k', secretKey: 'cb-s' })
+      : provider === 'kraken'
+        ? await service.connectKraken({ apiKey: 'kr-k', secretKey: krakenSecret })
+        : provider === 'robinhood'
+          ? await service.connectRobinhood({ apiKey: 'rh-k', privateKeyBase64: robinhoodPrivateKey })
+          : await service.connectStrike({ apiKey: 'st-k', displayName: 'Strike' })
+
+  expect(result.isErr()).toBe(true)
+  const err = result.unwrapErr()
+  expect(err).toBeInstanceOf(ExchangeUserError)
+  if (err instanceof ExchangeUserError) {
+    expect(err.code).toBe('BAD_REQUEST')
+  }
+  expect(err.message).toMatch(/^Invalid .+ API credentials\. Check your key and permissions, then try again\.$/)
+})
+
+it('projects already-stored corrupt balance_sats as null in listAccounts and repairs on later refresh without deleting raw snapshots', async () => {
+  const { db, service } = await setup()
+  const now = new Date().toISOString()
+
+  await db.insert(exchangeAccounts).values([
+    {
+      id: 'st-corrupt',
+      provider: 'strike',
+      displayName: 'Corrupt Strike',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'st-corrupt-key' }),
+      externalAccountId: null,
+      balanceSats: 'NaN',
+      balanceAsOf: '2025-01-02T00:00:00.000Z',
+      credentialsConnectedAt: now,
+    },
+    {
+      id: 'st-healthy',
+      provider: 'strike',
+      displayName: 'Healthy Strike',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'st-healthy-key' }),
+      externalAccountId: null,
+      balanceSats: '40000000',
+      balanceAsOf: '2025-01-02T00:00:00.000Z',
+      credentialsConnectedAt: now,
+    },
+  ])
+  await db.insert(exchangeBalanceSnapshots).values([
+    { accountId: 'st-corrupt', timestamp: '2025-01-01T00:00:00.000Z', balanceSats: '10000000' },
+    { accountId: 'st-corrupt', timestamp: '2025-01-02T00:00:00.000Z', balanceSats: 'NaN' },
+    { accountId: 'st-corrupt', timestamp: '2025-01-03T00:00:00.000Z', balanceSats: '25000000' },
+  ])
+
+  const before = await service.listAccounts()
+  const corruptDto = before.find((a) => a.id === 'st-corrupt')
+  const healthyDto = before.find((a) => a.id === 'st-healthy')
+  expect(corruptDto?.balanceSats).toBeNull()
+  expect(corruptDto?.balanceAsOf).toBeNull()
+  expect(healthyDto?.balanceSats).toBe('40000000')
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => jsonResponse([{ currency: 'BTC', total: '0.3', available: '0.3' }])),
+  )
+
+  const repaired = (await service.refreshBalance('st-corrupt')).unwrap()
+  expect(repaired.balanceSats).toBe('30000000')
+
+  const after = await service.listAccounts()
+  expect(after.find((a) => a.id === 'st-corrupt')?.balanceSats).toBe('30000000')
+
+  const rawSnapshots = await db
+    .select()
+    .from(exchangeBalanceSnapshots)
+    .where(eq(exchangeBalanceSnapshots.accountId, 'st-corrupt'))
+    .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+  expect(rawSnapshots.map((s) => s.balanceSats)).toContain('NaN')
+  expect(rawSnapshots).toHaveLength(4)
+})

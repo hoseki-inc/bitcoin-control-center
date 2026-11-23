@@ -17,7 +17,7 @@ import { accounts, challenges, exchangeBalanceSnapshots, settings, statementCoun
 import { parseDbTimestamp } from '../../db/timestamp'
 import type { DailyRates } from '../../features/price'
 import { type DailyRatesService, MIN_MEMPOOL_PRICE_DATE } from '../../features/price'
-import type { ExchangeService } from '../exchanges'
+import { type ExchangeService, describeSafeProviderFailure, parseStoredBalanceSats } from '../exchanges'
 import { toTransactionEntries } from './entries'
 import { type AccountHistory, collectAccountHistory } from './history'
 import { type Sleep, lookupTransactions } from './lookup'
@@ -637,7 +637,7 @@ export class StatementService {
             this.logger.info({ account: label, entries: aggregated.length }, 'Coinbase transactions added to statement')
           } else {
             this.logger.warn(
-              { err: coinbaseEntries.unwrapErr() },
+              describeSafeProviderFailure('coinbase', coinbaseEntries.unwrapErr()),
               'Failed to fetch Coinbase transactions for statement',
             )
           }
@@ -801,11 +801,12 @@ export class StatementService {
   }
 
   private async getExchangeSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
-    return this.db
+    const rows = await this.db
       .select({ balance_sats: exchangeBalanceSnapshots.balanceSats, timestamp: exchangeBalanceSnapshots.timestamp })
       .from(exchangeBalanceSnapshots)
       .where(eq(exchangeBalanceSnapshots.accountId, accountId))
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+    return rows.filter((row) => parseStoredBalanceSats(row.balance_sats) !== null)
   }
 
   /** The source a new statement records: Electrum if chosen, otherwise the configured mempool. */

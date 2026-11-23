@@ -3,9 +3,14 @@ import https from 'node:https'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import Decimal from 'decimal.js'
 import { z } from 'zod'
 
 const BASE_HOST = 'trading.robinhood.com'
+const STRICT_DECIMAL_REGEX = /^-?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/
+const CANONICAL_SATS_REGEX = /^(?:0|[1-9][0-9]*)$/
+const MAX_BTC_MAGNITUDE = new Decimal(21_000_000)
+const SATS_PER_BTC = new Decimal(1e8)
 
 type RobinhoodRequestHeaders = {
   'x-api-key': string
@@ -15,8 +20,6 @@ type RobinhoodRequestHeaders = {
   'User-Agent': string
   'Content-Type'?: string
 }
-
-// --- Zod Schemas ---
 
 const RobinhoodHoldingSchema = z.object({
   account_number: z.string(),
@@ -65,8 +68,6 @@ export interface PaginatedResponse<T> {
   next: string | null
 }
 
-// --- Error ---
-
 export class RobinhoodApiError extends Error {
   public readonly tag = 'RobinhoodApiError'
   public readonly status: number
@@ -74,6 +75,24 @@ export class RobinhoodApiError extends Error {
   public constructor(status: number, message: string) {
     super(message)
     this.status = status
+  }
+}
+
+export class RobinhoodTransportError extends Error {
+  public readonly tag = 'RobinhoodTransportError'
+
+  public constructor(message = 'Failed to connect to Robinhood API') {
+    super(message)
+    this.name = 'RobinhoodTransportError'
+  }
+}
+
+export class RobinhoodResponseError extends Error {
+  public readonly tag = 'RobinhoodResponseError'
+
+  public constructor(message = 'Invalid Robinhood API response') {
+    super(message)
+    this.name = 'RobinhoodResponseError'
   }
 }
 
@@ -189,8 +208,8 @@ export class RobinhoodClient {
         options.body = body
       }
       response = await httpsRequest(options)
-    } catch (err) {
-      return Err(new Error(`Failed to connect to Robinhood API: ${err instanceof Error ? err.message : String(err)}`))
+    } catch {
+      return Err(new RobinhoodTransportError())
     }
 
     if (response.status === 401 || response.status === 403) {
@@ -207,12 +226,12 @@ export class RobinhoodClient {
     try {
       responseBody = JSON.parse(response.body)
     } catch {
-      return Err(new Error('Failed to parse Robinhood API response'))
+      return Err(new RobinhoodResponseError('Failed to parse Robinhood API response'))
     }
 
     const parsed = parseUnknown(schema, responseBody)
     if (parsed.isErr()) {
-      return Err(new Error(`Invalid Robinhood API response: ${parsed.unwrapErr().message}`))
+      return Err(new RobinhoodResponseError('Invalid Robinhood API response'))
     }
 
     return Ok(parsed.unwrap())
@@ -266,16 +285,10 @@ export class RobinhoodClient {
     return Ok(null)
   }
 
-  /**
-   * Fetch all cryptocurrency holdings.
-   */
   public async getHoldings(): Promise<Result<RobinhoodHolding[], Error>> {
     return this.paginate<RobinhoodHolding>('/api/v1/crypto/trading/holdings/', RobinhoodHoldingSchema)
   }
 
-  /**
-   * Fetch BTC balance in satoshis.
-   */
   public getBtcBalance = asyncFn(async (): Promise<Result<bigint, Error>> => {
     const holdingsResult = await this.getHoldings()
     if (holdingsResult.isErr()) {
@@ -288,8 +301,24 @@ export class RobinhoodClient {
       return Ok(0n)
     }
 
-    const sats = BigInt(Math.round(Number(btcHolding.total_quantity) * 1e8))
-    return Ok(sats)
+    if (!STRICT_DECIMAL_REGEX.test(btcHolding.total_quantity)) {
+      return Err(new RobinhoodResponseError('Invalid Robinhood BTC balance'))
+    }
+    let amount: Decimal
+    try {
+      amount = new Decimal(btcHolding.total_quantity)
+    } catch {
+      return Err(new RobinhoodResponseError('Invalid Robinhood BTC balance'))
+    }
+    if (!amount.isFinite() || amount.lt(0) || amount.abs().gt(MAX_BTC_MAGNITUDE)) {
+      return Err(new RobinhoodResponseError('Invalid Robinhood BTC balance'))
+    }
+    const formatted = amount.isZero() ? '0' : amount.mul(SATS_PER_BTC).toFixed(0, Decimal.ROUND_HALF_UP)
+    const normalized = formatted === '-0' ? '0' : formatted
+    if (!CANONICAL_SATS_REGEX.test(normalized)) {
+      return Err(new RobinhoodResponseError('Invalid Robinhood BTC balance'))
+    }
+    return Ok(BigInt(normalized))
   })
 
   /**

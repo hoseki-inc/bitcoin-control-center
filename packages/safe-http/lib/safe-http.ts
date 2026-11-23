@@ -1,4 +1,4 @@
-import { type AsyncResult, Err, Ok, Result } from '../../result/index.ts'
+import { AsyncResult, Err, Ok, Result } from '../../result/index.ts'
 import { SafeHttpError, SafeHttpErrorKind } from './errors.ts'
 import { SafeResponse } from './response.ts'
 import type { Input, Options } from './types.ts'
@@ -11,7 +11,23 @@ export class SafeHttp {
   }
 
   public request(input: Input, options?: Options): AsyncResult<SafeResponse, SafeHttpError> {
-    const request = new Request(input, { ...this.options, ...options })
+    let request: Request
+    try {
+      request = new Request(input, { ...this.options, ...options })
+    } catch (thrown) {
+      const cause = thrown instanceof Error ? thrown : new Error('Invalid request')
+      return new AsyncResult(
+        Promise.resolve(
+          Err(
+            new SafeHttpError({
+              value: SafeHttpErrorKind.NetworkUnreachable,
+              cause,
+              message: 'Fetch failed',
+            }),
+          ),
+        ),
+      )
+    }
     return Result.fromPromise(fetch(request))
       .mapErr(
         (error) =>

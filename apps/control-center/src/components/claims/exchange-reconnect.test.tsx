@@ -6,12 +6,16 @@ import { type Operation, TRPCClientError } from '@trpc/client'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
+import { toast } from 'sonner'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
+import { INITIAL_GATE, useGate } from '../../pin/gate'
 import { TestTrpcProvider, createTestTrpcClient } from '../../testing/trpc'
 import { ConnectCoinbase } from './coinbase/connect-coinbase'
+import { parseExchangeConnectError } from './exchange-reconnect-error'
 import { ConnectKraken } from './kraken/connect-kraken'
 import { ConnectRobinhood } from './robinhood/connect-robinhood'
+import { ConnectStrike } from './strike/connect-strike'
 
 const ReconnectInputSchema = z.object({
   replaceAccountId: z.string().optional(),
@@ -72,7 +76,9 @@ async function mountConnectForm(args: {
   notifyManager.setNotifyFunction((callback) => {
     act(callback)
   })
+  useGate.setState({ ...INITIAL_GATE, phase: 'open' }, true)
 
+  const toastErrorSpy = vi.spyOn(toast, 'error').mockImplementation(() => '')
   const requests: Operation[] = []
   const rpc = createTestTrpcClient(async (operation) => {
     requests.push(operation)
@@ -92,6 +98,8 @@ async function mountConnectForm(args: {
     notifyManager.setNotifyFunction((callback) => {
       callback()
     })
+    useGate.setState(INITIAL_GATE, true)
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     dom.window.close()
   })
@@ -136,6 +144,7 @@ async function mountConnectForm(args: {
   return {
     container,
     requests,
+    toastErrorSpy,
     fill,
     clickButton,
     hasButton,
@@ -423,4 +432,110 @@ it('Robinhood: shows unverifiable refusal message inline without the new-account
     expect(unverifiableView.text()).toContain(unverifiableMessage)
   })
   expect(unverifiableView.hasButton('Connect as a new account instead')).toBe(false)
+})
+
+function trpcInternalServerError(message: string): TRPCClientError<never> {
+  return TRPCClientError.from({
+    error: { message, code: -32603, data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500 } },
+  })
+}
+
+it('Coinbase: transient connect error shows exact retryable copy inline without new-account CTA, navigation, or PIN lock', async () => {
+  const safeMessage = "Couldn't connect to Coinbase right now. Please try again."
+  const view = await mountConnectForm({
+    element: <ConnectCoinbase />,
+    route: '/accounts/verify/coinbase',
+    state: { returnTo: '/accounts/coinbase/cb-a', replaceAccountId: 'cb-a' },
+    handle: async (op) => {
+      if (op.path === 'portalProve.exchanges.coinbase.connect') {
+        throw trpcInternalServerError(safeMessage)
+      }
+      return null
+    },
+  })
+
+  const apiKeyInput = view.container.querySelector<HTMLInputElement>('input[name="apiKey"]')
+  const secretInput = view.container.querySelector<HTMLTextAreaElement>('textarea[name="secretKey"]')
+  assert.exists(apiKeyInput)
+  assert.exists(secretInput)
+
+  await view.fill(apiKeyInput, 'cb-key-retryable')
+  await view.fill(secretInput, 'cb-secret-retryable')
+  await view.clickButton('Reconnect Account')
+
+  await vi.waitFor(() => {
+    expect(view.text()).toContain(safeMessage)
+  })
+  expect(view.hasButton('Connect as a new account instead')).toBe(false)
+  expect(view.text()).not.toContain('Accounts list')
+  expect(view.text()).not.toContain('Coinbase A detail')
+  expect(useGate.getState()).toMatchObject({ epoch: 0, phase: 'open' })
+})
+
+it('Coinbase: invalid credentials error shows exact safe copy inline without new-account CTA, navigation, or PIN lock', async () => {
+  const safeMessage = 'Invalid Coinbase API credentials. Check your key and permissions, then try again.'
+  const view = await mountConnectForm({
+    element: <ConnectCoinbase />,
+    route: '/accounts/verify/coinbase',
+    handle: async (op) => {
+      if (op.path === 'portalProve.exchanges.coinbase.connect') {
+        throw trpcBadRequest(safeMessage)
+      }
+      return null
+    },
+  })
+
+  const apiKeyInput = view.container.querySelector<HTMLInputElement>('input[name="apiKey"]')
+  const secretInput = view.container.querySelector<HTMLTextAreaElement>('textarea[name="secretKey"]')
+  assert.exists(apiKeyInput)
+  assert.exists(secretInput)
+
+  await view.fill(apiKeyInput, 'cb-key-invalid')
+  await view.fill(secretInput, 'cb-secret-invalid')
+  await view.clickButton('Connect Account')
+
+  await vi.waitFor(() => {
+    expect(view.text()).toContain(safeMessage)
+  })
+  expect(view.hasButton('Connect as a new account instead')).toBe(false)
+  expect(view.text()).not.toContain('Accounts list')
+  expect(useGate.getState()).toMatchObject({ epoch: 0, phase: 'open' })
+})
+
+it('Strike: transient connect error shows exact retryable toast without navigation or PIN lock', async () => {
+  const safeMessage = "Couldn't connect to Strike right now. Please try again."
+  const view = await mountConnectForm({
+    element: <ConnectStrike />,
+    route: '/accounts/verify/strike',
+    handle: async (op) => {
+      if (op.path === 'portalProve.exchanges.strike.connect') {
+        throw trpcInternalServerError(safeMessage)
+      }
+      return null
+    },
+  })
+
+  const displayNameInput = view.container.querySelector<HTMLInputElement>('input[name="displayName"]')
+  const apiKeyInput = view.container.querySelector<HTMLInputElement>('input[name="apiKey"]')
+  assert.exists(displayNameInput)
+  assert.exists(apiKeyInput)
+
+  await view.fill(displayNameInput, 'My Strike')
+  await view.fill(apiKeyInput, 'strike-key-retryable')
+  await view.clickButton('Connect Account')
+
+  await vi.waitFor(() => {
+    expect(view.toastErrorSpy).toHaveBeenCalledWith(safeMessage)
+  })
+  expect(view.text()).toContain('Connect Strike Account')
+  expect(view.text()).not.toContain('Accounts list')
+  expect(useGate.getState()).toMatchObject({ epoch: 0, phase: 'open' })
+})
+
+it('parseExchangeConnectError treats stale reconnect INTERNAL_SERVER_ERROR as non-mismatch', () => {
+  const message = 'Exchange account credentials changed during reconnect. Please try again.'
+  expect(parseExchangeConnectError(trpcInternalServerError(message), 'Fallback')).toEqual({
+    message,
+    isMismatch: false,
+  })
 })

@@ -13,28 +13,26 @@ export const LedgerEntrySchema = z.object({
 })
 export type LedgerEntry = z.infer<typeof LedgerEntrySchema>
 
-// Balance endpoint - result only
+function krakenResponseSchema<T extends z.ZodTypeAny>(resultSchema: T) {
+  return z.object({
+    error: z.array(z.string()),
+    result: resultSchema.optional(),
+  })
+}
+
 export const BalanceResultSchema = z.record(z.string(), z.string())
 export type BalanceResult = z.infer<typeof BalanceResultSchema>
 
-export const BalanceResponseSchema = z.object({
-  error: z.array(z.string()),
-  result: BalanceResultSchema.optional(),
-})
+export const BalanceResponseSchema = krakenResponseSchema(BalanceResultSchema)
 export type BalanceResponse = z.infer<typeof BalanceResponseSchema>
 
-// Ledgers endpoint - result only
 export const LedgersResultSchema = z.object({
   ledger: z.record(z.string(), LedgerEntrySchema).optional(),
   count: z.number().optional(),
 })
 export type LedgersResult = z.infer<typeof LedgersResultSchema>
 
-// Ledgers endpoint - full response
-export const LedgersResponseSchema = z.object({
-  error: z.array(z.string()),
-  result: LedgersResultSchema,
-})
+export const LedgersResponseSchema = krakenResponseSchema(LedgersResultSchema)
 export type LedgersResponse = z.infer<typeof LedgersResponseSchema>
 
 export const ApiKeyInfoResultSchema = z.object({
@@ -44,10 +42,7 @@ export const ApiKeyInfoResultSchema = z.object({
 })
 export type ApiKeyInfoResult = z.infer<typeof ApiKeyInfoResultSchema>
 
-export const ApiKeyInfoResponseSchema = z.object({
-  error: z.array(z.string()),
-  result: ApiKeyInfoResultSchema.optional(),
-})
+export const ApiKeyInfoResponseSchema = krakenResponseSchema(ApiKeyInfoResultSchema)
 export type ApiKeyInfoResponse = z.infer<typeof ApiKeyInfoResponseSchema>
 
 // Error response

@@ -2,18 +2,20 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { Coinbase } from '@hoseki/packages/clients/coinbase'
 import { Kraken } from '@hoseki/packages/clients/kraken'
-import { RobinhoodApiError } from '@hoseki/packages/clients/robinhood'
+import { RobinhoodApiError, RobinhoodResponseError, RobinhoodTransportError } from '@hoseki/packages/clients/robinhood'
 import { SafeResponse } from '@hoseki/packages/safe-http'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
+import { InvalidProviderAmountError } from './amounts'
 import {
   ExchangeAccountMismatchError,
   ExchangeAccountUnverifiableError,
   type SupportedExchange,
   classifyProviderFailure,
+  isRetryableProviderFailure,
 } from './provider-errors'
 import { verifyReconnectIdentity } from './reconnect-identity'
-import { StrikeApiError } from './strike'
+import { StrikeApiError, StrikeResponseError, StrikeTransportError } from './strike'
 
 const EXCHANGES_DIR = import.meta.dirname
 const SKIP = /\.(?:test|fixtures)\.ts$/
@@ -26,6 +28,45 @@ function exchangeSourceFiles(): string[] {
 
 function readExchangeFile(name: string): string {
   return readFileSync(join(EXCHANGES_DIR, name), 'utf8')
+}
+
+const EXCHANGE_LINT_RULE = /exchange-provider-(?:errors|input)/
+const LINT_DISABLE_DIRECTIVE = /\b(?:oxlint|eslint)-disable(?:-next-line|-line)?\b/
+const BLANKET_LINT_DISABLE = /\b(?:oxlint|eslint)-disable(?:-next-line|-line)?(?:\s|\*(?!\/))*(?:\*\/|--|$)/
+
+function collectComments(source: string, file = 'guard.ts'): string[] {
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true)
+  const commentsByPos = new Map<number, string>()
+
+  function addRanges(ranges: readonly ts.CommentRange[] | undefined): void {
+    if (!ranges) {
+      return
+    }
+    for (const range of ranges) {
+      if (!commentsByPos.has(range.pos)) {
+        commentsByPos.set(range.pos, source.slice(range.pos, range.end))
+      }
+    }
+  }
+
+  function visit(node: ts.Node): void {
+    addRanges(ts.getLeadingCommentRanges(source, node.getFullStart()))
+    addRanges(ts.getTrailingCommentRanges(source, node.getEnd()))
+    for (const child of node.getChildren(sourceFile)) {
+      visit(child)
+    }
+  }
+
+  visit(sourceFile)
+  addRanges(ts.getLeadingCommentRanges(source, sourceFile.endOfFileToken.getFullStart()))
+  return [...commentsByPos.values()]
+}
+
+function hasExchangeLintDisableComment(source: string, file = 'guard.ts'): boolean {
+  return collectComments(source, file).some(
+    (comment) =>
+      (LINT_DISABLE_DIRECTIVE.test(comment) && EXCHANGE_LINT_RULE.test(comment)) || BLANKET_LINT_DISABLE.test(comment),
+  )
 }
 
 function makeCoinbaseApiError(name: 'Unauthorized' | 'UnexpectedFailure', status: number): Coinbase.ApiError {
@@ -178,11 +219,55 @@ describe('exchange structural guards', () => {
     expect(writers).toEqual(['service.ts:writeCredentials(ExchangeTransaction, VerifiedReconnect)'])
   })
 
-  it('keeps exchange-provider-errors lint rule enabled with no disable comments in features/exchanges', () => {
+  it('keeps exchange-provider-errors and exchange-provider-input lint rules enabled with no disable comments in features/exchanges', () => {
     for (const file of exchangeSourceFiles()) {
       const source = readExchangeFile(file)
-      expect(source).not.toMatch(/(oxlint|eslint)-disable[^\n]*exchange-provider-errors/)
+      expect(hasExchangeLintDisableComment(source, file), file).toBe(false)
     }
+  })
+
+  it('rejects both single-line and multiline disable comments targeting exchange lint rules', () => {
+    expect(hasExchangeLintDisableComment('// oxlint-disable-next-line control-center/exchange-provider-errors')).toBe(
+      true,
+    )
+    expect(hasExchangeLintDisableComment('// eslint-disable-line control-center/exchange-provider-input')).toBe(true)
+    expect(hasExchangeLintDisableComment('/* oxlint-disable control-center/exchange-provider-input */')).toBe(true)
+    expect(
+      hasExchangeLintDisableComment(
+        '/* oxlint-disable typescript/explicit-module-boundary-types,\ncontrol-center/exchange-provider-input */',
+      ),
+    ).toBe(true)
+    expect(
+      hasExchangeLintDisableComment(
+        '/* eslint-disable-next-line\n * typescript/explicit-module-boundary-types,\n * control-center/exchange-provider-errors\n */',
+      ),
+    ).toBe(true)
+    expect(hasExchangeLintDisableComment(['/* oxlint', 'disable */'].join('-'))).toBe(true)
+    expect(
+      hasExchangeLintDisableComment(
+        "// oxlint-disable-next-line anti-slop/no-unknown-returns -- Stored JSON\nexport const name = 'exchange-provider-input'\n",
+      ),
+    ).toBe(false)
+    expect(
+      hasExchangeLintDisableComment(
+        'const a = `x${1}y`\n// oxlint-disable-next-line control-center/exchange-provider-input\nexport const b = 1\n',
+      ),
+    ).toBe(true)
+    expect(
+      hasExchangeLintDisableComment(
+        'const a = `x${1}y`\n// oxlint-disable-next-line control-center/exchange-provider-input\n',
+      ),
+    ).toBe(true)
+    expect(
+      hasExchangeLintDisableComment(
+        'const a = `xy`\n// oxlint-disable-next-line control-center/exchange-provider-input\nexport const b = 1\n',
+      ),
+    ).toBe(true)
+    expect(
+      hasExchangeLintDisableComment(
+        'const a = 1\n// oxlint-disable-next-line control-center/exchange-provider-input\nexport const b = 1\n',
+      ),
+    ).toBe(true)
   })
 })
 
@@ -389,5 +474,269 @@ describe('verifyReconnectIdentity invariants', () => {
     })
     expect(result.isOk()).toBe(true)
     expect(result.unwrap().nextExternalAccountId).toBeNull()
+  })
+})
+
+describe('isRetryableProviderFailure matrix', () => {
+  const response200 = new SafeResponse(new Response('', { status: 200 }))
+  const response400 = new SafeResponse(new Response('', { status: 400 }))
+  const response429 = new SafeResponse(new Response('', { status: 429 }))
+  const response503 = new SafeResponse(new Response('', { status: 503 }))
+
+  it.each<{ label: string; provider: SupportedExchange; err: Error; expected: boolean }>([
+    {
+      label: 'InvalidProviderAmountError -> true',
+      provider: 'coinbase',
+      err: new InvalidProviderAmountError(),
+      expected: true,
+    },
+    {
+      label: 'Coinbase NetworkUnreachable -> true',
+      provider: 'coinbase',
+      err: new Coinbase.ApiError(Coinbase.ErrorKind.NetworkUnreachable(new Error('net')), 'net'),
+      expected: true,
+    },
+    {
+      label: 'Coinbase ResponseNotAcceptable -> true',
+      provider: 'coinbase',
+      err: new Coinbase.ApiError(Coinbase.ErrorKind.ResponseNotAcceptable(new Error('bad'), response200), 'bad'),
+      expected: true,
+    },
+    {
+      label: 'Coinbase 429 -> true',
+      provider: 'coinbase',
+      err: makeCoinbaseApiError('UnexpectedFailure', 429),
+      expected: true,
+    },
+    {
+      label: 'Coinbase 503 -> true',
+      provider: 'coinbase',
+      err: makeCoinbaseApiError('UnexpectedFailure', 503),
+      expected: true,
+    },
+    {
+      label: 'Coinbase 401 -> false',
+      provider: 'coinbase',
+      err: makeCoinbaseApiError('Unauthorized', 401),
+      expected: false,
+    },
+    {
+      label: 'Coinbase 403 -> false',
+      provider: 'coinbase',
+      err: makeCoinbaseApiError('Unauthorized', 403),
+      expected: false,
+    },
+    {
+      label: 'Coinbase 400 -> false',
+      provider: 'coinbase',
+      err: makeCoinbaseApiError('UnexpectedFailure', 400),
+      expected: false,
+    },
+    {
+      label: 'Kraken NetworkUnreachable -> true',
+      provider: 'kraken',
+      err: new Kraken.ApiError(Kraken.ApiErrorKind.NetworkUnreachable(new Error('net')), 'net'),
+      expected: true,
+    },
+    {
+      label: 'Kraken ResponseNotAcceptable -> true',
+      provider: 'kraken',
+      err: new Kraken.ApiError(Kraken.ApiErrorKind.ResponseNotAcceptable(new Error('bad'), response200), 'bad'),
+      expected: true,
+    },
+    {
+      label: 'Kraken UnexpectedFailure (missing result) -> true',
+      provider: 'kraken',
+      err: makeKrakenApiError('UnexpectedFailure', 200),
+      expected: true,
+    },
+    {
+      label: 'Kraken ErrorResponse 429 -> true',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 429, ['EAPI:Invalid key']),
+      expected: true,
+    },
+    {
+      label: 'Kraken ErrorResponse 503 -> true',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 503, ['EAPI:Invalid key']),
+      expected: true,
+    },
+    {
+      label: 'Kraken ErrorResponse EAPI:Rate limit -> true',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EAPI:Rate limit exceeded']),
+      expected: true,
+    },
+    {
+      label: 'Kraken ErrorResponse EService:Unavailable -> true',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EService:Unavailable']),
+      expected: true,
+    },
+    {
+      label: 'Kraken ErrorResponse 200 EAPI:Invalid key -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EAPI:Invalid key']),
+      expected: false,
+    },
+    {
+      label: 'Kraken ErrorResponse 200 EGeneral:Permission denied -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EGeneral:Permission denied']),
+      expected: false,
+    },
+    {
+      label: 'Kraken ErrorResponse 200 EAPI:Invalid key + EService:Unavailable -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EAPI:Invalid key', 'EService:Unavailable']),
+      expected: false,
+    },
+    {
+      label: 'Kraken ErrorResponse 200 EService:Unavailable + EAPI:Invalid key -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EService:Unavailable', 'EAPI:Invalid key']),
+      expected: false,
+    },
+    {
+      label: 'Kraken ErrorResponse 200 EGeneral:Permission denied + EService:Busy -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EGeneral:Permission denied', 'EService:Busy']),
+      expected: false,
+    },
+    {
+      label: 'Kraken ErrorResponse 200 EAPI:Rate limit exceeded + EGeneral:Permission denied -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('ErrorResponse', 200, ['EAPI:Rate limit exceeded', 'EGeneral:Permission denied']),
+      expected: false,
+    },
+    {
+      label: 'Kraken 401 -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('Unauthorized', 401),
+      expected: false,
+    },
+    {
+      label: 'Kraken 403 -> false',
+      provider: 'kraken',
+      err: makeKrakenApiError('Unauthorized', 403),
+      expected: false,
+    },
+    {
+      label: 'Robinhood 429 -> true',
+      provider: 'robinhood',
+      err: new RobinhoodApiError(429, 'Rate limited'),
+      expected: true,
+    },
+    {
+      label: 'Robinhood 503 -> true',
+      provider: 'robinhood',
+      err: new RobinhoodApiError(503, 'Service unavailable'),
+      expected: true,
+    },
+    {
+      label: 'RobinhoodTransportError -> true',
+      provider: 'robinhood',
+      err: new RobinhoodTransportError(),
+      expected: true,
+    },
+    {
+      label: 'RobinhoodResponseError -> true',
+      provider: 'robinhood',
+      err: new RobinhoodResponseError(),
+      expected: true,
+    },
+    {
+      label: 'Robinhood sign failure (generic Error) -> false',
+      provider: 'robinhood',
+      err: new Error('Invalid Robinhood private key'),
+      expected: false,
+    },
+    {
+      label: 'Robinhood 401 -> false',
+      provider: 'robinhood',
+      err: new RobinhoodApiError(401, 'Unauthorized'),
+      expected: false,
+    },
+    {
+      label: 'Robinhood 403 -> false',
+      provider: 'robinhood',
+      err: new RobinhoodApiError(403, 'Forbidden'),
+      expected: false,
+    },
+    {
+      label: 'Robinhood 400 -> false',
+      provider: 'robinhood',
+      err: new RobinhoodApiError(400, 'Bad request'),
+      expected: false,
+    },
+    {
+      label: 'Strike 429 -> true',
+      provider: 'strike',
+      err: new StrikeApiError(429, 'Strike API error: 429'),
+      expected: true,
+    },
+    {
+      label: 'Strike 500 -> true',
+      provider: 'strike',
+      err: new StrikeApiError(500, 'Strike API error: 500'),
+      expected: true,
+    },
+    {
+      label: 'StrikeTransportError -> true',
+      provider: 'strike',
+      err: new StrikeTransportError(),
+      expected: true,
+    },
+    {
+      label: 'StrikeResponseError -> true',
+      provider: 'strike',
+      err: new StrikeResponseError(),
+      expected: true,
+    },
+    {
+      label: 'Strike 401 -> false',
+      provider: 'strike',
+      err: new StrikeApiError(401, 'Strike API error: 401'),
+      expected: false,
+    },
+    {
+      label: 'Strike 403 -> false',
+      provider: 'strike',
+      err: new StrikeApiError(403, 'Strike API error: 403'),
+      expected: false,
+    },
+    {
+      label: 'Strike 400 -> false',
+      provider: 'strike',
+      err: new StrikeApiError(400, 'Strike API error: 400'),
+      expected: false,
+    },
+    {
+      label: 'Generic Error -> false',
+      provider: 'strike',
+      err: new Error('something unexpected'),
+      expected: false,
+    },
+    {
+      label: 'Cross-provider Coinbase 400 / 429 / 503 response sanity',
+      provider: 'coinbase',
+      err: new Coinbase.ApiError(Coinbase.ErrorKind.UnexpectedFailure({ response: response400 }), '400'),
+      expected: false,
+    },
+    {
+      label: 'Coinbase UnexpectedFailure 429 via response',
+      provider: 'coinbase',
+      err: new Coinbase.ApiError(Coinbase.ErrorKind.UnexpectedFailure({ response: response429 }), '429'),
+      expected: true,
+    },
+    {
+      label: 'Coinbase UnexpectedFailure 503 via response',
+      provider: 'coinbase',
+      err: new Coinbase.ApiError(Coinbase.ErrorKind.UnexpectedFailure({ response: response503 }), '503'),
+      expected: true,
+    },
+  ])('$label', ({ provider, err, expected }) => {
+    expect(isRetryableProviderFailure(provider, err)).toBe(expected)
   })
 })
