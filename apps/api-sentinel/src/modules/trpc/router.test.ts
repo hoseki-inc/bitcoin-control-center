@@ -1,20 +1,28 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Network, NetworkAccount } from '@hoseki/packages/bitcoin'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
 import { IndexMap } from '@hoseki/packages/collection'
+import { registerCustomSerializers } from '@hoseki/packages/custom-serializers'
 import { AsyncResult, Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { Wallets } from '@hoseki/packages/testing'
+import { type FastifyTRPCPluginOptions, fastifyTRPCPlugin } from '@trpc/server/adapters/fastify'
 import { Signer } from 'bip322-js'
 import { eq } from 'drizzle-orm'
+import Fastify from 'fastify'
 import { nanoid } from 'nanoid'
 import pino from 'pino'
+import superjson from 'superjson'
 import { assert, expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import { type AppContextOptions, createAppContext } from '../../context'
 import { accounts, challenges, keystores, signedMessages } from '../../db/schema'
 import * as env from '../../env'
+import type { TRPCContext } from './init'
 import { createSinglesigClaim, owner, ownershipRegistry } from './ownership.fixtures'
-import { appRouter } from './router'
+import { type AppRouter, appRouter } from './router'
 
 async function setup(options: AppContextOptions = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-router-'))
@@ -253,6 +261,72 @@ it('returns the balances of wallets it could scan, leaving out one that failed, 
     message: 'Could not fetch wallet balances',
   })
 })
+
+const trpcTransformer = registerCustomSerializers(superjson)
+const trpcErrorResponseSchema = z.object({
+  error: z.object({
+    json: z.object({
+      message: z.string(),
+      code: z.number(),
+      data: z.object({
+        code: z.string(),
+        httpStatus: z.number(),
+      }),
+    }),
+  }),
+})
+
+it.each(['returned', 'thrown'] as const)(
+  'returns a fixed safe HTTP error from bitcoinAccountBalances when Electrum fails (%s error), hiding raw provider text',
+  async (failureMode) => {
+    const { app } = await setup()
+    const server = Fastify({ logger: false })
+    await server.register(fastifyTRPCPlugin, {
+      prefix: '/trpc',
+      trpcOptions: {
+        router: appRouter,
+        batching: { enabled: false },
+        createContext: async (): Promise<TRPCContext> => ({ app }),
+      } satisfies FastifyTRPCPluginOptions<AppRouter>['trpcOptions'],
+    })
+    onTestFinished(async () => {
+      await server.close()
+    })
+
+    const logError = vi.spyOn(app.logger, 'error')
+    vi.spyOn(app.onchainProvider, 'getConfirmedAccountBalances').mockImplementation(
+      asyncFn(async () => {
+        if (failureMode === 'thrown') {
+          throw new RangeError('synthetic-sensitive-error')
+        }
+        return Err(new Error('synthetic-sensitive-error'))
+      }),
+    )
+
+    const account = new NetworkAccount(Network.Mainnet, Wallets.singlesigNativeSegwitAccount).toString()
+    const encodedInput = encodeURIComponent(JSON.stringify(trpcTransformer.serialize({ accounts: [account] })))
+    const response = await server.inject({
+      method: 'GET',
+      url: `/trpc/portalProve.onchain.bitcoinAccountBalances?input=${encodedInput}`,
+    })
+
+    expect(response.statusCode).toBe(500)
+    const parsed = parseUnknown(trpcErrorResponseSchema, JSON.parse(response.body)).expect(
+      'tRPC error response must match schema',
+    )
+    expect(parsed.error.json.data).toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+      httpStatus: 500,
+    })
+    expect(parsed.error.json.message).toBe(
+      "Couldn't check balances with Electrum. Your wallet wasn't scanned. Check your Electrum connection and try again.",
+    )
+    expect(response.body).not.toContain('synthetic-sensitive-error')
+    if (failureMode === 'thrown') {
+      expect(logError).toHaveBeenCalled()
+    }
+  },
+)
 
 it('reports a newer desktop release once the check finds one, and nothing from source', async () => {
   const fetch = vi.fn(async () => Response.json({ tag: 'v0.2.0_0' }))

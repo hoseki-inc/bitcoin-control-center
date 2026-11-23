@@ -846,3 +846,44 @@ describe('requests waiting for an answer', () => {
     client.disconnect()
   })
 })
+
+it('rejects a balance that is not a whole number of satoshis', async () => {
+  const server = net.createServer((socket) => {
+    socket.on('error', () => undefined)
+    socket.setEncoding('utf8')
+    socket.on('data', (chunk: string) => {
+      for (const line of chunk.split('\n').filter(Boolean)) {
+        const raw: unknown = JSON.parse(line)
+        const req = parseUnknown(
+          z.object({ id: z.number(), method: z.string(), params: z.array(z.unknown()) }),
+          raw,
+        ).expect('valid JSON-RPC test request')
+        const result =
+          req.method === 'server.version'
+            ? ['MockElectrum 1.0', '1.4']
+            : req.params[0] === 'a'.repeat(64)
+              ? { confirmed: 1.5, unconfirmed: 0 }
+              : { confirmed: 1500, unconfirmed: 0 }
+        socket.write(`${JSON.stringify({ jsonrpc: '2.0', id: req.id, result })}\n`)
+      }
+    })
+  })
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  onTestFinished(async () => {
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve()
+      })
+    })
+  })
+  const { port } = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener')
+  const client = new ElectrumClient({ host: '127.0.0.1', port, protocol: 'tcp' })
+  onTestFinished(() => {
+    client.disconnect()
+  })
+
+  expect((await client.getBalance('a'.repeat(64))).isErr()).toBe(true)
+  expect((await client.getBalance('b'.repeat(64))).unwrap()).toEqual({ confirmed: 1500, unconfirmed: 0 })
+})

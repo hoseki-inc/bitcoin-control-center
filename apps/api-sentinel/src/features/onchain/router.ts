@@ -9,6 +9,14 @@ import { accounts as accountTable, balanceSnapshots } from '../../db/schema'
 import { claimNetworkToNetwork } from '../../lib/claim-network'
 import { protectedProcedure, router } from '../../modules/trpc/init'
 
+function scanErrorWithoutProviderDetails(): TRPCError {
+  return new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message:
+      "Couldn't check balances with Electrum. Your wallet wasn't scanned. Check your Electrum connection and try again.",
+  })
+}
+
 export const onchainRouter = router({
   bitcoinAccountBalances: protectedProcedure
     .input(z.object({ accounts: z.array(z.string()) }))
@@ -59,9 +67,15 @@ export const onchainRouter = router({
 
       let balances = new IndexMap<Account, bigint>()
       if (accountSet.size > 0) {
-        const balancesResult = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
+        let balancesResult: Awaited<ReturnType<typeof ctx.app.onchainProvider.getConfirmedAccountBalances>>
+        try {
+          balancesResult = await ctx.app.onchainProvider.getConfirmedAccountBalances(accountSet)
+        } catch (err) {
+          ctx.app.logger.error({ err }, 'Error getting confirmed account balances')
+          throw scanErrorWithoutProviderDetails()
+        }
         if (balancesResult.isErr()) {
-          throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: balancesResult.unwrapErr().message })
+          throw scanErrorWithoutProviderDetails()
         }
         balances = balancesResult.unwrap()
       }
