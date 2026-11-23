@@ -16,16 +16,19 @@ const RUN = 'fault-test'
 const AnswerSchema = z.object({ result: z.unknown().optional(), error: z.unknown().optional() })
 type Answer = z.infer<typeof AnswerSchema>
 
+const ReleasePayloadSchema = z.object({ tag: z.string() })
+
 interface Fakes {
   fault: (target: string, mode: string) => string
   /** One Electrum request on a new connection: the answer, or the connection error's code. */
   electrum: (method: string, params?: readonly unknown[]) => Promise<Answer | string>
   /** The HTTP status, or the connection error's code. */
   mempool: (path: string) => Promise<number | string>
+  mempoolJson: (path: string) => Promise<{ status: number; body: unknown }>
   requestLog: () => string
 }
 
-async function withFakes(test: (fakes: Fakes) => Promise<void>): Promise<void> {
+async function withFakes(test: (fakes: Fakes) => Promise<void>, extraArgs: readonly string[] = []): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), 'verify-fakes-'))
   const env = ChildEnv.with({ TMPDIR: dir })
   // run.ts names the checkout's folder under bcc-verify by a hash, and this temp folder holds only it.
@@ -37,7 +40,7 @@ async function withFakes(test: (fakes: Fakes) => Promise<void>): Promise<void> {
   const leader =
     startGroup(
       join(REPO_ROOT, 'node_modules/.bin/tsx'),
-      ['--tsconfig', 'tools/verify/tsconfig.json', 'tools/verify/fakes.ts', '--run', RUN],
+      ['--tsconfig', 'tools/verify/tsconfig.json', 'tools/verify/fakes.ts', '--run', RUN, ...extraArgs],
       { cwd: REPO_ROOT, env, log },
     ).pid ?? 0
   try {
@@ -87,6 +90,10 @@ async function withFakes(test: (fakes: Fakes) => Promise<void>): Promise<void> {
             ? String(error.cause.code)
             : 'failed'
         }
+      },
+      mempoolJson: async (path) => {
+        const response = await fetch(`http://127.0.0.1:${ports.mempoolPort}${path}`)
+        return { status: response.status, body: await response.json() }
       },
       requestLog: () => readFileSync(join(runDir(), 'logs', 'fake-requests.log'), 'utf8'),
     })
@@ -146,5 +153,22 @@ describe('helpers/verify fault', { timeout: 60_000 }, () => {
       assert.throws(() => fault('price', 'down'))
       assert.throws(() => fault('electrum', 'broken'))
     })
+  })
+
+  it('serves /latest.json with the configured release tag and default when omitted', async () => {
+    await withFakes(async ({ mempoolJson }) => {
+      const { status, body } = await mempoolJson('/latest.json')
+      assert.equal(status, 200)
+      assert.deepEqual(parseUnknown(ReleasePayloadSchema, body).unwrap(), { tag: 'v0.0.0_0' })
+    })
+
+    await withFakes(
+      async ({ mempoolJson }) => {
+        const { status, body } = await mempoolJson('/latest.json')
+        assert.equal(status, 200)
+        assert.deepEqual(parseUnknown(ReleasePayloadSchema, body).unwrap(), { tag: 'v99.0.0_0' })
+      },
+      ['--release-tag', 'v99.0.0_0'],
+    )
   })
 })

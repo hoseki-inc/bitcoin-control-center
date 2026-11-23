@@ -23,6 +23,9 @@ export interface CoinbaseClient {
       list(args?: AdvancedTrade.AccountListArgs): CoinbaseRequest<z.infer<typeof AdvancedTrade.AccountList>>
       get(args: { accountUuid?: string }): CoinbaseRequest<{ account: z.infer<typeof AdvancedTrade.Account> }>
     }
+    keyPermissions: {
+      get(): CoinbaseRequest<z.infer<typeof AdvancedTrade.KeyPermissions>>
+    }
   }
   app: {
     user: {
@@ -106,8 +109,25 @@ export function Client(init?: ClientInit): CoinbaseClient {
     },
   }
 
+  const keyPermissions = {
+    /**
+     * Get information about your API key's permissions and portfolio scope.
+     *
+     * https://docs.cdp.coinbase.com/api-reference/advanced-trade-api/rest-api/data-api/get-api-key-permissions
+     */
+    get() {
+      return legacyRequest({
+        method: 'GET',
+        path: '/api/v3/brokerage/key_permissions',
+        schema: AdvancedTrade.KeyPermissions,
+        errorSchema: AdvancedTrade.Error,
+      })
+    },
+  }
+
   const advancedTrade = {
     accounts,
+    keyPermissions,
   }
 
   const appUser = {

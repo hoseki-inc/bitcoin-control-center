@@ -257,3 +257,135 @@ it('keeps the feature boundary on: no disable comment names it or switches off e
   expect(result.stdout).toBe('')
   expect(result.status).toBe(1)
 })
+
+it('enforces exchange provider error classification, safe logs, and non-401 tRPC errors', async () => {
+  await withTestSetup(async () => {
+    const blockedProbes = {
+      'apps/api-sentinel/src/features/exchanges/strike-status-probe.ts':
+        'export const bad = (err: { status: number }): boolean => err instanceof StrikeApiError && (err.status === 401 || err.status === 403)',
+      'apps/api-sentinel/src/features/exchanges/robinhood-403-probe.ts':
+        'export const bad = (err: { status: number }): boolean => err instanceof RobinhoodApiError && err.status === 403',
+      'apps/api-sentinel/src/features/exchanges/coinbase-status-probe.ts':
+        'export const bad = (err: { kind: { response: { status: number } } }): boolean => err instanceof Coinbase.ApiError && err.kind.response.status === 401',
+      'apps/api-sentinel/src/features/exchanges/kraken-code-probe.ts':
+        "export const bad = (codes: string[]): boolean => codes.includes('EAPI:Invalid key')",
+      'apps/api-sentinel/src/features/exchanges/raw-warn-log-probe.ts':
+        "export const bad = (logger: { warn: (o: object, m: string) => void }, err: Error): void => { logger.warn({ accountId: 'a', err }, 'Failed to list Coinbase accounts') }",
+      'apps/api-sentinel/src/features/exchanges/raw-error-log-probe.ts':
+        "export const bad = (svc: { logger: { error: (o: object, m: string) => void } }, e: Error): void => { svc.logger.error({ error: e }, 'Failed to fetch Kraken ledgers') }",
+      'apps/api-sentinel/src/features/exchanges/status-array.ts':
+        'export const bad = (status: number): boolean => [401, 403].includes(status)',
+      'apps/api-sentinel/src/features/exchanges/nested/status-switch.ts':
+        'export function bad(status: number) { switch (status) { case 429: return true } }',
+      'apps/api-sentinel/src/features/exchanges/status-constant.ts': 'export const revoked = 0x191',
+      'apps/api-sentinel/src/features/exchanges/indirect-code.ts':
+        "const code = 'UNAUTHORIZED'; export const bad = new TRPCError({ code })",
+      'apps/api-sentinel/src/features/exchanges/template-unauthorized.ts':
+        'const code = `UNAUTHORIZED`; export const bad = new TRPCError({ code })',
+      'apps/api-sentinel/src/features/exchanges/first-error.ts':
+        "export function bad(err: Error) { logger.warn(err, 'failed') }",
+      'apps/api-sentinel/src/features/exchanges/first-caught.ts':
+        "try { connect() } catch (cause) { this.logger.error(cause, 'failed') }",
+      'apps/api-sentinel/src/features/exchanges/first-typed.ts':
+        "export function bad(failure: TypeError) { logger.warn(failure, 'failed') }",
+      'apps/api-sentinel/src/features/exchanges/first-constructed.ts': "logger.fatal(new Error('provider'), 'failed')",
+      'apps/api-sentinel/src/features/exchanges/first-unwrap-err.ts':
+        "export function bad(res: { unwrapErr: () => Error }) { logger.warn(res.unwrapErr(), 'failed') }",
+      'apps/api-sentinel/src/features/exchanges/first-member-error.ts':
+        "export function bad() { logger.error(new Coinbase.ApiError('provider'), 'failed') }",
+      'apps/api-sentinel/src/features/exchanges/spread-error.ts':
+        "export function bad(err: object) { logger.warn({ ...err }, 'failed') }",
+      'apps/api-sentinel/src/features/exchanges/trpc-401-probe.ts':
+        "export const bad = (): Error => new TRPCError({ code: 'UNAUTHORIZED', message: 'Revoked' })",
+    }
+    const allowedProbes = {
+      'apps/api-sentinel/src/features/exchanges/provider-errors.ts':
+        "export const ok = (err: { status: number }): boolean => [401, 403, 429].includes(err.status) || 'EAPI:Invalid key' === ''",
+      'apps/api-sentinel/src/features/exchanges/service-ok-probe.ts':
+        "export const ok = (logger: { debug: (o: object, m: string) => void; info: (m: string) => void; warn: (o: object, m: string) => void }, err: Error): void => { logger.debug(err, 'debug'); logger.debug({ err }, 'debug'); logger.info('connected'); logger.warn(describeSafeProviderFailure('coinbase', err), 'safe'); logger.warn({ ...describeSafeProviderFailure('coinbase', err), accountId: 'a' }, 'safe'); logger.warn({ errorKind: 'Error', status: 503 }, 'safe'); void new TRPCError({ code: 'PRECONDITION_FAILED', message: 'Revoked' }) }",
+      'apps/api-sentinel/src/features/exchanges/service.test.ts':
+        'export const ok = (err: { status: number }): boolean => err.status === 401 || err.status === 403',
+    }
+    const probes = { ...blockedProbes, ...allowedProbes }
+    for (const [relativePath, source] of Object.entries(probes)) {
+      const path = join(fixture, relativePath)
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, `${source}\n`)
+    }
+    const result = spawnSync(
+      process.execPath,
+      [
+        resolve(repository, 'node_modules/oxlint/bin/oxlint'),
+        '--format',
+        'unix',
+        ...Object.keys(probes).map((relativePath) => join(fixture, relativePath)),
+      ],
+      { cwd: fixture, encoding: 'utf8', timeout: 15000 },
+    )
+    const reportedFiles = [
+      ...new Set(
+        result.stdout
+          .split('\n')
+          .filter((line) => line.includes('control-center(exchange-provider-errors)'))
+          .map((line) => line.slice(0, line.indexOf(':'))),
+      ),
+    ]
+    expect(result.error).toBeUndefined()
+    expect(reportedFiles.sort(), result.stdout + result.stderr).toEqual(Object.keys(blockedProbes).sort())
+  })
+})
+
+it('blocks swallowed signing errors in signing files while allowing refresh catches and non-signing files', async () => {
+  await withTestSetup(async () => {
+    const blockedProbes = {
+      'apps/control-center/src/components/claims/manual-bitcoin/manual-signing.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, toast: { error: (s: string) => void }): Promise<void> { try { await m.mutateAsync() } catch { toast.error('Generic error') } }",
+      'apps/control-center/src/components/claims/keystone/keystone-qr-signing.tsx':
+        "export async function submit(onSubmitSignature: (s: string) => Promise<void>, toast: { error: (s: string) => void }): Promise<void> { try { await onSubmitSignature('sig') } catch { toast.error('Generic error') } }",
+      'apps/control-center/src/components/claims/coldcard/coldcard-signing.tsx':
+        "export async function submit(onProveControl: (s: string) => Promise<void>, setError: (s: string) => void): Promise<void> { try { await onProveControl('sig') } catch { setError('Generic error') } }",
+      'apps/control-center/src/pages/multisig/[id]/signing.tsx':
+        "export async function submit(completeChallenge: () => Promise<void>, toast: { error: (s: string) => void }): Promise<void> { try { await completeChallenge() } catch { toast.error('Generic error') } }",
+      'apps/control-center/src/components/claims/coldcard/coldcard-qr-signing.tsx':
+        "export const opts = (setError: (s: string) => void) => ({ onError: (err: unknown) => { console.error(err); setError('Error completing challenge message') } })",
+      'apps/control-center/src/components/claims/keystone/keystone-signing.tsx':
+        "export const opts = (toast: { error: (s: string) => void }) => ({ onError: (error: unknown) => { console.error(error); toast.error('There was an error') } })",
+      'apps/control-center/src/components/claims/manual-bitcoin/template-signing.tsx':
+        'export const opts = (toast: { error: (s: string) => void }) => ({ onError: () => { toast.error(`Hardcoded template`) } })',
+    }
+    const allowedProbes = {
+      'apps/control-center/src/components/claims/manual-bitcoin/ok-signing.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, query: { refetch: () => Promise<void> }, utils: { invalidate: () => Promise<void> }, toast: { error: (s: string, o?: { description: string }) => void }, setError: (s: string) => void, toastSigningError: (c: unknown, t: string) => void, getSigningErrorMessage: (c: unknown, f: string) => string): Promise<void> { try { await m.mutateAsync() } catch (cause) { toastSigningError(cause, 'Fallback') } try { await query.refetch() } catch { toast.error('Refresh failed') } try { await utils.invalidate() } catch { toast.error('Invalidate failed') } const opts = { onError: (err: unknown) => { setError(getSigningErrorMessage(err, 'Fallback')); toastSigningError(err, 'Title'); toast.error('Title', { description: String(err) }) } }; void opts }",
+      'apps/control-center/src/components/claims/signing-errors.test.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, toast: { error: (s: string) => void }): Promise<void> { try { await m.mutateAsync() } catch { toast.error('Test error') } }",
+      'apps/control-center/src/pages/settings/index.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, toast: { error: (s: string) => void }): Promise<void> { try { await m.mutateAsync() } catch { toast.error('Settings error') } }",
+    }
+    const probes = { ...blockedProbes, ...allowedProbes }
+    for (const [relativePath, source] of Object.entries(probes)) {
+      const path = join(fixture, relativePath)
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, `${source}\n`)
+    }
+    const result = spawnSync(
+      process.execPath,
+      [
+        resolve(repository, 'node_modules/oxlint/bin/oxlint'),
+        '--format',
+        'unix',
+        ...Object.keys(probes).map((relativePath) => join(fixture, relativePath)),
+      ],
+      { cwd: fixture, encoding: 'utf8', timeout: 15000 },
+    )
+    const reportedFiles = [
+      ...new Set(
+        result.stdout
+          .split('\n')
+          .filter((line) => line.includes('control-center(no-swallowed-signing-error)'))
+          .map((line) => line.slice(0, line.indexOf(':'))),
+      ),
+    ]
+    expect(result.error).toBeUndefined()
+    expect(reportedFiles.sort(), result.stdout + result.stderr).toEqual(Object.keys(blockedProbes).sort())
+  })
+})

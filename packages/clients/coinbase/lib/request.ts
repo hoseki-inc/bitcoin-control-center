@@ -215,11 +215,22 @@ export const request = asyncFn(
     }
 
     let input = args.url + path
+    let requestHeaders: Headers
+    try {
+      requestHeaders = recordToHeaders(headers)
+    } catch {
+      return Err(
+        new ApiError(
+          ErrorKind.UnexpectedFailure({ error: new Error('Invalid request headers') }),
+          'Invalid request headers',
+        ),
+      )
+    }
 
     return safeHttp
       .request(input, {
         method: args.method,
-        headers: recordToHeaders(headers),
+        headers: requestHeaders,
         body,
       })
       .mapErrAsync(async (error) => {

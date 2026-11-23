@@ -312,6 +312,9 @@ importers:
       oxlint-tsgolint:
         specifier: 7.0.2006
         version: 7.0.2006
+      playwright-core:
+        specifier: 1.65.1
+        version: 1.65.1
       sass:
         specifier: 1.108.1
         version: 1.108.1
@@ -5681,6 +5684,11 @@ packages:
   pkg-dir@5.0.0:
     resolution: {integrity: sha512-NPE8TDbzl/3YQYY7CSS228s3g2ollTFnc+Qi3tqmqJp9Vg2ovUpixcJEo2HJScN2Ez+kEaal6y70c0ehqJBJeA==}
     engines: {node: '>=10'}
+
+  playwright-core@1.65.1:
+    resolution: {integrity: sha512-hqPpz7blSMPxWVdoeE1yiBSzXsKiVOd2k+kjCvmUywD2GPO2Dd9HfcWnq9NN0GHbNZDFgZ9JfBFr+X5/BLo0qw==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   png-js@2.0.0:
     resolution: {integrity: sha512-GdzJuUMc6ZSpxFJWVxtOH1bzYHym+TOnveqUjb+VJIbZWbZzyiRGFiKhbiielfpYbgMlhHVhsJ0FTazfuRFkMA==}
@@ -12793,6 +12801,8 @@ snapshots:
   pkg-dir@5.0.0:
     dependencies:
       find-up: 5.0.0
+
+  playwright-core@1.65.1: {}
 
   png-js@2.0.0:
     dependencies:

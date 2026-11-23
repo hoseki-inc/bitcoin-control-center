@@ -225,4 +225,69 @@ describe('Sentinel routes', () => {
     expect(trpc).toContain('POST /trpc/:path')
     expect([...others].sort()).toEqual(['GET /*', 'GET /health', 'HEAD /*', 'HEAD /health', 'OPTIONS *'])
   })
+
+  it('runs shutdown once under concurrent calls and skips signal listeners when host-owned', async () => {
+    setup()
+    const beforeSigterm = process.listenerCount('SIGTERM')
+    const beforeSigint = process.listenerCount('SIGINT')
+    const fake = queueContext(0)
+
+    let markEntered: () => void = () => undefined
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve
+    })
+    let releaseRequest: () => void = () => undefined
+    const release = new Promise<void>((resolve) => {
+      releaseRequest = resolve
+    })
+    Object.assign(fake.context, {
+      auth: {
+        status: async (): Promise<{ platform: null }> => {
+          markEntered()
+          await release
+          return { platform: null }
+        },
+      },
+    })
+
+    const server = await start({ listenPort: 0, registerSignalHandlers: false })
+    expect(process.listenerCount('SIGTERM')).toBe(beforeSigterm)
+    expect(process.listenerCount('SIGINT')).toBe(beforeSigint)
+
+    const inFlight = fetch(`http://127.0.0.1:${server.port}/trpc/auth.status`, {
+      headers: { connection: 'close' },
+    }).then(async (response) => {
+      await response.text()
+    })
+    try {
+      await entered
+
+      let firstSettled = false
+      let secondSettled = false
+      const first = server.shutdown().then(() => {
+        firstSettled = true
+      })
+      const second = server.shutdown().then(() => {
+        secondSettled = true
+      })
+
+      await new Promise((resolve) => {
+        setTimeout(resolve, 50)
+      })
+      expect(firstSettled).toBe(false)
+      expect(secondSettled).toBe(false)
+      expect(fake.closes()).toBe(0)
+      expect(fake.stops()).toBe(0)
+
+      releaseRequest()
+      await Promise.all([first, second, inFlight])
+      expect(firstSettled).toBe(true)
+      expect(secondSettled).toBe(true)
+      expect(fake.closes()).toBe(1)
+      expect(fake.stops()).toBe(1)
+      expect(fake.releaseCheckStops()).toBe(1)
+    } finally {
+      releaseRequest()
+    }
+  })
 })

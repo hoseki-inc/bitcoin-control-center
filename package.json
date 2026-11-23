@@ -106,6 +106,7 @@
     "oxfmt": "0.77.0",
     "oxlint": "1.92.0",
     "oxlint-tsgolint": "7.0.2006",
+    "playwright-core": "1.65.1",
     "sass": "1.108.1",
     "tsx": "4.23.15",
     "turbo": "2.11.10",

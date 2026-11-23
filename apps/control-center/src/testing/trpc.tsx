@@ -47,6 +47,16 @@ export function notFound(message: string): TRPCClientError<never> {
   return TRPCClientError.from({ error: { message, code: -32004, data: { code: 'NOT_FOUND', httpStatus: 404 } } })
 }
 
+export function badRequest(message: string): TRPCClientError<never> {
+  return TRPCClientError.from({ error: { message, code: -32600, data: { code: 'BAD_REQUEST', httpStatus: 400 } } })
+}
+
+export function internalError(message: string): TRPCClientError<never> {
+  return TRPCClientError.from({
+    error: { message, code: -32603, data: { code: 'INTERNAL_SERVER_ERROR', httpStatus: 500 } },
+  })
+}
+
 export function TestTrpcProvider({
   client,
   rpc,

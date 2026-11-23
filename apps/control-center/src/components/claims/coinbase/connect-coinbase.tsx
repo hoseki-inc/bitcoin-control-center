@@ -21,6 +21,11 @@ import { z } from 'zod'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { type RouterOutput, trpc } from '../../../trpc'
 import { ExchangeConnected, ExchangeConnecting } from '../exchange-connection'
+import {
+  type ExchangeConnectErrorState,
+  ExchangeReconnectError,
+  parseExchangeConnectError,
+} from '../exchange-reconnect-error'
 
 type ConnectedAccount = RouterOutput['portalProve']['exchanges']['coinbase']['connect']
 
@@ -42,6 +47,8 @@ export function ConnectCoinbase(): JSX.Element {
   const isReconnect = Boolean(replaceAccountId)
   const [step, setStep] = useState<Step>('form')
   const [connectedAccount, setConnectedAccount] = useState<ConnectedAccount | null>(null)
+  const [completedAsReconnect, setCompletedAsReconnect] = useState(isReconnect)
+  const [submitError, setSubmitError] = useState<ExchangeConnectErrorState | null>(null)
 
   const utils = trpc.useUtils()
   const connectMutation = trpc.portalProve.exchanges.coinbase.connect.useMutation()
@@ -49,30 +56,51 @@ export function ConnectCoinbase(): JSX.Element {
   const {
     register,
     handleSubmit,
+    reset,
     formState: { errors },
   } = useForm<CoinbaseFormData>({
     resolver: zodResolver(coinbaseFormSchema),
     defaultValues: { apiKey: '', secretKey: '' },
   })
 
-  async function onSubmit(data: CoinbaseFormData): Promise<void> {
+  async function submitConnection(data: CoinbaseFormData, options: { asNewAccount: boolean }): Promise<void> {
+    setSubmitError(null)
     setStep('loading')
+    const targetReplaceId = options.asNewAccount ? undefined : replaceAccountId
     try {
       const account = await connectMutation.mutateAsync({
         apiKey: data.apiKey,
         secretKey: data.secretKey,
-        replaceAccountId,
+        replaceAccountId: targetReplaceId,
       })
       setConnectedAccount(account)
+      setCompletedAsReconnect(Boolean(targetReplaceId))
       setStep('success')
       // Invalidate cached control center data so charts refresh with new exchange data
       void utils.portalProve.portfolio.getData.invalidate()
       void utils.portalProve.exchanges.list.invalidate()
+      void utils.portalProve.exchanges.coinbase.list.invalidate()
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to connect Coinbase account'
-      toast.error(message)
+      const parsed =
+        err instanceof Error
+          ? parseExchangeConnectError(err, 'Failed to connect Coinbase account')
+          : { message: 'Failed to connect Coinbase account', isMismatch: false }
+      reset(data)
+      setSubmitError(parsed)
       setStep('form')
     }
+  }
+
+  async function onSubmit(data: CoinbaseFormData): Promise<void> {
+    await submitConnection(data, { asNewAccount: false })
+  }
+
+  function handleConnectAsNew(): void {
+    handleSubmit(async (data) => {
+      await submitConnection(data, { asNewAccount: true })
+    })().catch(() => {
+      toast.error('Unable to submit the connection form. Please try again.')
+    })
   }
 
   if (step === 'loading') {
@@ -81,7 +109,12 @@ export function ConnectCoinbase(): JSX.Element {
 
   if (step === 'success' && connectedAccount) {
     return (
-      <ExchangeConnected exchange="coinbase" account={connectedAccount} isReconnect={isReconnect} returnTo={returnTo} />
+      <ExchangeConnected
+        exchange="coinbase"
+        account={connectedAccount}
+        isReconnect={completedAsReconnect}
+        returnTo={completedAsReconnect ? returnTo : '/accounts'}
+      />
     )
   }
 
@@ -105,6 +138,10 @@ export function ConnectCoinbase(): JSX.Element {
           <Text textStyle="text/md" color="neutral.600">
             Enter your Coinbase CDP API credentials to import your Bitcoin balance. Only read-only access is required.
           </Text>
+
+          {submitError !== null ? (
+            <ExchangeReconnectError exchangeName="Coinbase" error={submitError} onConnectAsNew={handleConnectAsNew} />
+          ) : null}
 
           {/* Form fields */}
           <Stack gap={4}>

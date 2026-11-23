@@ -3,6 +3,9 @@ import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages
 import { createHash, createHmac } from 'crypto'
 import { ApiError, ApiErrorKind } from './errors'
 import {
+  type ApiKeyInfoResponse,
+  ApiKeyInfoResponseSchema,
+  type ApiKeyInfoResult,
   type BalanceResponse,
   BalanceResponseSchema,
   type BalanceResult,
@@ -113,6 +116,19 @@ function parseLedgersResponse(response: SafeResponse): AsyncResult<ParsedData<Le
     })
 }
 
+function parseApiKeyInfoResponse(response: SafeResponse): AsyncResult<ParsedData<ApiKeyInfoResponse>, ApiError> {
+  const clone = response.clone()
+  return clone
+    .json((json) => parseUnknown(ApiKeyInfoResponseSchema, json))
+    .map((data) => ({
+      data,
+      response,
+    }))
+    .mapErrAsync(async (error) => {
+      return new ApiError(ApiErrorKind.ResponseNotAcceptable(error, response), `Received unexpected response`)
+    })
+}
+
 function parseErrorData(response: SafeResponse): AsyncResult<ParsedData<ErrorResponse>, ApiError> {
   const clone = response.clone()
   return clone
@@ -128,9 +144,16 @@ function parseErrorData(response: SafeResponse): AsyncResult<ParsedData<ErrorRes
 
 export class Client {
   private readonly credentials: KrakenCredentials
+  private lastNonce = 0
 
   public constructor(credentials: KrakenCredentials) {
     this.credentials = credentials
+  }
+
+  private nextNonce(): string {
+    const now = Date.now()
+    this.lastNonce = now > this.lastNonce ? now : this.lastNonce + 1
+    return this.lastNonce.toString()
   }
 
   private makeRequest(path: string, nonce: string, postData: string): AsyncResult<SafeResponse, ApiError> {
@@ -199,8 +222,7 @@ export class Client {
   public getBalance(): AsyncResult<ParsedData<BalanceResult>, ApiError> {
     return tryBlockAsync(
       async function* (this: Client) {
-        // Generate nonce
-        const nonce = Date.now().toString()
+        const nonce = this.nextNonce()
         const postData = `nonce=${nonce}`
 
         const response = yield* this.makeRequest('/0/private/Balance', nonce, postData).try()
@@ -210,6 +232,52 @@ export class Client {
         // Check for Kraken API errors in the response
         if (data.error.length > 0) {
           return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
+        }
+
+        if (data.result === undefined) {
+          return Err(
+            new ApiError(
+              ApiErrorKind.UnexpectedFailure({ response: originalResponse }),
+              'Missing result in Balance response',
+            ),
+          )
+        }
+
+        return Ok({
+          data: data.result,
+          response: originalResponse,
+        })
+      }.bind(this),
+    )
+  }
+
+  /**
+   * Get API key metadata, including Kraken's permanent Public Account ID (`iban`).
+   *
+   * Requires no API key permissions (`None`).
+   *
+   * @see https://docs.kraken.com/api-reference/account-data/get-api-key-info
+   */
+  public getApiKeyInfo(): AsyncResult<ParsedData<ApiKeyInfoResult>, ApiError> {
+    return tryBlockAsync(
+      async function* (this: Client) {
+        const nonce = this.nextNonce()
+        const postData = `nonce=${nonce}`
+
+        const response = yield* this.makeRequest('/0/private/GetApiKeyInfo', nonce, postData).try()
+        const { data, response: originalResponse } = yield* parseApiKeyInfoResponse(response).try()
+
+        if (data.error.length > 0) {
+          return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
+        }
+
+        if (data.result === undefined) {
+          return Err(
+            new ApiError(
+              ApiErrorKind.UnexpectedFailure({ response: originalResponse }),
+              'Missing result in GetApiKeyInfo response',
+            ),
+          )
         }
 
         return Ok({
@@ -240,7 +308,7 @@ export class Client {
           .try()
 
         // Generate nonce and serialize payload
-        const nonce = Date.now().toString()
+        const nonce = this.nextNonce()
         const payloadString = serializeKrakenLedgersPayload(ledgersPayload)
 
         let postData: string

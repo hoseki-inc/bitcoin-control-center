@@ -17,10 +17,9 @@ export type LedgerEntry = z.infer<typeof LedgerEntrySchema>
 export const BalanceResultSchema = z.record(z.string(), z.string())
 export type BalanceResult = z.infer<typeof BalanceResultSchema>
 
-// Balance endpoint - full response
 export const BalanceResponseSchema = z.object({
   error: z.array(z.string()),
-  result: BalanceResultSchema,
+  result: BalanceResultSchema.optional(),
 })
 export type BalanceResponse = z.infer<typeof BalanceResponseSchema>
 
@@ -37,6 +36,19 @@ export const LedgersResponseSchema = z.object({
   result: LedgersResultSchema,
 })
 export type LedgersResponse = z.infer<typeof LedgersResponseSchema>
+
+export const ApiKeyInfoResultSchema = z.object({
+  iban: z.string(),
+  apiKeyName: z.string().optional(),
+  permissions: z.array(z.string()).optional(),
+})
+export type ApiKeyInfoResult = z.infer<typeof ApiKeyInfoResultSchema>
+
+export const ApiKeyInfoResponseSchema = z.object({
+  error: z.array(z.string()),
+  result: ApiKeyInfoResultSchema.optional(),
+})
+export type ApiKeyInfoResponse = z.infer<typeof ApiKeyInfoResponseSchema>
 
 // Error response
 export const ErrorResponseSchema = z.object({

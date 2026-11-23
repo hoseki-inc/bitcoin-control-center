@@ -18,72 +18,70 @@ export interface StrikeBalance {
   available: string
 }
 
-/**
- * Fetch BTC balance from Strike using an API key.
- * Returns balance in satoshis as a bigint, or an error.
- */
-export const getStrikeBtcBalance = asyncFn(async (apiKey: string, logger: Logger): Promise<Result<bigint, Error>> => {
-  const response = await fetch('https://api.strike.me/v1/balances', {
-    method: 'GET',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      Accept: 'application/json',
-    },
-  })
+export class StrikeApiError extends Error {
+  public readonly status: number
 
-  if (response.status === 401) {
-    return Err(new Error('Invalid Strike API key'))
+  public constructor(status: number, message: string) {
+    super(message)
+    this.name = 'StrikeApiError'
+    this.status = status
   }
-  if (response.status === 429) {
-    return Err(new Error('Strike API rate limit exceeded. Try again later.'))
-  }
-  if (!response.ok) {
-    return Err(new Error(`Strike API error: ${response.status} ${response.statusText}`))
-  }
+}
 
-  const json: unknown = await response.json()
-  const parsed = parseUnknown(StrikeBalanceSchema, json)
-  if (parsed.isErr()) {
-    return Err(new Error(`Invalid Strike API response: ${parsed.unwrapErr().message}`))
-  }
-
-  const btcBalance = parsed.unwrap().find((b) => b.currency === 'BTC')
-  if (!btcBalance) {
-    return Err(new Error('No BTC balance found in Strike account'))
-  }
-
-  // Convert from BTC string to satoshis
-  const sats = BigInt(Math.round(Number(btcBalance.total) * 1e8))
-  logger.debug({ sats: sats.toString() }, 'Fetched Strike BTC balance')
-  return Ok(sats)
-})
-
-/**
- * Validate a Strike API key by attempting to fetch balances.
- */
-export const validateStrikeApiKey = asyncFn(
-  async (apiKey: string, logger: Logger): Promise<Result<StrikeBalance[], Error>> => {
-    const response = await fetch('https://api.strike.me/v1/balances', {
+async function fetchStrikeBalances(apiKey: string): Promise<Result<StrikeBalance[], Error>> {
+  let response: Response
+  try {
+    response = await fetch('https://api.strike.me/v1/balances', {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: 'application/json',
       },
     })
+  } catch {
+    return Err(new Error('Strike API request failed'))
+  }
 
-    if (response.status === 401) {
-      return Err(new Error('Invalid Strike API key'))
-    }
-    if (!response.ok) {
-      return Err(new Error(`Strike API error: ${response.status}`))
-    }
+  if (!response.ok) {
+    return Err(new StrikeApiError(response.status, `Strike API error: ${response.status}`))
+  }
 
-    const json: unknown = await response.json()
-    const parsed = parseUnknown(StrikeBalanceSchema, json)
-    if (parsed.isErr()) {
-      return Err(new Error(`Invalid Strike API response: ${parsed.unwrapErr().message}`))
+  let json: unknown
+  try {
+    json = await response.json()
+  } catch {
+    return Err(new Error('Invalid Strike API response'))
+  }
+  const parsed = parseUnknown(StrikeBalanceSchema, json)
+  if (parsed.isErr()) {
+    return Err(new Error(`Invalid Strike API response: ${parsed.unwrapErr().message}`))
+  }
+  return Ok(parsed.unwrap())
+}
+
+export const getStrikeBtcBalance = asyncFn(async (apiKey: string, logger: Logger): Promise<Result<bigint, Error>> => {
+  const balances = await fetchStrikeBalances(apiKey)
+  if (balances.isErr()) {
+    return Err(balances.unwrapErr())
+  }
+
+  const btcBalance = balances.unwrap().find((b) => b.currency === 'BTC')
+  if (!btcBalance) {
+    return Err(new Error('No BTC balance found in Strike account'))
+  }
+
+  const sats = BigInt(Math.round(Number(btcBalance.total) * 1e8))
+  logger.debug({ sats: sats.toString() }, 'Fetched Strike BTC balance')
+  return Ok(sats)
+})
+
+export const validateStrikeApiKey = asyncFn(
+  async (apiKey: string, logger: Logger): Promise<Result<StrikeBalance[], Error>> => {
+    const balances = await fetchStrikeBalances(apiKey)
+    if (balances.isErr()) {
+      return Err(balances.unwrapErr())
     }
     logger.info('Strike API key validated successfully')
-    return Ok(parsed.unwrap())
+    return Ok(balances.unwrap())
   },
 )
