@@ -77,6 +77,66 @@ async function stubRobinhoodHttps(responder: (args: CapturedRequest) => { status
   return requests
 }
 
+async function stubSilentRobinhood(options: { sendHeaders: boolean }): Promise<number[]> {
+  const server = http.createServer((_req, res) => {
+    if (options.sendHeaders) {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      res.write('{"results":[')
+    }
+  })
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', () => {
+      resolve()
+    })
+  })
+  const { port } = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener')
+
+  const requestedTimeouts: number[] = []
+  const spy = vi.spyOn(https, 'request').mockImplementation((...args: Parameters<typeof https.request>) => {
+    const [first, second] = args
+    const opts = parseUnknown(RequestOptionsSchema, first).expect('RequestOptions')
+    const callback = second instanceof Function ? second : undefined
+    const req = http.request(
+      { hostname: '127.0.0.1', port, protocol: 'http:', path: opts.path, method: opts.method, headers: opts.headers },
+      callback,
+    )
+    const setSocketTimeout = req.setTimeout.bind(req)
+    vi.spyOn(req, 'setTimeout').mockImplementation((ms, onTimeout) => {
+      requestedTimeouts.push(ms)
+      return setSocketTimeout(50, onTimeout)
+    })
+    return req
+  })
+
+  onTestFinished(async () => {
+    spy.mockRestore()
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        resolve()
+      })
+    })
+  })
+
+  return requestedTimeouts
+}
+
+describe('RobinhoodClient request timeout', () => {
+  it.each([
+    { reply: 'sends nothing', sendHeaders: false },
+    { reply: 'sends headers then goes quiet', sendHeaders: true },
+  ])('returns a transient error when Robinhood $reply', async ({ sendHeaders }) => {
+    const requestedTimeouts = await stubSilentRobinhood({ sendHeaders })
+
+    const client = new RobinhoodClient(makeTestCredentials())
+    const result = await client.getHoldings()
+
+    expect(requestedTimeouts).toEqual([30_000])
+    expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr()).not.toBeInstanceOf(RobinhoodApiError)
+  })
+})
+
 describe('RobinhoodClient', () => {
   it('fetches account_number from GET /api/v1/crypto/trading/accounts/', async () => {
     const requests = await stubRobinhoodHttps(() => ({

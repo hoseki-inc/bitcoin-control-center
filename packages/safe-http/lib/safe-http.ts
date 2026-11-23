@@ -3,11 +3,17 @@ import { SafeHttpError, SafeHttpErrorKind } from './errors.ts'
 import { SafeResponse } from './response.ts'
 import type { Input, Options } from './types.ts'
 
+const REQUEST_TIMEOUT_MS = 30_000
+
 export class SafeHttp {
-  public readonly options?: Options
+  private readonly defaults?: Options
 
   public constructor(options?: Options) {
-    this.options = options
+    this.defaults = options
+  }
+
+  public get options(): Options {
+    return { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...this.defaults }
   }
 
   public request(input: Input, options?: Options): AsyncResult<SafeResponse, SafeHttpError> {
