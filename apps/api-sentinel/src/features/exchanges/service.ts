@@ -227,6 +227,23 @@ function pickPrimaryCoinbaseBtcAccount(
   )
 }
 
+class CoinbaseAccountReplyMismatchError extends Error {
+  public constructor() {
+    super('Coinbase account reply does not match the requested BTC account')
+    this.name = 'CoinbaseAccountReplyMismatchError'
+  }
+}
+
+function readCoinbaseBtcAccount(
+  account: CoinbaseAdvancedTradeAccount,
+  accountUuid: string,
+): Result<CoinbaseAdvancedTradeAccount, CoinbaseAccountReplyMismatchError> {
+  if (account.uuid !== accountUuid || account.currency !== 'BTC' || account.available_balance.currency !== 'BTC') {
+    return Err(new CoinbaseAccountReplyMismatchError())
+  }
+  return Ok(account)
+}
+
 async function fetchCoinbasePortfolioUuid(client: ReturnType<typeof Coinbase.Client>): Promise<string | undefined> {
   const permissionsRes = await client.advancedTrade.keyPermissions.get()
   if (permissionsRes.isErr()) {
@@ -458,8 +475,11 @@ export class ExchangeService {
       if (balanceResult.isErr()) {
         return Err(this.toSafeConnectError('coinbase', balanceResult.unwrapErr()))
       }
-      const balanceData = balanceResult.unwrap()
-      const btcValue = balanceData.data.account.available_balance.value
+      const balanceAccountRes = readCoinbaseBtcAccount(balanceResult.unwrap().data.account, btcAccount.uuid)
+      if (balanceAccountRes.isErr()) {
+        return Err(this.toSafeConnectError('coinbase', balanceAccountRes.unwrapErr()))
+      }
+      const btcValue = balanceAccountRes.unwrap().available_balance.value
       const balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
 
       const encApiKey = Encrypted.encrypt(apiKey)
@@ -983,7 +1003,11 @@ export class ExchangeService {
         return Err(this.toSafeRefreshError('coinbase', err))
       }
 
-      const balanceAccount = balanceRes.unwrap().data.account
+      const balanceAccountRes = readCoinbaseBtcAccount(balanceRes.unwrap().data.account, accountUuid)
+      if (balanceAccountRes.isErr()) {
+        return Err(this.toSafeRefreshError('coinbase', balanceAccountRes.unwrapErr()))
+      }
+      const balanceAccount = balanceAccountRes.unwrap()
       const btcValue = balanceAccount.available_balance.value
       balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
 
@@ -1718,7 +1742,10 @@ export class ExchangeService {
       if (portfolioUuid === undefined && !needs.needAccountUuid && existingUuid !== undefined) {
         const accountRes = await oldClient.advancedTrade.accounts.get({ accountUuid: existingUuid })
         if (accountRes.isOk()) {
-          portfolioUuid = nonEmpty(accountRes.unwrap().data.account.retail_portfolio_id)
+          const oldDetailAccount = readCoinbaseBtcAccount(accountRes.unwrap().data.account, existingUuid)
+          if (oldDetailAccount.isOk()) {
+            portfolioUuid = nonEmpty(oldDetailAccount.unwrap().retail_portfolio_id)
+          }
         }
       }
     }

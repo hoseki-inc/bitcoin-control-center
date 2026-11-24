@@ -1968,6 +1968,386 @@ it('Coinbase: keeps account connected when refreshBalance hits a transient 503',
   expect(listed[0]?.balanceSats).toBe('100000000')
 })
 
+const coinbaseDetailMismatches = [
+  { field: 'account uuid', mutate: (a: MockCoinbaseAccount) => ({ ...a, uuid: 'cb-usd-wallet' }) },
+  { field: 'account currency', mutate: (a: MockCoinbaseAccount) => ({ ...a, currency: 'USD' }) },
+  {
+    field: 'available_balance currency',
+    mutate: (a: MockCoinbaseAccount) => ({ ...a, available_balance: { value: '25', currency: 'USD' } }),
+  },
+  {
+    field: 'account uuid and USD currency',
+    mutate: (a: MockCoinbaseAccount) => ({
+      ...a,
+      uuid: 'cb-usd-wallet',
+      currency: 'USD',
+      type: 'ACCOUNT_TYPE_FIAT',
+      available_balance: { value: '25', currency: 'USD' },
+      hold: { value: '0', currency: 'USD' },
+    }),
+  },
+]
+
+function stubCoinbaseDetailFetch(acct: MockCoinbaseAccount, detail: { reply: MockCoinbaseAccount }): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (url.includes('/api/v3/brokerage/key_permissions')) {
+        return jsonResponse({
+          can_view: true,
+          can_trade: false,
+          can_transfer: false,
+          portfolio_uuid: 'port-a',
+          portfolio_type: 'DEFAULT',
+        })
+      }
+      if (url.includes(`/api/v3/brokerage/accounts/${acct.uuid}`)) {
+        return jsonResponse({ account: { ...detail.reply } })
+      }
+      if (url.includes('/api/v3/brokerage/accounts')) {
+        return jsonResponse({ accounts: [acct], has_next: false, cursor: '', size: 1 })
+      }
+      return jsonResponse({ error: 'unexpected' }, 404)
+    }),
+  )
+}
+
+it.each(coinbaseDetailMismatches)(
+  'Coinbase: connect saves nothing when the detail reply has a different $field',
+  async ({ mutate }) => {
+    const { db, service } = await setup()
+    const acct = makeCoinbaseAccount({
+      uuid: 'cb-btc-a',
+      name: 'Coinbase A',
+      balance: '25',
+      retail_portfolio_id: 'port-a',
+    })
+    stubCoinbaseDetailFetch(acct, { reply: mutate(acct) })
+
+    const result = await service.connectCoinbase({ apiKey: 'cb-key-1', secretKey: 'secret-1' })
+
+    expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr()).toBeInstanceOf(ExchangeUserError)
+    expect(result.unwrapErr().message).toBe(
+      "Couldn't connect to Coinbase right now. Please check your credentials and try again.",
+    )
+    await expect(db.select().from(exchangeAccounts).where(eq(exchangeAccounts.provider, 'coinbase'))).resolves.toEqual(
+      [],
+    )
+    await expect(db.select().from(exchangeBalanceSnapshots)).resolves.toEqual([])
+  },
+)
+
+it.each(coinbaseDetailMismatches)(
+  'Coinbase: reconnect leaves the row and snapshots unchanged when the detail reply has a different $field',
+  async ({ mutate }) => {
+    const { db, service } = await setup()
+    const acct = makeCoinbaseAccount({
+      uuid: 'cb-btc-a',
+      name: 'Coinbase A',
+      balance: '0.5',
+      retail_portfolio_id: 'port-a',
+    })
+    const detail = { reply: acct }
+    stubCoinbaseDetailFetch(acct, detail)
+    const connected = (await service.connectCoinbase({ apiKey: 'cb-key-1', secretKey: 'secret-1' })).unwrap()
+    const [rowBefore] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, connected.id))
+    const snapshotsBefore = await db.select().from(exchangeBalanceSnapshots)
+
+    detail.reply = mutate({ ...acct, available_balance: { value: '25', currency: 'BTC' } })
+    const result = await service.connectCoinbase({
+      apiKey: 'cb-key-2',
+      secretKey: 'secret-2',
+      replaceAccountId: connected.id,
+    })
+
+    expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr()).toBeInstanceOf(ExchangeUserError)
+    expect(result.unwrapErr().message).toBe(
+      "Couldn't connect to Coinbase right now. Please check your credentials and try again.",
+    )
+    const [rowAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, connected.id))
+    expect(rowAfter).toEqual(rowBefore)
+    await expect(db.select().from(exchangeBalanceSnapshots)).resolves.toEqual(snapshotsBefore)
+  },
+)
+
+it.each(coinbaseDetailMismatches)(
+  'Coinbase: refreshBalance keeps the saved balance when the detail reply has a different $field',
+  async ({ mutate }) => {
+    const { db, service } = await setup()
+    const acct = makeCoinbaseAccount({
+      uuid: 'cb-btc-a',
+      name: 'Coinbase A',
+      balance: '0.5',
+      retail_portfolio_id: 'port-a',
+    })
+    const detail = { reply: acct }
+    stubCoinbaseDetailFetch(acct, detail)
+    const connected = (await service.connectCoinbase({ apiKey: 'cb-key-1', secretKey: 'secret-1' })).unwrap()
+    const [rowBefore] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, connected.id))
+    const snapshotsBefore = await db.select().from(exchangeBalanceSnapshots)
+
+    detail.reply = mutate({ ...acct, available_balance: { value: '25', currency: 'BTC' } })
+    const result = await service.refreshBalance(connected.id)
+
+    expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr()).toBeInstanceOf(ExchangeUserError)
+    expect(result.unwrapErr()).not.toBeInstanceOf(ExchangeCredentialsRevokedError)
+    expect(result.unwrapErr().message).toBe("Couldn't refresh your Coinbase balance right now. Please try again.")
+    const [rowAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, connected.id))
+    expect(rowAfter).toEqual(rowBefore)
+    await expect(db.select().from(exchangeBalanceSnapshots)).resolves.toEqual(snapshotsBefore)
+    await expect(service.listAccounts('coinbase')).resolves.toMatchObject([
+      { balanceSats: '50000000', connectionStatus: 'connected' },
+    ])
+  },
+)
+
+it.each(coinbaseDetailMismatches)(
+  'Coinbase: refreshBalance on a legacy row keeps the saved balance when the detail reply has a different $field',
+  async ({ mutate }) => {
+    const { db, service } = await setup()
+    const acct = makeCoinbaseAccount({
+      uuid: 'cb-legacy-a',
+      name: 'Legacy A',
+      balance: '25',
+      retail_portfolio_id: 'port-a',
+    })
+    stubCoinbaseDetailFetch(acct, { reply: mutate(acct) })
+    await db.insert(exchangeAccounts).values({
+      id: 'cb-legacy-refresh',
+      provider: 'coinbase',
+      displayName: 'Legacy Refresh Coinbase',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'old-working-key', secretKey: 'old-secret' }),
+      externalAccountId: null,
+      balanceSats: '40000000',
+      balanceAsOf: '2025-01-01T00:00:00.000Z',
+      credentialsConnectedAt: new Date().toISOString(),
+    })
+    const [rowBefore] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-refresh'))
+
+    const result = await service.refreshBalance('cb-legacy-refresh')
+
+    expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr()).toBeInstanceOf(ExchangeUserError)
+    expect(result.unwrapErr()).not.toBeInstanceOf(ExchangeCredentialsRevokedError)
+    expect(result.unwrapErr().message).toBe("Couldn't refresh your Coinbase balance right now. Please try again.")
+    const [rowAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-refresh'))
+    expect(rowAfter).toEqual({ ...rowBefore, externalAccountId: 'cb-legacy-a' })
+    await expect(db.select().from(exchangeBalanceSnapshots)).resolves.toEqual([])
+  },
+)
+
+it("Coinbase: reconnect ignores the old key's portfolio from a detail reply for a different account uuid", async () => {
+  const { db, service } = await setup()
+  const acct = makeCoinbaseAccount({
+    uuid: 'cb-btc-a',
+    name: 'Coinbase A',
+    balance: '0.5',
+    retail_portfolio_id: 'port-a',
+  })
+  const otherAcct = makeCoinbaseAccount({
+    uuid: 'cb-other',
+    name: 'Other',
+    balance: '25',
+    retail_portfolio_id: 'port-other',
+  })
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-stored-uuid',
+    provider: 'coinbase',
+    displayName: 'Coinbase A',
+    encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'old-key', secretKey: 'old-secret' }),
+    externalAccountId: 'cb-btc-a',
+    balanceSats: '50000000',
+    balanceAsOf: '2025-01-01T00:00:00.000Z',
+    credentialsConnectedAt: new Date().toISOString(),
+  })
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = extractUrl(input)
+      const apiKey = extractHeader(input, init, 'CB-ACCESS-KEY')
+      if (url.includes('/api/v3/brokerage/key_permissions')) {
+        if (apiKey === 'old-key') {
+          return jsonResponse({ error: 'Forbidden' }, 403)
+        }
+        return jsonResponse({
+          can_view: true,
+          can_trade: false,
+          can_transfer: false,
+          portfolio_uuid: 'port-a',
+          portfolio_type: 'DEFAULT',
+        })
+      }
+      if (url.includes('/api/v3/brokerage/accounts/cb-btc-a')) {
+        return jsonResponse({ account: apiKey === 'old-key' ? otherAcct : acct })
+      }
+      if (url.includes('/api/v3/brokerage/accounts')) {
+        return jsonResponse({ accounts: [acct], has_next: false, cursor: '', size: 1 })
+      }
+      return jsonResponse({ error: 'unexpected' }, 404)
+    }),
+  )
+
+  const result = await service.connectCoinbase({
+    apiKey: 'new-key',
+    secretKey: 'new-secret',
+    replaceAccountId: 'cb-stored-uuid',
+  })
+
+  expect(result.isOk()).toBe(true)
+  expect(result.unwrap().balanceSats).toBe('50000000')
+  const [row] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-stored-uuid'))
+  expect(JSON.parse(row?.encryptedCredentials ?? '{}')).toMatchObject({ portfolioUuid: 'port-a' })
+})
+
+it('Coinbase: overlapping legacy refreshes keep balance and snapshots tied to the pinned UUID', async () => {
+  const { db, service } = await setup()
+  vi.useFakeTimers({ toFake: ['Date'] })
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
+  const walletA = makeCoinbaseAccount({ uuid: 'wallet-A', name: 'A', default: false, balance: '0.5' })
+  const walletB = makeCoinbaseAccount({ uuid: 'wallet-B', name: 'B', default: false, balance: '25' })
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-legacy-overlap',
+    provider: 'coinbase',
+    displayName: 'Coinbase savings',
+    encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'old-key', secretKey: 'old-secret' }),
+    externalAccountId: null,
+    balanceSats: '10000000',
+    balanceAsOf: '2025-01-01T00:00:00.000Z',
+    credentialsConnectedAt: new Date().toISOString(),
+  })
+
+  let enteredFirstDetail: (() => void) | undefined
+  let releaseFirstDetail: (() => void) | undefined
+  const enteredPromise = new Promise<void>((resolve) => {
+    enteredFirstDetail = resolve
+  })
+  const gatePromise = new Promise<void>((resolve) => {
+    releaseFirstDetail = resolve
+  })
+  let listCalls = 0
+  let paused = false
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const path = new URL(extractUrl(input)).pathname
+      if (path.endsWith('/accounts')) {
+        listCalls += 1
+        const accounts = listCalls === 1 ? [walletA, walletB] : [walletB, walletA]
+        return jsonResponse({ accounts, has_next: false, cursor: '', size: accounts.length })
+      }
+      if (path.endsWith('/wallet-A')) {
+        if (!paused) {
+          paused = true
+          enteredFirstDetail?.()
+          await gatePromise
+        }
+        return jsonResponse({ account: walletA })
+      }
+      if (path.endsWith('/wallet-B')) {
+        return jsonResponse({ account: walletB })
+      }
+      if (path.endsWith('/key_permissions')) {
+        return jsonResponse({
+          can_view: true,
+          can_trade: false,
+          can_transfer: false,
+          portfolio_uuid: 'common',
+          portfolio_type: 'DEFAULT',
+        })
+      }
+      return jsonResponse({ error: 'unexpected' }, 404)
+    }),
+  )
+
+  const first = service.refreshBalance('cb-legacy-overlap')
+  await enteredPromise
+  const second = await service.refreshBalance('cb-legacy-overlap')
+  vi.setSystemTime(new Date(Date.now() + 1000))
+  releaseFirstDetail?.()
+  const late = await first
+
+  expect(second.isOk()).toBe(true)
+  expect(late.isOk()).toBe(true)
+  const [row] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-overlap'))
+  const snapshots = await db.select().from(exchangeBalanceSnapshots)
+  const expected = row?.externalAccountId === 'wallet-A' ? '50000000' : '2500000000'
+  expect(row?.balanceSats).toBe(expected)
+  expect(snapshots.length).toBeGreaterThan(0)
+  expect(snapshots.every((s) => s.balanceSats === expected)).toBe(true)
+  expect(row?.externalAccountId).toBe('wallet-A')
+})
+
+it('Coinbase: reconnects a matching replacement key after a detail outage and old-key retirement', async () => {
+  const { db, service } = await setup()
+  const walletA = makeCoinbaseAccount({ uuid: 'wallet-A', name: 'A', default: false, balance: '0.5' })
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-legacy-outage',
+    provider: 'coinbase',
+    displayName: 'Coinbase savings',
+    encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'old-key', secretKey: 'old-secret' }),
+    externalAccountId: null,
+    balanceSats: '10000000',
+    balanceAsOf: '2025-01-01T00:00:00.000Z',
+    credentialsConnectedAt: new Date().toISOString(),
+  })
+
+  let retired = false
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const path = new URL(extractUrl(input)).pathname
+      const isOldKey = extractHeader(input, init, 'CB-ACCESS-KEY') === 'old-key'
+      if (isOldKey && retired) {
+        return jsonResponse({ error: 'Unauthorized' }, 401)
+      }
+      if (path.endsWith('/accounts')) {
+        return jsonResponse({ accounts: [walletA], has_next: false, cursor: '', size: 1 })
+      }
+      if (path.endsWith('/wallet-A')) {
+        return isOldKey ? jsonResponse({ error: 'Unavailable' }, 503) : jsonResponse({ account: walletA })
+      }
+      if (path.endsWith('/key_permissions')) {
+        return jsonResponse({
+          can_view: true,
+          can_trade: false,
+          can_transfer: false,
+          portfolio_uuid: 'common',
+          portfolio_type: 'DEFAULT',
+        })
+      }
+      return jsonResponse({ error: 'unexpected' }, 404)
+    }),
+  )
+
+  const outageRefresh = await service.refreshBalance('cb-legacy-outage')
+  expect(outageRefresh.isErr()).toBe(true)
+  expect(outageRefresh.unwrapErr().message).toBe("Couldn't refresh your Coinbase balance right now. Please try again.")
+  const [afterOutage] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-legacy-outage'))
+
+  retired = true
+  const revokedRefresh = await service.refreshBalance('cb-legacy-outage')
+  expect(revokedRefresh.isErr()).toBe(true)
+  expect(revokedRefresh.unwrapErr()).toBeInstanceOf(ExchangeCredentialsRevokedError)
+  await expect(service.listAccounts('coinbase')).resolves.toMatchObject([{ connectionStatus: 'needs_reconnect' }])
+
+  const replacement = await service.connectCoinbase({
+    apiKey: 'new-key',
+    secretKey: 'new-secret',
+    replaceAccountId: 'cb-legacy-outage',
+  })
+  expect(replacement.isOk()).toBe(true)
+  expect(afterOutage?.externalAccountId).toBe('wallet-A')
+  expect(replacement.unwrap().balanceSats).toBe('50000000')
+})
+
 it('Kraken: marks account needs_reconnect on EAPI:Invalid key refresh and recovers after reconnect', async () => {
   const { service } = await setup()
   const secretBase64 = Buffer.from('kraken-secret').toString('base64')
