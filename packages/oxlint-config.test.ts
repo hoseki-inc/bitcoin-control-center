@@ -334,3 +334,58 @@ it('enforces exchange provider error classification, safe logs, and non-401 tRPC
     expect(reportedFiles.sort(), result.stdout + result.stderr).toEqual(Object.keys(blockedProbes).sort())
   })
 })
+
+it('blocks swallowed signing errors in signing files while allowing refresh catches and non-signing files', async () => {
+  await withTestSetup(async () => {
+    const blockedProbes = {
+      'apps/control-center/src/components/claims/manual-bitcoin/manual-signing.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, toast: { error: (s: string) => void }): Promise<void> { try { await m.mutateAsync() } catch { toast.error('Generic error') } }",
+      'apps/control-center/src/components/claims/keystone/keystone-qr-signing.tsx':
+        "export async function submit(onSubmitSignature: (s: string) => Promise<void>, toast: { error: (s: string) => void }): Promise<void> { try { await onSubmitSignature('sig') } catch { toast.error('Generic error') } }",
+      'apps/control-center/src/components/claims/coldcard/coldcard-signing.tsx':
+        "export async function submit(onProveControl: (s: string) => Promise<void>, setError: (s: string) => void): Promise<void> { try { await onProveControl('sig') } catch { setError('Generic error') } }",
+      'apps/control-center/src/pages/multisig/[id]/signing.tsx':
+        "export async function submit(completeChallenge: () => Promise<void>, toast: { error: (s: string) => void }): Promise<void> { try { await completeChallenge() } catch { toast.error('Generic error') } }",
+      'apps/control-center/src/components/claims/coldcard/coldcard-qr-signing.tsx':
+        "export const opts = (setError: (s: string) => void) => ({ onError: (err: unknown) => { console.error(err); setError('Error completing challenge message') } })",
+      'apps/control-center/src/components/claims/keystone/keystone-signing.tsx':
+        "export const opts = (toast: { error: (s: string) => void }) => ({ onError: (error: unknown) => { console.error(error); toast.error('There was an error') } })",
+      'apps/control-center/src/components/claims/manual-bitcoin/template-signing.tsx':
+        'export const opts = (toast: { error: (s: string) => void }) => ({ onError: () => { toast.error(`Hardcoded template`) } })',
+    }
+    const allowedProbes = {
+      'apps/control-center/src/components/claims/manual-bitcoin/ok-signing.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, query: { refetch: () => Promise<void> }, utils: { invalidate: () => Promise<void> }, toast: { error: (s: string, o?: { description: string }) => void }, setError: (s: string) => void, toastSigningError: (c: unknown, t: string) => void, getSigningErrorMessage: (c: unknown, f: string) => string): Promise<void> { try { await m.mutateAsync() } catch (cause) { toastSigningError(cause, 'Fallback') } try { await query.refetch() } catch { toast.error('Refresh failed') } try { await utils.invalidate() } catch { toast.error('Invalidate failed') } const opts = { onError: (err: unknown) => { setError(getSigningErrorMessage(err, 'Fallback')); toastSigningError(err, 'Title'); toast.error('Title', { description: String(err) }) } }; void opts }",
+      'apps/control-center/src/components/claims/signing-errors.test.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, toast: { error: (s: string) => void }): Promise<void> { try { await m.mutateAsync() } catch { toast.error('Test error') } }",
+      'apps/control-center/src/pages/settings/index.tsx':
+        "export async function submit(m: { mutateAsync: () => Promise<void> }, toast: { error: (s: string) => void }): Promise<void> { try { await m.mutateAsync() } catch { toast.error('Settings error') } }",
+    }
+    const probes = { ...blockedProbes, ...allowedProbes }
+    for (const [relativePath, source] of Object.entries(probes)) {
+      const path = join(fixture, relativePath)
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, `${source}\n`)
+    }
+    const result = spawnSync(
+      process.execPath,
+      [
+        resolve(repository, 'node_modules/oxlint/bin/oxlint'),
+        '--format',
+        'unix',
+        ...Object.keys(probes).map((relativePath) => join(fixture, relativePath)),
+      ],
+      { cwd: fixture, encoding: 'utf8', timeout: 15000 },
+    )
+    const reportedFiles = [
+      ...new Set(
+        result.stdout
+          .split('\n')
+          .filter((line) => line.includes('control-center(no-swallowed-signing-error)'))
+          .map((line) => line.slice(0, line.indexOf(':'))),
+      ),
+    ]
+    expect(result.error).toBeUndefined()
+    expect(reportedFiles.sort(), result.stdout + result.stderr).toEqual(Object.keys(blockedProbes).sort())
+  })
+})

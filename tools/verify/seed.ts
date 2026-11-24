@@ -9,6 +9,7 @@ import {
   readRunState,
   readSeedMarker,
   requireJsonFile,
+  resolveSeedFile,
   runPaths,
   selectRunId,
   wait,
@@ -30,7 +31,7 @@ if (!ownsSentinel(state)) {
 if (state.fresh) {
   fail(`Run ${paths.runId} was launched with --fresh, so it stays unseeded. Launch another run to seed.`)
 }
-if (requireJsonFile(readSeedMarker(paths))) {
+if (requireJsonFile(readSeedMarker(paths, state))) {
   console.log(`Run ${paths.runId} is already seeded; nothing to do.`)
   process.exit(0)
 }
@@ -103,7 +104,7 @@ if (statement.status !== 'completed') {
   fail(`The seeded statement ended as ${statement.status}: ${JSON.stringify(statement).slice(0, 500)}`)
 }
 
-writeJson(paths.seedFile, {
+writeJson(resolveSeedFile(paths, state), {
   seededAt: new Date().toISOString(),
   accounts: { verified: created.claim.id, ...watchIds },
   statements: [statement.id],

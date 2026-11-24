@@ -24,6 +24,8 @@ export interface SentinelServer {
 export interface SentinelServerOptions extends AppContextOptions {
   /** Override the configured port; zero lets the OS allocate and bind a free port. */
   listenPort?: number
+  /** Register process SIGTERM/SIGINT handlers. Set false when an embedding host (Electron) owns lifecycle signals. */
+  registerSignalHandlers?: boolean
 }
 
 // Sentinel listens on a host and port, so Fastify reports a TCP address rather than a socket path.
@@ -118,13 +120,11 @@ export async function main(
   snapshotTimer = setInterval(() => void appCtx.controlCenterService.recordAllSnapshots(), 15 * 60 * 1000)
   appCtx.releaseCheckService.start()
 
-  // Graceful shutdown
-  let shuttingDown = false
-  const shutdown = async (): Promise<void> => {
-    if (shuttingDown) {
-      return
-    }
-    shuttingDown = true
+  let shutdownPromise: Promise<void> | null = null
+  const onSignal = (): void => {
+    void shutdown()
+  }
+  const runShutdown = async (): Promise<void> => {
     process.off('SIGTERM', onSignal)
     process.off('SIGINT', onSignal)
     logger.info('Starting graceful shutdown')
@@ -143,10 +143,15 @@ export async function main(
 
     logger.info('Shutdown complete')
   }
+  const shutdown = async (): Promise<void> => {
+    shutdownPromise ??= runShutdown()
+    await shutdownPromise
+  }
 
-  const onSignal = (): void => void shutdown()
-  process.once('SIGTERM', onSignal)
-  process.once('SIGINT', onSignal)
+  if (options.registerSignalHandlers !== false) {
+    process.once('SIGTERM', onSignal)
+    process.once('SIGINT', onSignal)
+  }
 
   return { port: boundPort, routes, shutdown }
 }

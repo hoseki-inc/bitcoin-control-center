@@ -50,10 +50,10 @@ const RecordSchema = z.object({
   tree: z.string(),
   dirty: z.boolean(),
   baseline: z.enum(['seeded', 'fresh']),
-  /** Which app the run served: the standalone web app or, with launch --desktop, the desktop one. */
-  app: z.enum(['standalone', 'desktop']).default('standalone'),
-  /** Launched with --pin: PINs on as on Umbrel. */
-  pins: z.boolean().default(false),
+  /** Which app the run served: standalone web, --desktop without Electron, or packaged Electron (--electron). */
+  app: z.enum(['standalone', 'desktop', 'electron-packaged']).default('standalone'),
+  /** PIN mode: false (off), true/'umbrel' (Umbrel rules), or 'desktop' (Electron desktop PIN). */
+  pins: z.union([z.boolean(), z.enum(['umbrel', 'desktop'])]).default(false),
   url: z.string(),
   versions: z.record(z.string(), z.string()),
   attempts: z.array(
@@ -77,6 +77,11 @@ const RecordSchema = z.object({
   ),
 })
 type EvidenceRecord = z.infer<typeof RecordSchema>
+
+const CdpVersionSchema = z.object({
+  Browser: z.string().optional(),
+  'User-Agent': z.string().optional(),
+})
 
 const { values, positionals } = readArgs(
   { run: { type: 'string' }, status: { type: 'string' }, reason: { type: 'string' } },
@@ -105,14 +110,61 @@ const LABELS: Record<(typeof STATUSES)[number], string> = {
   unreachable: 'Verified-unreachable',
 }
 
+function appLabel(app: EvidenceRecord['app']): string {
+  switch (app) {
+    case 'electron-packaged':
+      return 'packaged macOS Electron app (launch --electron)'
+    case 'desktop':
+      return 'desktop (launch --desktop, no Electron shell)'
+    case 'standalone':
+      return 'standalone web app'
+  }
+}
+
+function pinsLabel(pins: EvidenceRecord['pins']): string {
+  if (pins === 'desktop') {
+    return 'on, desktop rules (launch --electron)'
+  }
+  if (pins === 'umbrel' || pins) {
+    return 'on, Umbrel rules (launch --pin)'
+  }
+  return 'off'
+}
+
+async function readElectronVersions(cdpPort: number): Promise<Record<string, string>> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${cdpPort}/json/version`)
+    if (!response.ok) {
+      return {}
+    }
+    const parsed = parseUnknown(CdpVersionSchema, await response.json())
+    if (parsed.isErr()) {
+      return {}
+    }
+    const versions: Record<string, string> = {}
+    const userAgent = parsed.unwrap()['User-Agent'] ?? ''
+    const electronMatch = /Electron\/([\d.]+)/.exec(userAgent)
+    if (electronMatch?.[1] !== undefined) {
+      versions['Electron'] = electronMatch[1]
+    }
+    const browser = parsed.unwrap().Browser
+    if (browser !== undefined) {
+      versions['Chromium'] = browser.replace(/^Chrome\//, '')
+    }
+    return versions
+  } catch {
+    return {}
+  }
+}
+
 function report(record: EvidenceRecord): string {
   const lines = [
     `# Verification report: ${record.runId}`,
     '',
     `- Commit: ${record.commit}${record.dirty ? ` with uncommitted changes (tree ${record.tree})` : ''}`,
     `- Baseline: ${record.baseline === 'fresh' ? 'fresh run, not seeded' : 'seeded'}`,
-    `- App: ${record.app === 'desktop' ? 'desktop (launch --desktop, no Electron shell)' : 'standalone web app'}`,
-    `- PINs: ${record.pins ? 'on, Umbrel rules (launch --pin)' : 'off'}`,
+    `- App: ${appLabel(record.app)}`,
+    `- PINs: ${pinsLabel(record.pins)}`,
     `- Started: ${record.startedAt}`,
     `- Versions: ${Object.entries(record.versions)
       .map(([name, version]) => `${name} ${version}`)
@@ -156,9 +208,11 @@ if (command === 'start') {
     console.log(`Evidence for run ${paths.runId} already started: ${folder}`)
     process.exit(0)
   }
-  if (!state.fresh && requireJsonFile(readSeedMarker(paths)) === null) {
+  if (!state.fresh && !state.setupPinInUi && requireJsonFile(readSeedMarker(paths, state)) === null) {
     fail(`Run ${paths.runId} is not seeded. Run ${HELPER} seed first, or launch with --fresh.`)
   }
+  const electronVersions =
+    state.electron && state.cdpPort !== undefined ? await readElectronVersions(state.cdpPort) : {}
   save({
     runId: paths.runId,
     startedAt: new Date().toISOString(),
@@ -166,14 +220,15 @@ if (command === 'start') {
     tree: state.build.tree,
     dirty: state.build.dirty,
     baseline: state.fresh ? 'fresh' : 'seeded',
-    app: state.desktop ? 'desktop' : 'standalone',
-    pins: state.pin,
+    app: state.electron ? 'electron-packaged' : state.desktop ? 'desktop' : 'standalone',
+    pins: state.electron ? 'desktop' : state.pin ? 'umbrel' : false,
     url: state.url,
     versions: {
       'Control Center': runCommand(process.execPath, [join(REPO_ROOT, 'start9/scripts/version.mjs'), 'umbrel'], {
         env: ChildEnv.with(),
       }).trim(),
       Node: process.version,
+      ...electronVersions,
     },
     attempts: [],
   })

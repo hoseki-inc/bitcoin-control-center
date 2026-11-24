@@ -2,11 +2,11 @@ import { Box, Flex, Icon, Stack, Text } from '@chakra-ui/react'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { Eye } from 'lucide-react'
-import { Link, useLocation } from 'react-router'
+import { Link, type Location, useLocation } from 'react-router'
 import { parseNavigationState } from '../../../lib/navigation-state'
 
 export function ManualTypeSelectorPage(): JSX.Element {
-  const location = useLocation()
+  const location: Location<unknown> = useLocation()
   const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
 
   return (
