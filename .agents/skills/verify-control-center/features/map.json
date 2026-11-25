@@ -1163,7 +1163,7 @@
             {
               "id": "connect",
               "kind": "happy",
-              "does": "Enter API credentials, Connect Account; <Exchange> Connected!"
+              "does": "Enter API credentials (Coinbase 3-step flow accepts both Ed25519 and ECDSA keys), Connect Account; <Exchange> Connected!"
             },
             {
               "id": "client-validation",

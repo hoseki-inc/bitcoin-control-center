@@ -1,8 +1,8 @@
 import * as crypto from 'node:crypto'
-import { Err, Ok, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
+import { Err, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
 import { SafeHttpErrorKind, type SafeResponse, safeHttp } from '@hoseki/packages/safe-http'
 import type { z } from 'zod'
-import type { Credentials } from './credentials'
+import { type Credentials, parseCdpSigningKey } from './credentials'
 import { ApiError, ErrorKind } from './errors'
 import { type JsonRecord, recordToHeaders, recordToSearchParams } from './util'
 
@@ -16,46 +16,16 @@ type CoinbaseRequestHeaders = {
   'CB-ACCESS-KEY'?: string
 }
 
-/** https://docs.cdp.coinbase.com/sign-in-with-coinbase/docs/api-key-auth-legacy */
 function sign(args: { timestamp: string; secret: string; method: 'GET' | 'POST'; path: string; body?: string }) {
   const message = args.timestamp + args.method + args.path + (args.body ?? '')
   const signature = crypto.createHmac('sha256', args.secret).update(message).digest('hex')
   return signature
 }
 
-const PEM_HEADER = '-----BEGIN EC PRIVATE KEY-----'
-const PEM_FOOTER = '-----END EC PRIVATE KEY-----'
-
-/**
- * Extracts and normalizes the PEM key from the given private key string.
- * Handles escaped newlines and normalizes whitespace.
- */
-function extractPemKey(string: string): Result<string, Error> {
-  // Replace escaped newlines with actual newlines (handles environment variables)
-  const normalized = string.replace(/\\n/g, '\n').trim()
-
-  // Validate PEM format
-  if (!normalized.startsWith(PEM_HEADER) || !normalized.includes(PEM_FOOTER)) {
-    return Err(
-      new Error(
-        'Invalid private key format: must start with -----BEGIN EC PRIVATE KEY----- and contain -----END EC PRIVATE KEY-----',
-      ),
-    )
-  }
-
-  // Return normalized PEM (libraries handle formatting flexibly)
-  return Ok(normalized)
-}
-
 function generateNonce(): string {
   return crypto.randomBytes(16).toString('hex')
 }
 
-/**
- * TODO: This is not working as expected, it's returning a 401.
- *
- * But I tried the official authenticator, and that does not work either: https://github.com/coinbase/coinbase-sdk-nodejs/blob/master/src/coinbase/authenticator.ts
- */
 const signCdp = asyncFn(
   async (args: {
     name: string
@@ -64,30 +34,17 @@ const signCdp = asyncFn(
     url: string
     path: string
   }): Promise<Result<string, Error>> => {
-    const pemPrivateKey = extractPemKey(args.secret)
-    if (pemPrivateKey.isErr()) {
-      return Err(pemPrivateKey.error())
+    const parsedKeyRes = parseCdpSigningKey(args.secret)
+    if (parsedKeyRes.isErr()) {
+      return Err(parsedKeyRes.error())
     }
 
-    const pemKey = pemPrivateKey.value()
-
-    // Parse as PEM format (the normalization handles escaped newlines and whitespace)
-    const privateKeyRes = Result.fromThrowable(() => crypto.createPrivateKey(pemKey)).andThen((key) =>
-      key.asymmetricKeyType === 'ec' && key.asymmetricKeyDetails?.namedCurve === 'prime256v1'
-        ? Ok(key)
-        : Err(new Error('Invalid key: expected a P-256 EC private key')),
-    )
-
-    if (privateKeyRes.isErr()) {
-      return Err(privateKeyRes.error())
-    }
-
-    const privateKey = privateKeyRes.value()
+    const { key: privateKey, alg } = parsedKeyRes.value()
     const nonce = generateNonce()
 
     const fields = {
-      alg: 'ES256',
-      kid: args.name, // API key name/ID used as key identifier in JWT header
+      alg,
+      kid: args.name,
       typ: 'JWT',
       nonce,
     }
@@ -102,7 +59,7 @@ const signCdp = asyncFn(
       iss: 'cdp',
       aud: ['cdp_service'],
       nbf: now,
-      exp: now + 60, // +1 minute
+      exp: now + 60,
       uris: [uri],
     }
 
@@ -110,11 +67,13 @@ const signCdp = asyncFn(
       const header = Buffer.from(JSON.stringify(fields)).toString('base64url')
       const payload = Buffer.from(JSON.stringify(claims)).toString('base64url')
       const signingInput = `${header}.${payload}`
-      // ES256 JWTs encode the 32-byte r and s values directly, rather than using DER.
-      const signature = crypto.sign('sha256', Buffer.from(signingInput), {
-        key: privateKey,
-        dsaEncoding: 'ieee-p1363',
-      })
+      const signature =
+        alg === 'EdDSA'
+          ? crypto.sign(null, Buffer.from(signingInput), privateKey)
+          : crypto.sign('sha256', Buffer.from(signingInput), {
+              key: privateKey,
+              dsaEncoding: 'ieee-p1363',
+            })
       return `${signingInput}.${signature.toString('base64url')}`
     })
   },
