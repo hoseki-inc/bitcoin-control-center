@@ -407,6 +407,17 @@ export function withFault(current: Faults, target: FaultTarget, mode: FaultMode)
 }
 
 /** The faults in effect, such as `electrum down`, or nothing when the fakes behave. */
+/**
+ * Doctor's `seed` check on a --fresh run. Only the seed marker decides: seed refuses fresh runs, so any accounts were
+ * added by a journey, which is what fresh-run recipes do.
+ */
+export function freshSeedCheck(marker: 'missing' | 'invalid' | 'ok', accounts: number): [boolean, string] {
+  if (marker !== 'missing') {
+    return [false, 'fresh run, but it has a seed marker; launch a new run with --fresh']
+  }
+  return [true, `fresh run: not seeded, ${accounts} ${accounts === 1 ? 'account' : 'accounts'} added by journeys`]
+}
+
 export function activeFaults(faults: Faults): string[] {
   return (['electrum', 'mempool'] as const)
     .filter((target) => faults[target] !== 'ok')

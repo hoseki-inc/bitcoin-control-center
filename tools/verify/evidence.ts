@@ -3,6 +3,17 @@ import { join } from 'node:path'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import { readArgs } from './args'
+import {
+  CdpVersionSchema,
+  type EvidenceRecord,
+  LABELS,
+  RecordSchema,
+  type RuntimeVersions,
+  cdpVersions,
+  newRecord,
+  report,
+  startProblem,
+} from './evidence-record'
 import { ChildEnv, runCommand } from './process'
 import {
   type Attempt,
@@ -11,7 +22,6 @@ import {
   STATUSES,
   beginProblem,
   freeAttemptNumber,
-  latestRecorded,
   newAttempt,
   openAttempt,
   readRecipes,
@@ -43,46 +53,6 @@ import {
 //        helpers/verify evidence record <recipe> --status verified|failed|unreachable [--reason "<text>"] [--run <id>]
 //        helpers/verify evidence abandon <recipe> [--run <id>]
 
-const RecordSchema = z.object({
-  runId: z.string(),
-  startedAt: z.string(),
-  commit: z.string(),
-  tree: z.string(),
-  dirty: z.boolean(),
-  baseline: z.enum(['seeded', 'fresh']),
-  /** Which app the run served: standalone web, --desktop without Electron, or packaged Electron (--electron). */
-  app: z.enum(['standalone', 'desktop', 'electron-packaged']).default('standalone'),
-  /** PIN mode: false (off), true/'umbrel' (Umbrel rules), or 'desktop' (Electron desktop PIN). */
-  pins: z.union([z.boolean(), z.enum(['umbrel', 'desktop'])]).default(false),
-  url: z.string(),
-  versions: z.record(z.string(), z.string()),
-  attempts: z.array(
-    z.object({
-      recipe: z.string(),
-      number: z.number().int().positive(),
-      feature: z.string(),
-      proves: z.array(z.string()),
-      begunAt: z.string(),
-      sentinelStartedAt: z.string(),
-      abandonedAt: z.string().nullable(),
-      outcome: z
-        .object({
-          status: z.enum(STATUSES),
-          reason: z.string().nullable(),
-          recordedAt: z.string(),
-          artifacts: z.array(z.string()),
-        })
-        .nullable(),
-    }),
-  ),
-})
-type EvidenceRecord = z.infer<typeof RecordSchema>
-
-const CdpVersionSchema = z.object({
-  Browser: z.string().optional(),
-  'User-Agent': z.string().optional(),
-})
-
 const { values, positionals } = readArgs(
   { run: { type: 'string' }, status: { type: 'string' }, reason: { type: 'string' } },
   2,
@@ -104,99 +74,17 @@ function load(): EvidenceRecord {
   )
 }
 
-const LABELS: Record<(typeof STATUSES)[number], string> = {
-  verified: 'Verified',
-  failed: 'Failed',
-  unreachable: 'Verified-unreachable',
-}
-
-function appLabel(app: EvidenceRecord['app']): string {
-  switch (app) {
-    case 'electron-packaged':
-      return 'packaged macOS Electron app (launch --electron)'
-    case 'desktop':
-      return 'desktop (launch --desktop, no Electron shell)'
-    case 'standalone':
-      return 'standalone web app'
-  }
-}
-
-function pinsLabel(pins: EvidenceRecord['pins']): string {
-  if (pins === 'desktop') {
-    return 'on, desktop rules (launch --electron)'
-  }
-  if (pins === 'umbrel' || pins) {
-    return 'on, Umbrel rules (launch --pin)'
-  }
-  return 'off'
-}
-
-async function readElectronVersions(cdpPort: number): Promise<Record<string, string>> {
+async function readElectronVersions(cdpPort: number): Promise<RuntimeVersions> {
   try {
     const response = await fetch(`http://127.0.0.1:${cdpPort}/json/version`)
     if (!response.ok) {
       return {}
     }
     const parsed = parseUnknown(CdpVersionSchema, await response.json())
-    if (parsed.isErr()) {
-      return {}
-    }
-    const versions: Record<string, string> = {}
-    const userAgent = parsed.unwrap()['User-Agent'] ?? ''
-    const electronMatch = /Electron\/([\d.]+)/.exec(userAgent)
-    if (electronMatch?.[1] !== undefined) {
-      versions['Electron'] = electronMatch[1]
-    }
-    const browser = parsed.unwrap().Browser
-    if (browser !== undefined) {
-      versions['Chromium'] = browser.replace(/^Chrome\//, '')
-    }
-    return versions
+    return parsed.isOk() ? cdpVersions(parsed.unwrap()) : {}
   } catch {
     return {}
   }
-}
-
-function report(record: EvidenceRecord): string {
-  const lines = [
-    `# Verification report: ${record.runId}`,
-    '',
-    `- Commit: ${record.commit}${record.dirty ? ` with uncommitted changes (tree ${record.tree})` : ''}`,
-    `- Baseline: ${record.baseline === 'fresh' ? 'fresh run, not seeded' : 'seeded'}`,
-    `- App: ${appLabel(record.app)}`,
-    `- PINs: ${pinsLabel(record.pins)}`,
-    `- Started: ${record.startedAt}`,
-    `- Versions: ${Object.entries(record.versions)
-      .map(([name, version]) => `${name} ${version}`)
-      .join(', ')}`,
-    '',
-  ]
-  const shown = latestRecorded(record.attempts)
-  if (shown.length === 0) {
-    lines.push('No recipes recorded yet.')
-  }
-  for (const attempt of shown) {
-    const { outcome } = attempt
-    lines.push(
-      `## ${attempt.recipe}: ${LABELS[outcome.status]}`,
-      '',
-      `Feature: ${attempt.feature}, attempt ${attempt.number}`,
-      '',
-      `${outcome.status === 'verified' ? 'Proves' : 'Would prove'}: ${attempt.proves.join(', ')}`,
-      '',
-    )
-    if (outcome.reason !== null) {
-      lines.push(
-        outcome.status === 'unreachable' ? `Missing precondition: ${outcome.reason}` : `Reason: ${outcome.reason}`,
-        '',
-      )
-    }
-    lines.push(`Recorded ${outcome.recordedAt}.`, '')
-    if (outcome.artifacts.length > 0) {
-      lines.push('Artifacts:', '', ...outcome.artifacts.map((file) => `- [${file}](${file})`), '')
-    }
-  }
-  return `${lines.join('\n').trimEnd()}\n`
 }
 
 const listing = (directory: string): string[] => (existsSync(directory) ? readdirSync(directory).sort() : [])
@@ -208,30 +96,26 @@ if (command === 'start') {
     console.log(`Evidence for run ${paths.runId} already started: ${folder}`)
     process.exit(0)
   }
-  if (!state.fresh && !state.setupPinInUi && requireJsonFile(readSeedMarker(paths, state)) === null) {
-    fail(`Run ${paths.runId} is not seeded. Run ${HELPER} seed first, or launch with --fresh.`)
+  const seeded = requireJsonFile(readSeedMarker(paths, state)) !== null
+  const problem = startProblem(state, { seeded, smokeReport: existsSync(join(folder, 'smoke.json')) }, HELPER)
+  if (problem !== null) {
+    fail(problem)
   }
   const electronVersions =
     state.electron && state.cdpPort !== undefined ? await readElectronVersions(state.cdpPort) : {}
-  save({
-    runId: paths.runId,
-    startedAt: new Date().toISOString(),
-    commit: state.build.commit,
-    tree: state.build.tree,
-    dirty: state.build.dirty,
-    baseline: state.fresh ? 'fresh' : 'seeded',
-    app: state.electron ? 'electron-packaged' : state.desktop ? 'desktop' : 'standalone',
-    pins: state.electron ? 'desktop' : state.pin ? 'umbrel' : false,
-    url: state.url,
-    versions: {
-      'Control Center': runCommand(process.execPath, [join(REPO_ROOT, 'start9/scripts/version.mjs'), 'umbrel'], {
-        env: ChildEnv.with(),
-      }).trim(),
-      Node: process.version,
-      ...electronVersions,
-    },
-    attempts: [],
-  })
+  save(
+    newRecord(state, {
+      seeded,
+      startedAt: new Date().toISOString(),
+      versions: {
+        'Control Center': runCommand(process.execPath, [join(REPO_ROOT, 'start9/scripts/version.mjs'), 'umbrel'], {
+          env: ChildEnv.with(),
+        }).trim(),
+        Node: process.version,
+        ...electronVersions,
+      },
+    }),
+  )
   console.log(`Evidence for run ${paths.runId}: ${folder}`)
 } else if (command === 'begin' || command === 'record' || command === 'abandon') {
   const recipeId = checkId('Recipe', recipeArg ?? fail(`Pass the recipe: ${HELPER} evidence ${command} <recipe>`))

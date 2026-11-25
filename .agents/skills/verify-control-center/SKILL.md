@@ -25,7 +25,7 @@ What to verify, and what each feature needs before it can be driven, is in [feat
 
 4. Run the doctor. Drive only after it passes.
 
-For journeys that need an empty app, such as onboarding, launch with `helpers/verify launch --fresh` and skip the seed. The doctor then expects no accounts.
+For journeys that need an empty app, such as onboarding, launch with `helpers/verify launch --fresh` and skip the seed. The doctor then expects no seed; accounts a journey adds are fine.
 
 For features the map marks `desktop-web`, such as Electrum settings, launch with `helpers/verify launch --desktop`. Sentinel and the web app then run as the desktop app does, in your browser with no Electron shell, so features the map marks `electron` or `packaged` stay unreachable. `--desktop` combines with `--fresh`.
 

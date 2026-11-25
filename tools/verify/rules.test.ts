@@ -17,6 +17,7 @@ import {
   classifyTorOutcome,
   faultedAnswer,
   freeAttemptNumber,
+  freshSeedCheck,
   latestRecorded,
   launchDecision,
   newAttempt,
@@ -499,6 +500,20 @@ describe('map.json', () => {
     assert.equal(readRecipes()?.size, listed.length)
     assert.equal(readRecipes()?.has('statements'), true)
     assert.equal(readRecipes()?.has('Statements'), false)
+  })
+})
+
+describe('freshSeedCheck', () => {
+  it('passes a fresh run with no seed marker, with or without accounts a journey added', () => {
+    assert.deepEqual(freshSeedCheck('missing', 0), [true, 'fresh run: not seeded, 0 accounts added by journeys'])
+    assert.deepEqual(freshSeedCheck('missing', 1), [true, 'fresh run: not seeded, 1 account added by journeys'])
+    assert.equal(freshSeedCheck('missing', 3)[0], true)
+  })
+
+  it('fails a fresh run that has a seed marker, readable or not', () => {
+    assert.equal(freshSeedCheck('ok', 0)[0], false)
+    assert.equal(freshSeedCheck('invalid', 0)[0], false)
+    assert.match(freshSeedCheck('ok', 3)[1], /seed marker/)
   })
 })
 

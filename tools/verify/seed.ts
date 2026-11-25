@@ -17,7 +17,8 @@ import {
 } from './run'
 
 // Seeds a launched run through Sentinel's API, the calls the web app makes. Running it again on a seeded run does
-// nothing; a fresh run, or a run with other data, is refused rather than changed.
+// nothing; a fresh run, or a run with other data, is refused rather than changed. On a --setup-pin-in-ui run it waits
+// for the PIN set in the UI, then makes the fake mempool the only price source, which launch could not do without it.
 // Usage: helpers/verify seed [--run <id>]
 
 const paths = runPaths(selectRunId(readArgs({ run: { type: 'string' } }).values.run))
@@ -37,12 +38,26 @@ if (requireJsonFile(readSeedMarker(paths, state))) {
 }
 
 const client = sentinelClient(state.url)
+const auth = await client.auth.status.query()
+if (state.setupPinInUi && auth.platform !== null && auth.state === 'no-pin') {
+  fail(`Run ${paths.runId} has no PIN yet. Set it in the app at Set up your PIN, then seed.`)
+}
 await signIn(client)
 
 if ((await countAccounts(client)) > 0) {
   fail(
     `Run ${paths.runId} already has accounts but no seed marker, so an earlier seed stopped partway. Launch a new run.`,
   )
+}
+
+if (state.setupPinInUi) {
+  for (let waited = 0; !(await client.portalProve.settings.electrumStatus.query()).connected; waited += 500) {
+    if (waited >= 30_000) {
+      fail(`Run ${paths.runId}'s Sentinel did not connect to the fake Electrum within 30 seconds.`)
+    }
+    await wait(500)
+  }
+  await client.portalProve.price.setSettings.mutate({ source: 'mempool', fallbacks: false })
 }
 
 const keystore = { wallet: null, model: null, derivationPath: null }
