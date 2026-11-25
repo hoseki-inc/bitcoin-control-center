@@ -2441,80 +2441,84 @@ it('Robinhood: backfills missing account_number during refreshBalance', async ()
   expect(row?.externalAccountId).toBe('rh-acct-a')
 })
 
-it('refreshAllBalances still refreshes a sibling account when a Robinhood reply is cut off', async () => {
-  const { db, service } = await setup()
-  const privateKeyBase64 = generateRobinhoodPrivateKeyBase64()
-  const secretBase64 = Buffer.from('kraken-secret').toString('base64')
+it(
+  'refreshAllBalances still refreshes a sibling account when a Robinhood reply is cut off',
+  { timeout: 5_000 },
+  async () => {
+    const { db, service } = await setup()
+    const privateKeyBase64 = generateRobinhoodPrivateKeyBase64()
+    const secretBase64 = Buffer.from('kraken-secret').toString('base64')
 
-  await db.insert(exchangeAccounts).values([
-    {
-      id: 'rh-truncated',
-      provider: 'robinhood',
-      displayName: 'Robinhood Truncated',
-      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'rh-key-truncated', privateKey: privateKeyBase64 }),
-      externalAccountId: 'rh-acct-truncated',
-      balanceSats: '10000000',
-      balanceAsOf: '2025-01-01T00:00:00.000Z',
-      createdAt: '2026-01-02T00:00:00.000Z',
-      credentialsConnectedAt: '2026-01-02T00:00:00.000Z',
-    },
-    {
-      id: 'kr-sibling',
-      provider: 'kraken',
-      displayName: 'Kraken Sibling',
-      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-key-sibling', secretKey: secretBase64 }),
-      externalAccountId: 'AA99N84G11112222',
-      balanceSats: '50000000',
-      balanceAsOf: '2025-01-01T00:00:00.000Z',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      credentialsConnectedAt: '2026-01-01T00:00:00.000Z',
-    },
-  ])
+    await db.insert(exchangeAccounts).values([
+      {
+        id: 'rh-truncated',
+        provider: 'robinhood',
+        displayName: 'Robinhood Truncated',
+        encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'rh-key-truncated', privateKey: privateKeyBase64 }),
+        externalAccountId: 'rh-acct-truncated',
+        balanceSats: '10000000',
+        balanceAsOf: '2025-01-01T00:00:00.000Z',
+        createdAt: '2026-01-02T00:00:00.000Z',
+        credentialsConnectedAt: '2026-01-02T00:00:00.000Z',
+      },
+      {
+        id: 'kr-sibling',
+        provider: 'kraken',
+        displayName: 'Kraken Sibling',
+        encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-key-sibling', secretKey: secretBase64 }),
+        externalAccountId: 'AA99N84G11112222',
+        balanceSats: '50000000',
+        balanceAsOf: '2025-01-01T00:00:00.000Z',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        credentialsConnectedAt: '2026-01-01T00:00:00.000Z',
+      },
+    ])
 
-  await stubRobinhoodHttps(({ path }) => {
-    if (path.startsWith('/api/v1/crypto/trading/holdings/')) {
-      return {
-        status: 200,
-        rawBody: '{"results":[{"account_number":"rh-acct-truncated"',
-        truncateBody: true,
+    await stubRobinhoodHttps(({ path }) => {
+      if (path.startsWith('/api/v1/crypto/trading/holdings/')) {
+        return {
+          status: 200,
+          rawBody: '{"results":[{"account_number":"rh-acct-truncated"',
+          truncateBody: true,
+        }
       }
-    }
-    return { status: 200, body: { previous: null, next: null, results: [] } }
-  })
+      return { status: 200, body: { previous: null, next: null, results: [] } }
+    })
 
-  vi.stubGlobal(
-    'fetch',
-    vi.fn(async (input: string | URL | Request) => {
-      const url = extractUrl(input)
-      if (url.endsWith('/0/private/Balance')) {
-        return jsonResponse({ error: [], result: { XXBT: '0.6' } })
-      }
-      return jsonResponse({ error: ['unknown'] }, 404)
-    }),
-  )
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request) => {
+        const url = extractUrl(input)
+        if (url.endsWith('/0/private/Balance')) {
+          return jsonResponse({ error: [], result: { XXBT: '0.6' } })
+        }
+        return jsonResponse({ error: ['unknown'] }, 404)
+      }),
+    )
 
-  const result = await service.refreshAllBalances()
-  expect(result.isOk()).toBe(true)
+    const result = await service.refreshAllBalances()
+    expect(result.isOk()).toBe(true)
 
-  const [rhRow] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'rh-truncated'))
-  expect(rhRow?.balanceSats).toBe('10000000')
-  expect(rhRow?.balanceAsOf).toBe('2025-01-01T00:00:00.000Z')
-  const rhSnapshots = await db
-    .select()
-    .from(exchangeBalanceSnapshots)
-    .where(eq(exchangeBalanceSnapshots.accountId, 'rh-truncated'))
-  expect(rhSnapshots).toHaveLength(0)
+    const [rhRow] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'rh-truncated'))
+    expect(rhRow?.balanceSats).toBe('10000000')
+    expect(rhRow?.balanceAsOf).toBe('2025-01-01T00:00:00.000Z')
+    const rhSnapshots = await db
+      .select()
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, 'rh-truncated'))
+    expect(rhSnapshots).toHaveLength(0)
 
-  const [krRow] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'kr-sibling'))
-  expect(krRow?.balanceSats).toBe('60000000')
-  expect(krRow?.balanceAsOf).not.toBe('2025-01-01T00:00:00.000Z')
-  const krSnapshots = await db
-    .select()
-    .from(exchangeBalanceSnapshots)
-    .where(eq(exchangeBalanceSnapshots.accountId, 'kr-sibling'))
-  expect(krSnapshots).toHaveLength(1)
-  expect(krSnapshots[0]?.balanceSats).toBe('60000000')
-})
+    const [krRow] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'kr-sibling'))
+    expect(krRow?.balanceSats).toBe('60000000')
+    expect(krRow?.balanceAsOf).not.toBe('2025-01-01T00:00:00.000Z')
+    const krSnapshots = await db
+      .select()
+      .from(exchangeBalanceSnapshots)
+      .where(eq(exchangeBalanceSnapshots.accountId, 'kr-sibling'))
+    expect(krSnapshots).toHaveLength(1)
+    expect(krSnapshots[0]?.balanceSats).toBe('60000000')
+  },
+)
 
 it('Coinbase: marks account needs_reconnect on 401 refresh and recovers after reconnect', async () => {
   const { service } = await setup()

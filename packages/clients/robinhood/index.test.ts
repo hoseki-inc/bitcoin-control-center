@@ -146,6 +146,7 @@ describe('RobinhoodClient request timeout', () => {
     expect(requestedTimeouts).toEqual([30_000])
     expect(result.isErr()).toBe(true)
     expect(result.unwrapErr()).not.toBeInstanceOf(RobinhoodApiError)
+    expect(result.unwrapErr().message).toContain('Robinhood request timed out')
   })
 })
 
@@ -210,7 +211,7 @@ describe('RobinhoodClient', () => {
     }
   })
 
-  it('returns an error when a holdings response is cut off mid-body', async () => {
+  it('returns an error when a holdings response is cut off mid-body', { timeout: 5_000 }, async () => {
     await stubRobinhoodHttps(() => ({
       status: 200,
       body: '{"results":[{"account_number":"123"',
@@ -221,6 +222,8 @@ describe('RobinhoodClient', () => {
     const result = await client.getHoldings()
 
     expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr()).not.toBeInstanceOf(RobinhoodApiError)
+    expect(result.unwrapErr().message).not.toContain('timed out')
   })
 
   it('returns an error when /accounts/ response is missing account_number', async () => {
