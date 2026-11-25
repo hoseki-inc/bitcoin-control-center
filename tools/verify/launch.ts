@@ -5,9 +5,11 @@ import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import { readArgs } from './args'
 import { VERIFY_PIN, sentinelClient, signIn } from './client'
+import { describeBundle } from './evidence-record'
 import { ChildEnv, runToLog, startGroup } from './process'
 import { launchDecision, webBuildEnv } from './rules'
 import {
+  type BundleProvenance,
   EVIDENCE_ROOT,
   FakesRecordSchema,
   HELPER,
@@ -22,6 +24,7 @@ import {
   newRunId,
   portOwnedBy,
   processStartTime,
+  readBundleProvenance,
   readJsonFile,
   readRunState,
   recordProcess,
@@ -241,6 +244,12 @@ if (electron) {
   } catch {
     await abort(`Could not copy ${sourceApp} into ${copiedApp}. See ${join(paths.logsDir, 'desktop-copy.log')}`)
   }
+  // Read from the copy, the bundle that actually runs.
+  const bundle: BundleProvenance = {
+    origin: appPath === undefined ? 'built' : 'app',
+    source: sourceApp,
+    ...(readBundleProvenance(copiedApp) ?? { release: null, commit: null, dirty: null }),
+  }
 
   const userDataDir = canonicalizePath(join(paths.runDir, 'user-data'))
   const dataDir = join(userDataDir, 'data')
@@ -350,6 +359,7 @@ if (electron) {
       dataDir,
       downloadsDir,
       appBundle: copiedApp,
+      bundle,
       sentinel: { ...electronProcess, port },
       fakes: { ...fakesProcess, ...fakes },
     }
@@ -359,6 +369,7 @@ if (electron) {
     writeJson(paths.stateFile, state)
     console.log(`
 Run ${runId} is ready (packaged macOS Electron)
+  bundle:    ${describeBundle(bundle, build.commit)}
   url:       ${url}
   cdp:       http://127.0.0.1:${cdpPort}
   userData:  ${userDataDir}

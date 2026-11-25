@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readArgs } from './args'
 import { countAccounts, sentinelClient, signIn } from './client'
-import { activeFaults } from './rules'
+import { activeFaults, freshSeedCheck } from './rules'
 import {
   HELPER,
   type RunState,
@@ -160,9 +160,7 @@ async function checkApp(state: RunState): Promise<void> {
   await attempt('seed', async () => {
     const marker = readSeedMarker(paths, state)
     if (state.fresh) {
-      return marker.status === 'missing' && (await countAccounts(client)) === 0
-        ? [true, 'fresh run: not seeded, no accounts']
-        : [false, 'fresh run, but it has accounts or a seed']
+      return freshSeedCheck(marker.status, await countAccounts(client))
     }
     if (marker.status === 'missing') {
       return [false, `not seeded; run ${HELPER} seed`]

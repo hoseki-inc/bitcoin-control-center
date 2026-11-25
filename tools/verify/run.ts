@@ -27,6 +27,19 @@ const ProcessSchema = z.object({ name: z.string(), pid: z.number().int().positiv
 export type RecordedProcess = z.infer<typeof ProcessSchema>
 const ProcessListSchema = z.array(ProcessSchema)
 
+/**
+ * Which packaged app an --electron run launched: built from this checkout at launch, or a prebuilt one passed with
+ * --app. `release`, `commit` and `dirty` are what `desktop/build.sh` stamped into the bundle; null when it has none.
+ */
+export const BundleProvenanceSchema = z.object({
+  origin: z.enum(['built', 'app']),
+  source: z.string(),
+  release: z.string().nullable(),
+  commit: z.string().nullable(),
+  dirty: z.boolean().nullable(),
+})
+export type BundleProvenance = z.infer<typeof BundleProvenanceSchema>
+
 const RunStateSchema = z.object({
   runId: z.string(),
   launchedAt: z.string(),
@@ -46,6 +59,7 @@ const RunStateSchema = z.object({
   dataDir: z.string().optional(),
   downloadsDir: z.string().optional(),
   appBundle: z.string().optional(),
+  bundle: BundleProvenanceSchema.optional(),
   releaseTag: z.string().optional(),
   sentinel: ProcessSchema.extend({ port: z.number().int().positive() }),
   fakes: ProcessSchema.extend({
@@ -319,24 +333,12 @@ export function isPathInside(
   return rel === '' || (rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel))
 }
 
-const AsarMainEntrySchema = z.object({
-  files: z.object({
-    app: z.object({
-      files: z.object({
-        main: z.object({
-          files: z.object({
-            'index.js': z.object({
-              offset: z.string(),
-              size: z.number().int().nonnegative(),
-            }),
-          }),
-        }),
-      }),
-    }),
-  }),
-})
+const AsarDirSchema = z.object({ files: z.record(z.string(), z.unknown()) })
+const AsarFileSchema = z.object({ offset: z.string(), size: z.number().int().nonnegative() })
+const ASAR_LIMIT = 32 * 1024 * 1024
 
-function readAsarMainIndex(asarPath: string): string | null {
+/** One packed file from an asar archive, by its path inside it; null when it is missing, unpacked or unreadable. */
+export function readAsarFile(asarPath: string, path: readonly string[]): Buffer | null {
   let fd: number | null = null
   try {
     fd = openSync(asarPath, 'r')
@@ -346,33 +348,32 @@ function readAsarMainIndex(asarPath: string): string | null {
     }
     const headerSize = pre.readUInt32LE(4)
     const jsonLen = pre.readUInt32LE(12)
-    if (jsonLen === 0 || jsonLen > 32 * 1024 * 1024 || headerSize < jsonLen) {
+    if (jsonLen === 0 || jsonLen > ASAR_LIMIT || headerSize < jsonLen) {
       return null
     }
     const headerBuf = Buffer.alloc(jsonLen)
     if (readSync(fd, headerBuf, 0, jsonLen, 16) !== jsonLen) {
       return null
     }
-    let decoded: unknown
-    try {
-      decoded = JSON.parse(headerBuf.toString('utf8'))
-    } catch {
-      return null
+    let node: unknown = JSON.parse(headerBuf.toString('utf8'))
+    for (const name of path) {
+      const dir = parseUnknown(AsarDirSchema, node)
+      if (dir.isErr()) {
+        return null
+      }
+      node = dir.unwrap().files[name]
     }
-    const parsed = parseUnknown(AsarMainEntrySchema, decoded)
+    const parsed = parseUnknown(AsarFileSchema, node)
     if (parsed.isErr()) {
       return null
     }
-    const entry = parsed.unwrap().files.app.files.main.files['index.js']
+    const entry = parsed.unwrap()
     const offset = Number(entry.offset)
-    if (!Number.isSafeInteger(offset) || offset < 0 || entry.size > 32 * 1024 * 1024) {
+    if (!Number.isSafeInteger(offset) || offset < 0 || entry.size > ASAR_LIMIT) {
       return null
     }
-    const mainBuf = Buffer.alloc(entry.size)
-    if (readSync(fd, mainBuf, 0, entry.size, 8 + headerSize + offset) !== entry.size) {
-      return null
-    }
-    return mainBuf.toString('utf8')
+    const contents = Buffer.alloc(entry.size)
+    return readSync(fd, contents, 0, entry.size, 8 + headerSize + offset) === entry.size ? contents : null
   } catch {
     return null
   } finally {
@@ -382,16 +383,44 @@ function readAsarMainIndex(asarPath: string): string | null {
   }
 }
 
+const asarOf = (appBundle: string): string => join(appBundle, 'Contents/Resources/app.asar')
+
+const BundlePackageSchema = z.object({
+  bccReleaseVersion: z.string().nullable().catch(null),
+  bccSourceCommit: z.string().nullable().catch(null),
+  bccSourceDirty: z.boolean().nullable().catch(null),
+})
+
+/** What `desktop/build.sh` stamped into a bundle's `package.json`, or null when that file can't be read. */
+export function readBundleProvenance(appBundle: string): Omit<BundleProvenance, 'origin' | 'source'> | null {
+  const raw = readAsarFile(asarOf(appBundle), ['package.json'])
+  if (raw === null) {
+    return null
+  }
+  let decoded: unknown
+  try {
+    decoded = JSON.parse(raw.toString('utf8'))
+  } catch {
+    return null
+  }
+  const parsed = parseUnknown(BundlePackageSchema, decoded)
+  if (parsed.isErr()) {
+    return null
+  }
+  const { bccReleaseVersion, bccSourceCommit, bccSourceDirty } = parsed.unwrap()
+  return { release: bccReleaseVersion, commit: bccSourceCommit, dirty: bccSourceDirty }
+}
+
 /** Why a packaged macOS .app bundle cannot be safely launched in verify mode, or null when verify-capable. */
 export function verifyCapableBundleProblem(appBundle: string): string | null {
   if (!existsSync(join(appBundle, 'Contents/MacOS/Bitcoin Control Center'))) {
     return `does not look like a macOS Bitcoin Control Center.app bundle: ${appBundle}`
   }
-  const asarPath = join(appBundle, 'Contents/Resources/app.asar')
+  const asarPath = asarOf(appBundle)
   if (!existsSync(asarPath)) {
     return `is missing Contents/Resources/app.asar (not verify-capable): ${appBundle}`
   }
-  const mainIndex = readAsarMainIndex(asarPath)
+  const mainIndex = readAsarFile(asarPath, ['app', 'main', 'index.js'])?.toString('utf8') ?? null
   if (mainIndex === null) {
     return `could not read app/main/index.js from Contents/Resources/app.asar (not verify-capable): ${appBundle}`
   }

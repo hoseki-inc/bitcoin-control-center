@@ -11,41 +11,57 @@ import {
   ownsSentinel,
   processStartTime,
   quitProcessCleanly,
+  readAsarFile,
+  readBundleProvenance,
   resolveDataDir,
   resolveSeedFile,
   runPaths,
   verifyCapableBundleProblem,
 } from './run'
 
-function buildMinimalAsar(mainIndexSource: string): Buffer {
-  const payload = Buffer.from(mainIndexSource, 'utf8')
-  const headerJson = JSON.stringify({
-    files: {
-      app: {
-        files: {
-          main: {
-            files: {
-              'index.js': {
-                offset: '0',
-                size: payload.byteLength,
-              },
-            },
-          },
-        },
-      },
-    },
-  })
-  const jsonBuf = Buffer.from(headerJson, 'utf8')
-  const paddedJsonLen = Math.ceil(jsonBuf.byteLength / 4) * 4
-  const paddedJson = Buffer.alloc(paddedJsonLen)
+/** An asar archive holding `files`, keyed by their path inside it, such as `app/main/index.js`. */
+function buildAsar(files: Readonly<Record<string, string>>): Buffer {
+  interface Dir {
+    files: Record<string, Dir | { offset: string; size: number }>
+  }
+  const root: Dir = { files: {} }
+  const payloads: Buffer[] = []
+  let offset = 0
+  for (const [path, text] of Object.entries(files)) {
+    const names = path.split('/')
+    const fileName = names.pop() ?? ''
+    let dir = root
+    for (const name of names) {
+      const existing = dir.files[name]
+      const child: Dir = existing !== undefined && 'files' in existing ? existing : { files: {} }
+      dir.files[name] = child
+      dir = child
+    }
+    const payload = Buffer.from(text, 'utf8')
+    dir.files[fileName] = { offset: String(offset), size: payload.byteLength }
+    payloads.push(payload)
+    offset += payload.byteLength
+  }
+  const jsonBuf = Buffer.from(JSON.stringify(root), 'utf8')
+  const paddedJson = Buffer.alloc(Math.ceil(jsonBuf.byteLength / 4) * 4)
   jsonBuf.copy(paddedJson)
-  const headerSize = paddedJsonLen + 8
+  const headerSize = paddedJson.byteLength + 8
   const pre = Buffer.alloc(16)
   pre.writeUInt32LE(4, 0)
   pre.writeUInt32LE(headerSize, 4)
   pre.writeUInt32LE(headerSize - 4, 8)
   pre.writeUInt32LE(jsonBuf.byteLength, 12)
-  return Buffer.concat([pre, paddedJson, payload])
+  return Buffer.concat([pre, paddedJson, ...payloads])
+}
+
+const buildMinimalAsar = (mainIndexSource: string): Buffer => buildAsar({ 'app/main/index.js': mainIndexSource })
+
+/** A fake .app bundle in `root` whose app.asar holds `files`. */
+function fakeBundle(root: string, files: Readonly<Record<string, string>>): string {
+  const app = join(root, 'Fake.app')
+  mkdirSync(join(app, 'Contents', 'Resources'), { recursive: true })
+  writeFileSync(join(app, 'Contents', 'Resources', 'app.asar'), buildAsar(files))
+  return app
 }
 
 describe('processStartTime', () => {
@@ -213,6 +229,87 @@ describe('Electron run paths and isolation', () => {
     const gone = { name: 'electron', pid: 999_999, startedAt: 'never' }
     const result = await quitProcessCleanly(gone, 500)
     assert.deepEqual(result, { wasRunning: false, exited: false, survivors: [] })
+  })
+})
+
+describe('bundle provenance', () => {
+  const stamp = {
+    name: 'bitcoin-control-center',
+    version: '1.4.3',
+    bccReleaseVersion: '1.4.3:0',
+    bccSourceCommit: '41939c22ece770653439f4673dfd36b85b968fe1',
+    bccSourceDirty: false,
+  }
+
+  it('reads the release, commit and dirty flag desktop/build.sh stamps into app.asar', () => {
+    const root = mkdtempSync(join(tmpdir(), 'verify-provenance-'))
+    try {
+      const app = fakeBundle(root, {
+        'app/main/index.js': 'process.env.BCC_VERIFY_CONFIG',
+        'package.json': JSON.stringify(stamp),
+      })
+      assert.deepEqual(readBundleProvenance(app), {
+        release: '1.4.3:0',
+        commit: '41939c22ece770653439f4673dfd36b85b968fe1',
+        dirty: false,
+      })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('gives null for each stamp a bundle lacks or has the wrong type for', () => {
+    const root = mkdtempSync(join(tmpdir(), 'verify-provenance-'))
+    try {
+      const app = fakeBundle(root, {
+        'package.json': JSON.stringify({ version: '1.0.0', bccSourceCommit: 7, bccSourceDirty: 'true' }),
+      })
+      assert.deepEqual(readBundleProvenance(app), { release: null, commit: null, dirty: null })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('gives null when package.json is missing, unparsable or the asar is not there', () => {
+    const root = mkdtempSync(join(tmpdir(), 'verify-provenance-'))
+    try {
+      assert.equal(readBundleProvenance(fakeBundle(join(root, 'a'), { 'app/main/index.js': 'x' })), null)
+      assert.equal(readBundleProvenance(fakeBundle(join(root, 'b'), { 'package.json': '{not json' })), null)
+      assert.equal(readBundleProvenance(join(root, 'Missing.app')), null)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('reads nested files from an asar, and refuses directories, unpacked entries and garbage headers', () => {
+    const root = mkdtempSync(join(tmpdir(), 'verify-asar-'))
+    try {
+      const asar = join(root, 'app.asar')
+      writeFileSync(asar, buildAsar({ 'app/main/index.js': 'main', 'package.json': '{}' }))
+      assert.equal(readAsarFile(asar, ['app', 'main', 'index.js'])?.toString('utf8'), 'main')
+      assert.equal(readAsarFile(asar, ['package.json'])?.toString('utf8'), '{}')
+      assert.equal(readAsarFile(asar, ['app', 'main']), null)
+      assert.equal(readAsarFile(asar, ['app', 'main', 'index.js', 'deeper']), null)
+      assert.equal(readAsarFile(asar, ['nope']), null)
+
+      const header = Buffer.from(JSON.stringify({ files: { 'native.node': { size: 4, unpacked: true } } }), 'utf8')
+      const padded = Buffer.alloc(Math.ceil(header.byteLength / 4) * 4)
+      header.copy(padded)
+      const pre = Buffer.alloc(16)
+      pre.writeUInt32LE(4, 0)
+      pre.writeUInt32LE(padded.byteLength + 8, 4)
+      pre.writeUInt32LE(padded.byteLength + 4, 8)
+      pre.writeUInt32LE(header.byteLength, 12)
+      const unpacked = join(root, 'unpacked.asar')
+      writeFileSync(unpacked, Buffer.concat([pre, padded]))
+      assert.equal(readAsarFile(unpacked, ['native.node']), null)
+
+      const garbage = join(root, 'garbage.asar')
+      writeFileSync(garbage, 'not an asar archive at all')
+      assert.equal(readAsarFile(garbage, ['package.json']), null)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })
 
