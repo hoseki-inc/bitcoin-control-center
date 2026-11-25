@@ -35,6 +35,7 @@ export * from './forms/form-error-message'
 export * from './forms/input-addons'
 export * from './forms/label-with-tooltip'
 export * from './forms/radio-card'
+export * from './forms/script-type-radio-group'
 
 export * from './typography/overflown-text'
 

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
-import { lockApp, signIn, signOutEverywhere } from './actions'
+import {
+  handOffAccountScan,
+  readActiveAccountScan,
+  resetXpubScanStore,
+  subscribeAccountScan,
+} from '../pages/claims/verify/xpub-scan-store'
+import { forgetApp, lockApp, signIn, signOutEverywhere } from './actions'
 import { INITIAL_GATE, dispatch, useGate } from './gate'
 import { TAB_HEADER, tabId } from './tab'
 
@@ -9,6 +15,7 @@ const reload = vi.fn<() => void>()
 
 function withTestSetup(): void {
   onTestFinished(() => {
+    resetXpubScanStore()
     vi.unstubAllGlobals()
     useGate.setState(INITIAL_GATE, true)
   })
@@ -103,5 +110,47 @@ describe('signOutEverywhere', () => {
     fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'))
     expect((await signOutEverywhere()).isErr()).toBe(true)
     expect(reload).not.toHaveBeenCalled()
+  })
+})
+
+describe('forgetApp', () => {
+  it('clears completed and active xpub scan entries and timers', async () => {
+    vi.useFakeTimers()
+    onTestFinished(() => {
+      vi.useRealTimers()
+    })
+    withTestSetup()
+
+    const settledUpdates: Array<{ status: string }> = []
+    const unsubSettled = subscribeAccountScan(
+      'bitcoin_mainnet::wpkh(settled)',
+      async () => ({ usedIndexes: [], balanceSats: '0' }),
+      (state) => {
+        settledUpdates.push(state)
+      },
+    )
+    await vi.waitFor(() => {
+      expect(settledUpdates.at(-1)).toEqual({ status: 'loaded', balanceSats: 0n })
+    })
+    unsubSettled()
+
+    const unsubActive = subscribeAccountScan(
+      'bitcoin_mainnet::wpkh(active)',
+      async () => new Promise(() => undefined),
+      () => undefined,
+    )
+    handOffAccountScan('bitcoin_mainnet::wpkh(active)')
+    unsubActive()
+
+    await vi.advanceTimersByTimeAsync(0)
+    expect(readActiveAccountScan('bitcoin_mainnet::wpkh(settled)')).toEqual({ status: 'loaded', balanceSats: 0n })
+    expect(readActiveAccountScan('bitcoin_mainnet::wpkh(active)')).toEqual({ status: 'loading' })
+    expect(vi.getTimerCount()).toBe(2)
+
+    await forgetApp()
+
+    expect(readActiveAccountScan('bitcoin_mainnet::wpkh(settled)')).toBeUndefined()
+    expect(readActiveAccountScan('bitcoin_mainnet::wpkh(active)')).toBeUndefined()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
