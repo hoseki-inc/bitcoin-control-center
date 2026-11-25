@@ -89,6 +89,7 @@ export class ControlCenterService {
   private readonly accountHistoryBackfillCooldownUntil = new Map<string, number>()
   private readonly accountHistoryBackfillFailureCounts = new Map<string, number>()
   private readonly accountHistoryBackfillGenerations = new Map<string, number>()
+  private snapshotPassInFlight: Promise<Result<void, Error>> | null = null
 
   public constructor(deps: {
     db: SentinelDb
@@ -1150,11 +1151,24 @@ export class ControlCenterService {
   }
 
   /**
-   * Collect snapshots independently for on-chain, exchange, manual and ETF accounts.
+   * Collect snapshots independently for manual, ETF, on-chain and exchange accounts.
    * Keep successful writes and log failures without aborting other accounts/sources.
    * Called on startup and periodically to build chart data.
    */
   public recordAllSnapshots = asyncFn(async (): Promise<Result<void, Error>> => {
+    if (this.snapshotPassInFlight !== null) {
+      return this.snapshotPassInFlight
+    }
+    const run = this.runRecordAllSnapshots().finally(() => {
+      if (this.snapshotPassInFlight === run) {
+        this.snapshotPassInFlight = null
+      }
+    })
+    this.snapshotPassInFlight = run
+    return run
+  })
+
+  private async runRecordAllSnapshots(): Promise<Result<void, Error>> {
     const now = new Date().toISOString()
     const collectSource = async (source: string, collect: () => Promise<void>): Promise<void> => {
       try {
@@ -1176,51 +1190,6 @@ export class ControlCenterService {
         return false
       }
     }
-
-    // ─── On-chain accounts ─────────────────────────────────────
-    await collectSource('on-chain', async () => {
-      // Each wallet is scanned on its own and records its own snapshot, so one failure doesn't stop the rest.
-      const results = await this.walletBalances.refreshAll()
-      if (results.size === 0) {
-        return
-      }
-      let recorded = 0
-      for (const [accountId, result] of results) {
-        if (result.isOk()) {
-          recorded++
-        } else {
-          this.logger.warn({ source: 'on-chain', accountId }, 'Failed to collect balance snapshot')
-        }
-      }
-      this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
-    })
-
-    // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
-    await collectSource('exchange', async () => {
-      const exchangeAccounts = await this.exchangeService.listAccounts()
-      if (exchangeAccounts.length > 0) {
-        let recorded = 0
-        for (const account of exchangeAccounts) {
-          const collected = await collectAccount('exchange', account.id, async () => {
-            const result = await this.exchangeService.refreshBalance(account.id)
-            if (result.isErr()) {
-              this.logger.warn(
-                { accountId: account.id, exchange: account.exchange },
-                'Failed to refresh exchange balance for snapshot',
-              )
-              return false
-            }
-            const refreshed = result.unwrap()
-            await this.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
-            return true
-          })
-          if (collected) {
-            recorded++
-          }
-        }
-        this.logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
-      }
-    })
 
     // ─── Manual accounts (no refresh — just persist stored balance) ─
     await collectSource('manual', async () => {
@@ -1260,8 +1229,53 @@ export class ControlCenterService {
       }
     })
 
+    // ─── On-chain accounts ─────────────────────────────────────
+    await collectSource('on-chain', async () => {
+      // Each wallet is scanned on its own and records its own snapshot, so one failure doesn't stop the rest.
+      const results = await this.walletBalances.refreshAll()
+      if (results.size === 0) {
+        return
+      }
+      let recorded = 0
+      for (const [accountId, result] of results) {
+        if (result.isOk()) {
+          recorded++
+        } else {
+          this.logger.warn({ source: 'on-chain', accountId }, 'Failed to collect balance snapshot')
+        }
+      }
+      this.logger.info({ count: recorded }, 'Recorded on-chain balance snapshots')
+    })
+
+    // ─── Exchange accounts (Strike, Robinhood, etc.) ───────────
+    await collectSource('exchange', async () => {
+      const exchangeAccounts = await this.exchangeService.listAccounts()
+      if (exchangeAccounts.length > 0) {
+        let recorded = 0
+        for (const account of exchangeAccounts) {
+          const collected = await collectAccount('exchange', account.id, async () => {
+            const result = await this.exchangeService.refreshBalanceForBatch(account)
+            if (result.isErr()) {
+              this.logger.warn(
+                { accountId: account.id, exchange: account.exchange },
+                'Failed to refresh exchange balance for snapshot',
+              )
+              return false
+            }
+            const refreshed = result.unwrap()
+            await this.recordExchangeSnapshot(account.id, refreshed.balanceSats ?? '0', now)
+            return true
+          })
+          if (collected) {
+            recorded++
+          }
+        }
+        this.logger.info({ count: recorded }, 'Recorded exchange balance snapshots')
+      }
+    })
+
     return Ok(undefined)
-  })
+  }
 }
 
 function accountDescriptorNetworkKey(descriptor: string, network: string): string {

@@ -6,7 +6,7 @@ import { IndexMap } from '@hoseki/packages/collection'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
 import { eq, sql } from 'drizzle-orm'
-import { assert, expect, it, vi } from 'vitest'
+import { assert, expect, it, onTestFinished, vi } from 'vitest'
 import {
   accounts,
   balanceSnapshots,
@@ -18,12 +18,29 @@ import {
   manualBalanceSnapshots,
 } from '../../db/schema'
 import { setupServiceDatabase } from '../../fixtures/service-database'
+import { Encrypted, generateEncryptionKey, initEncryption } from '../../lib/encrypted'
 import { WalletBalanceService } from '../../modules/wallet_balances/service'
 import { EtfService } from '../etf'
 import { ExchangeService } from '../exchanges'
 import { ManualService } from '../manual'
 import { PriceService } from '../price'
 import { ControlCenterService } from './service'
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve: (value: T) => void
+  reject: (error: Error) => void
+}
+
+function createDeferred<T>(): Deferred<T> {
+  let resolve: (value: T) => void = () => undefined
+  let reject: (error: Error) => void = () => undefined
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
 
 const sources = ['on-chain', 'exchange', 'manual', 'ETF'] as const
 const snapshotTables = {
@@ -38,7 +55,7 @@ const wallets = [
   Wallets.singlesigNativeSegwitAccount,
 ]
 
-async function setupCollection() {
+async function setupCollection(options?: { refreshTimeLimitMs?: number }) {
   const { db, logger } = await setupServiceDatabase()
   for (const [index, wallet] of wallets.entries()) {
     const number = index + 1
@@ -65,7 +82,7 @@ async function setupCollection() {
   const balances = vi
     .spyOn(onchainProvider, 'getConfirmedAccountBalances')
     .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>(wallets.map((wallet) => [wallet, 100n])))))
-  const exchangeService = new ExchangeService({ db, logger })
+  const exchangeService = new ExchangeService({ db, logger, refreshTimeLimitMs: options?.refreshTimeLimitMs })
   const refresh = vi.spyOn(exchangeService, 'refreshBalance').mockImplementation(
     asyncFn(async (id) =>
       Ok({
@@ -280,5 +297,200 @@ it.each(['returned', 'thrown'] as const)(
     ])
     await expect(rows('manual')).resolves.toHaveLength(3)
     await expect(rows('ETF')).resolves.toHaveLength(3)
+  },
+)
+
+it(
+  'times out a hung exchange account and still records remaining exchange, manual, ETF, and on-chain snapshots without fabricating zero',
+  { timeout: 5_000 },
+  async () => {
+    const { service, refresh, rows } = await setupCollection({ refreshTimeLimitMs: 40 })
+    const original = refresh.getMockImplementation()
+    assert(original)
+    const hung = createDeferred<Awaited<ReturnType<typeof original>>>()
+    onTestFinished(() => {
+      hung.resolve(
+        Ok({
+          id: 'exchange-1',
+          exchange: 'coinbase',
+          displayName: 'Exchange',
+          balanceSats: '200',
+          balanceAsOf: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          connectionStatus: 'connected',
+        }),
+      )
+    })
+    refresh.mockImplementation(
+      asyncFn(async (id) => {
+        if (id === 'exchange-1') {
+          return hung.promise
+        }
+        return original(id)
+      }),
+    )
+
+    expect((await service.recordAllSnapshots()).isOk()).toBe(true)
+    expect(refresh.mock.calls.map(([id]) => id)).toEqual(['exchange-1', 'exchange-2', 'exchange-3'])
+    await expect(rows('exchange')).resolves.toEqual([
+      { accountId: 'exchange-2', balanceSats: '200', timestamp: new Date().toISOString() },
+      { accountId: 'exchange-3', balanceSats: '200', timestamp: new Date().toISOString() },
+    ])
+    await expect(rows('manual')).resolves.toHaveLength(3)
+    await expect(rows('ETF')).resolves.toHaveLength(3)
+    await expect(rows('on-chain')).resolves.toHaveLength(3)
+  },
+)
+
+it('records manual and ETF snapshots before exchange-1 even unblocks at the provider', { timeout: 5_000 }, async () => {
+  const { service, refresh, rows } = await setupCollection({ refreshTimeLimitMs: 5_000 })
+  const original = refresh.getMockImplementation()
+  assert(original)
+  const enteredExchange1 = createDeferred<undefined>()
+  const releaseExchange1 = createDeferred<undefined>()
+  onTestFinished(() => {
+    releaseExchange1.resolve(undefined)
+  })
+  refresh.mockImplementation(
+    asyncFn(async (id) => {
+      if (id === 'exchange-1') {
+        enteredExchange1.resolve(undefined)
+        await releaseExchange1.promise
+      }
+      return original(id)
+    }),
+  )
+
+  const passPromise = service.recordAllSnapshots()
+  await enteredExchange1.promise
+
+  await expect(rows('manual')).resolves.toHaveLength(3)
+  await expect(rows('ETF')).resolves.toHaveLength(3)
+
+  releaseExchange1.resolve(undefined)
+  expect((await passPromise).isOk()).toBe(true)
+  await expect(rows('exchange')).resolves.toHaveLength(3)
+})
+
+it('coalesces overlapping recordAllSnapshots calls into a single pass and runs again after completion', async () => {
+  const { service, balances, refresh } = await setupCollection({ refreshTimeLimitMs: 5_000 })
+  const original = refresh.getMockImplementation()
+  assert(original)
+  const gate = createDeferred<undefined>()
+  onTestFinished(() => {
+    gate.resolve(undefined)
+  })
+  refresh.mockImplementation(
+    asyncFn(async (id) => {
+      if (id === 'exchange-1') {
+        await gate.promise
+      }
+      return original(id)
+    }),
+  )
+
+  const first = service.recordAllSnapshots()
+  const second = service.recordAllSnapshots()
+  gate.resolve(undefined)
+  const [res1, res2] = await Promise.all([first, second])
+
+  expect(res1.isOk()).toBe(true)
+  expect(res2.isOk()).toBe(true)
+  expect(balances).toHaveBeenCalledTimes(3)
+  expect(refresh).toHaveBeenCalledTimes(3)
+
+  const third = await service.recordAllSnapshots()
+  expect(third.isOk()).toBe(true)
+  expect(balances).toHaveBeenCalledTimes(6)
+  expect(refresh).toHaveBeenCalledTimes(6)
+})
+
+it.each(['resolve', 'reject'] as const)(
+  'shares per-account dedupe across refreshAllBalances and recordAllSnapshots and produces no stray row or unhandled rejection on late %s',
+  { timeout: 5_000 },
+  async (settlement) => {
+    const { db, service, exchangeService, refresh, rows } = await setupCollection({ refreshTimeLimitMs: 40 })
+    initEncryption(generateEncryptionKey())
+    const apiKeyBlob = Encrypted.encrypt('synthetic-api-key').unwrap().blob
+    const secretBlob = Encrypted.encrypt('synthetic-secret-key').unwrap().blob
+    const credentials = JSON.stringify({
+      type: 'apiKey',
+      data: { apiKey: { blob: apiKeyBlob }, secretKey: { blob: secretBlob } },
+    })
+    for (const number of [1, 2, 3]) {
+      await db
+        .update(exchangeAccounts)
+        .set({ encryptedCredentials: credentials, credentialsConnectedAt: '2024-02-05T12:00:00.000Z' })
+        .where(eq(exchangeAccounts.id, `exchange-${number}`))
+    }
+
+    let unhandledCount = 0
+    const onUnhandled = (): void => {
+      unhandledCount += 1
+    }
+    process.on('unhandledRejection', onUnhandled)
+    onTestFinished(() => {
+      process.off('unhandledRejection', onUnhandled)
+    })
+
+    const original = refresh.getMockImplementation()
+    assert(original)
+    const hung = createDeferred<Awaited<ReturnType<typeof original>>>()
+    onTestFinished(() => {
+      hung.resolve(
+        Ok({
+          id: 'exchange-1',
+          exchange: 'coinbase',
+          displayName: 'Exchange',
+          balanceSats: '999999',
+          balanceAsOf: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          connectionStatus: 'connected',
+        }),
+      )
+    })
+    refresh.mockImplementation(
+      asyncFn(async (id) => {
+        if (id === 'exchange-1') {
+          return hung.promise
+        }
+        return original(id)
+      }),
+    )
+
+    expect((await exchangeService.refreshAllBalances()).isOk()).toBe(true)
+    expect((await service.recordAllSnapshots()).isOk()).toBe(true)
+
+    expect(refresh.mock.calls.filter(([id]) => id === 'exchange-1')).toHaveLength(1)
+    await expect(rows('exchange')).resolves.toEqual([
+      { accountId: 'exchange-2', balanceSats: '200', timestamp: new Date().toISOString() },
+      { accountId: 'exchange-3', balanceSats: '200', timestamp: new Date().toISOString() },
+    ])
+
+    if (settlement === 'resolve') {
+      hung.resolve(
+        Ok({
+          id: 'exchange-1',
+          exchange: 'coinbase',
+          displayName: 'Exchange',
+          balanceSats: '999999',
+          balanceAsOf: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          connectionStatus: 'connected',
+        }),
+      )
+    } else {
+      hung.reject(new Error('late-rejection-secret-canary'))
+    }
+
+    await new Promise((resolve) => {
+      setTimeout(resolve, 25)
+    })
+
+    expect(unhandledCount).toBe(0)
+    await expect(rows('exchange')).resolves.toEqual([
+      { accountId: 'exchange-2', balanceSats: '200', timestamp: new Date().toISOString() },
+      { accountId: 'exchange-3', balanceSats: '200', timestamp: new Date().toISOString() },
+    ])
   },
 )
