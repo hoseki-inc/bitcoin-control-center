@@ -24,6 +24,8 @@ export interface SentinelServer {
 export interface SentinelServerOptions extends AppContextOptions {
   /** Override the configured port; zero lets the OS allocate and bind a free port. */
   listenPort?: number
+  /** Register process SIGTERM/SIGINT handlers. Set false when an embedding host (Electron) owns lifecycle signals. */
+  registerSignalHandlers?: boolean
 }
 
 // Sentinel listens on a host and port, so Fastify reports a TCP address rather than a socket path.
@@ -114,16 +116,35 @@ export async function main(
   logger.info({ listenHost: host, port: boundPort }, 'api-sentinel is running')
 
   // Record initial balance snapshots, then every 15 minutes
-  void appCtx.controlCenterService.recordAllSnapshots()
-  snapshotTimer = setInterval(() => void appCtx.controlCenterService.recordAllSnapshots(), 15 * 60 * 1000)
-  appCtx.releaseCheckService.start()
-
-  // Graceful shutdown
+  let snapshotInFlight = false
   let shuttingDown = false
-  const shutdown = async (): Promise<void> => {
-    if (shuttingDown) {
+  const runSnapshotPass = (): void => {
+    if (snapshotInFlight || shuttingDown) {
       return
     }
+    snapshotInFlight = true
+    void (async (): Promise<void> => {
+      try {
+        const result = await appCtx.controlCenterService.recordAllSnapshots()
+        if (result.isErr()) {
+          logger.warn('Balance snapshot pass failed')
+        }
+      } catch {
+        logger.warn('Balance snapshot pass failed')
+      } finally {
+        snapshotInFlight = false
+      }
+    })()
+  }
+  runSnapshotPass()
+  snapshotTimer = setInterval(runSnapshotPass, 15 * 60 * 1000)
+  appCtx.releaseCheckService.start()
+
+  let shutdownPromise: Promise<void> | null = null
+  const onSignal = (): void => {
+    void shutdown()
+  }
+  const runShutdown = async (): Promise<void> => {
     shuttingDown = true
     process.off('SIGTERM', onSignal)
     process.off('SIGINT', onSignal)
@@ -143,10 +164,15 @@ export async function main(
 
     logger.info('Shutdown complete')
   }
+  const shutdown = async (): Promise<void> => {
+    shutdownPromise ??= runShutdown()
+    await shutdownPromise
+  }
 
-  const onSignal = (): void => void shutdown()
-  process.once('SIGTERM', onSignal)
-  process.once('SIGINT', onSignal)
+  if (options.registerSignalHandlers !== false) {
+    process.once('SIGTERM', onSignal)
+    process.once('SIGINT', onSignal)
+  }
 
   return { port: boundPort, routes, shutdown }
 }

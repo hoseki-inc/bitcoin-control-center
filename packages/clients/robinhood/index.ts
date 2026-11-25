@@ -114,6 +114,9 @@ async function httpsRequest(options: {
       },
     )
     req.on('error', reject)
+    req.setTimeout(30_000, () => {
+      req.destroy(new Error('Robinhood request timed out'))
+    })
     if (options.body != null && options.body !== '') {
       req.write(options.body)
     }

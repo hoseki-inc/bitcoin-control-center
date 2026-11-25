@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { TestChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { QueryClient, notifyManager } from '@tanstack/react-query'
+import { MotionGlobalConfig } from 'framer-motion'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router'
@@ -25,6 +26,7 @@ const browser = await vi.hoisted(async () => {
 
 async function renderManualAccount(options?: { balanceSats?: string; addTransactionError?: string }) {
   const dom = browser.acquire()
+  MotionGlobalConfig.skipAnimations = true
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   notifyManager.setNotifyFunction((callback) => {
     act(callback)
@@ -66,6 +68,7 @@ async function renderManualAccount(options?: { balanceSats?: string; addTransact
     notifyManager.setNotifyFunction((callback) => {
       callback()
     })
+    MotionGlobalConfig.skipAnimations = false
     vi.unstubAllGlobals()
     dom.window.close()
   })
@@ -77,6 +80,7 @@ async function renderManualAccount(options?: { balanceSats?: string; addTransact
           <MemoryRouter initialEntries={['/accounts/manual/acct_manual']}>
             <Routes>
               <Route path="/accounts/manual/:accountId" element={<ManualAccountDetailsPage />} />
+              <Route path="/accounts" element={<div data-testid="accounts-list">Accounts</div>} />
             </Routes>
           </MemoryRouter>
         </TestChakraProvider>
@@ -101,6 +105,16 @@ async function renderManualAccount(options?: { balanceSats?: string; addTransact
     assert(found !== undefined, `Expected the ${label} button`)
     return found
   }
+  const dialog = (): Element | null => document.body.querySelector('[role="dialog"]')
+  const clickDialogButton = async (label: string): Promise<void> => {
+    const activeDialog = dialog()
+    assert(activeDialog !== null, 'Expected confirmation dialog to be open')
+    const found = Array.from(activeDialog.querySelectorAll('button')).find((item) => item.textContent === label)
+    assert(found !== undefined, `Expected the ${label} dialog button`)
+    await act(async () => {
+      found.click()
+    })
+  }
   const [balanceAmount, txAmount] = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="number"]'))
   const [balanceDate, txDate] = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="date"]'))
   const txType = container.querySelector<HTMLSelectElement>('select')
@@ -112,7 +126,20 @@ async function renderManualAccount(options?: { balanceSats?: string; addTransact
   assert.exists(txType, 'Expected the transaction type select')
   assert.exists(addToBalance, 'Expected the Add this amount to balance checkbox')
   requests.length = 0
-  return { container, requests, fill, button, balanceAmount, txAmount, balanceDate, txDate, txType, addToBalance }
+  return {
+    container,
+    requests,
+    fill,
+    button,
+    dialog,
+    clickDialogButton,
+    balanceAmount,
+    txAmount,
+    balanceDate,
+    txDate,
+    txType,
+    addToBalance,
+  }
 }
 
 it('keeps Update disabled while the balance date is cleared', async () => {
@@ -174,4 +201,37 @@ it.each([
   })
   expect(page.container.textContent).toContain('0.50000000 BTC')
   expect(page.container.textContent).not.toContain('Transactions')
+})
+
+it('confirms before removing a manual account: Cancel keeps it, Remove deletes it', async () => {
+  const page = await renderManualAccount()
+
+  await act(async () => {
+    page.button('Remove Account').click()
+  })
+  expect(page.dialog()?.textContent).toContain('Remove Paper wallet?')
+  expect(page.dialog()?.textContent).toContain(
+    'It will be removed from all your charts and totals, and its balance history and transactions will be deleted.',
+  )
+  expect(page.requests.map((request) => request.path)).not.toContain('portalProve.manual.delete')
+
+  await page.clickDialogButton('Cancel')
+  await vi.waitFor(() => {
+    expect(page.dialog()).toBeNull()
+  })
+  expect(page.requests.map((request) => request.path)).not.toContain('portalProve.manual.delete')
+  expect(page.container.textContent).toContain('Paper wallet')
+
+  await act(async () => {
+    page.button('Remove Account').click()
+  })
+  await page.clickDialogButton('Remove')
+
+  await vi.waitFor(() => {
+    expect(page.container.querySelector('[data-testid="accounts-list"]')).not.toBeNull()
+  })
+  expect(page.requests).toContainEqual({
+    path: 'portalProve.manual.delete',
+    input: { accountId: 'acct_manual' },
+  })
 })

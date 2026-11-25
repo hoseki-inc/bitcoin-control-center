@@ -79,13 +79,13 @@ describe('bundled Tor lifecycle', () => {
     expect(tor.getStatus()).toEqual({ state: 'starting', progress: 0, attempt: 1 })
     await vi.advanceTimersByTimeAsync(0)
     stdout.write(`${LISTENER}Bootstrapped 10% (conn_done): Connected to a relay\nBootstrapped 5`)
-    expect(tor.getStatus()).toEqual({ state: 'starting', progress: 10, attempt: 1 })
+    expect(tor.getStatus()).toEqual({ state: 'starting', progress: 10, attempt: 1, socksReady: true })
     stdout.write('0% (loading_descriptors): Loading relay descriptors\n')
-    expect(tor.getStatus()).toEqual({ state: 'starting', progress: 50, attempt: 1 })
+    expect(tor.getStatus()).toEqual({ state: 'starting', progress: 50, attempt: 1, socksReady: true })
     stdout.write('Bootstrapped 45% (requesting_descriptors): Asking for relay descriptors\n')
     expect(tor.getStatus().progress).toBe(50)
     stdout.write(`${LISTENER}Bootstrapped 100% (done): Done\n`)
-    await expect(pending).resolves.toEqual({ state: 'ready', attempt: 1 })
+    await expect(pending).resolves.toEqual({ state: 'ready', attempt: 1, socksReady: true })
   })
 
   it('reports missing binaries without claiming Tor is ready', async () => {

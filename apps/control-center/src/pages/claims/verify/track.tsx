@@ -11,19 +11,18 @@ import {
   Textarea,
 } from '@chakra-ui/react'
 import type { SingleSigAccountScriptType } from '@hoseki/packages/bitcoin'
-import { getRecordValue } from '@hoseki/packages/lib'
 import { Ok, Result } from '@hoseki/packages/result'
-import { RadioCardGroup } from '@hoseki/packages/ui/design-system'
-import { getDefaultEncoding } from '@hoseki/packages/ui/design-system/forms/bitcoin-input-form-fields'
+import { ScriptTypeRadioGroup, getUniqueFundedScriptType } from '@hoseki/packages/ui/design-system'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
-import { encodingsToLabels, labelsToEncodings, monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
+import { encodingsToLabels, monoInputProps } from '@hoseki/packages/ui/utils/bitcoin'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { parseNavigationState } from '../../../lib/navigation-state'
 import { trpc } from '../../../trpc'
 import { type TrackedWallet, isPlainXpub, parseTrackedWallet } from './tracked-wallet'
+import { useXpubScriptBalances } from './use-xpub-script-balances'
 
 export function ClaimsVerifyTrackPage(): JSX.Element {
   const navigate = useNavigate()
@@ -32,7 +31,7 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
 
   const [displayName, setDisplayName] = useState('')
   const [raw, setRaw] = useState('')
-  const [scriptType, setScriptType] = useState<SingleSigAccountScriptType>('p2pkh')
+  const [pickedScriptType, setPickedScriptType] = useState<SingleSigAccountScriptType | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
   const utils = trpc.useUtils()
@@ -40,8 +39,11 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
   const createMultisig = trpc.portalProve.accounts.create.multisig.useMutation()
   const trackExisting = trpc.portalProve.accounts.track.useMutation()
 
-  const wallet = parseTrackedWallet(raw, scriptType)
-  const isInvalid = raw.trim() !== '' && wallet === null
+  const plain = isPlainXpub(raw)
+  const { balances: scriptTypeBalances, isScanning } = useXpubScriptBalances(raw)
+  const effectiveScriptType = plain ? (pickedScriptType ?? getUniqueFundedScriptType(scriptTypeBalances)) : null
+  const wallet = parseTrackedWallet(raw, effectiveScriptType)
+  const isInvalid = raw.trim() !== '' && !plain && wallet === null
   const isValid = displayName.trim().length > 0 && wallet !== null
 
   /** Saves the wallet, or tracks the one already here, and says where it now opens. */
@@ -143,10 +145,10 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
             placeholder="zpub…, wpkh([…]xpub…) or wsh(sortedmulti(2,…))"
             value={raw}
             onChange={(e) => {
-              setRaw(e.target.value)
-              // Keep the type someone picked for a plain xpub; other keys say their own.
-              if (!isPlainXpub(e.target.value)) {
-                setScriptType(getDefaultEncoding(e.target.value.trim()))
+              const nextRaw = e.target.value
+              setRaw(nextRaw)
+              if (nextRaw.trim() !== raw.trim()) {
+                setPickedScriptType(null)
               }
             }}
             sx={{ resize: 'none' }}
@@ -162,18 +164,24 @@ export function ClaimsVerifyTrackPage(): JSX.Element {
           <FormErrorMessage>Enter an xpub, or a single-sig or multisig descriptor</FormErrorMessage>
         </FormControl>
 
-        {isPlainXpub(raw) && (
+        {plain && (
           <FormControl>
-            <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium">
-              Script Type
-            </FormLabel>
-            <RadioCardGroup
-              options={Object.keys(labelsToEncodings)}
+            <Flex align="center" justify="space-between" gap={2} mb={2}>
+              <FormLabel textStyle="text/sm" color="neutral.600" fontWeight="medium" mb={0}>
+                Script Type
+              </FormLabel>
+              {isScanning && (
+                <Text textStyle="label/xs" color="neutral.500">
+                  Checking Electrum…
+                </Text>
+              )}
+            </Flex>
+            <ScriptTypeRadioGroup
               name="script-type"
-              value={encodingsToLabels[scriptType]}
-              onChange={(label: string) => {
-                setScriptType(getRecordValue(labelsToEncodings, label) ?? 'p2pkh')
-              }}
+              value={effectiveScriptType}
+              onChange={setPickedScriptType}
+              balances={scriptTypeBalances}
+              isTestnet={raw.trim().startsWith('tpub')}
             />
           </FormControl>
         )}

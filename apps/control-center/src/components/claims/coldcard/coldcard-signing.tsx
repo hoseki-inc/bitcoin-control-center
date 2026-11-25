@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
+import { toastSigningError } from '../../../utils/signing-error-message'
 import { GenericError } from '../../errors/generic-error'
 import { ColdcardQrSigning } from './coldcard-qr-signing'
 import { Step10, Step11Ui, Step9Ui } from './coldcard-steps'
@@ -132,8 +133,8 @@ function SinglesigStep11({
       await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
 
       onSigningComplete()
-    } catch {
-      toast.error('The signing process did not complete successfully.')
+    } catch (cause) {
+      toastSigningError(cause, 'The signing process did not complete successfully.')
     }
   }
 

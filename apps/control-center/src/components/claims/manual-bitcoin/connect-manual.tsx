@@ -6,22 +6,27 @@ import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useNavigateToAnExistentOrNewClaim } from '../../../lib/claim-flow'
 import { parseNavigationState } from '../../../lib/navigation-state'
+import { useXpubScriptBalances } from '../../../pages/claims/verify/use-xpub-script-balances'
+import { handOffAccountScan } from '../../../pages/claims/verify/xpub-scan-store'
 
 export function ConnectManual(): JSX.Element {
   const navigate = useNavigate()
   const location = useLocation()
   const returnTo = parseNavigationState(location.state)?.returnTo ?? '/accounts'
   const [bitcoinInput, setBitcoinInput] = useState<BitcoinInput | null>(null)
+  const [rawInput, setRawInput] = useState('')
+  const trimmedRawInput = rawInput.trim()
+  const { balances: scriptTypeBalances } = useXpubScriptBalances(trimmedRawInput.startsWith('x') ? trimmedRawInput : '')
   const navigateToAnExistentOrNewClaim = useNavigateToAnExistentOrNewClaim()
 
   function handleFormSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
 
-    // If input is empty, skip creation
     if (bitcoinInput?.displayName == null || bitcoinInput.displayName === '') {
       return
     }
 
+    handOffAccountScan(bitcoinInput.data.toString())
     navigateToAnExistentOrNewClaim.execute({
       network: bitcoinInput.data.network.toString(),
       account: bitcoinInput.data.account,
@@ -38,6 +43,8 @@ export function ConnectManual(): JSX.Element {
         <BitcoinManualConnect
           bitcoinInput={bitcoinInput}
           setBitcoinInput={setBitcoinInput}
+          scriptTypeBalances={scriptTypeBalances}
+          onRawInputChange={setRawInput}
           pt={12}
           pb={WizardFooter.padding}
         />

@@ -118,6 +118,7 @@ async function readLimitedText(response: Response, limit: number): Promise<Resul
 export class ReleaseCheckService {
   private readonly logger: Logger
   private readonly installed: ReleaseVersion | null
+  private readonly url: string
   private readonly fetch: Fetch
   private newer: ReleaseVersion | null = null
   /** When the next check is due; null means now. */
@@ -140,6 +141,8 @@ export class ReleaseCheckService {
      * passes an empty string when a packaged build's version is missing, which is logged.
      */
     installedVersion?: string
+    /** Overrides the release check endpoint (used by local verify against a loopback fake). */
+    url?: string
     /** Tests replace the network. */
     fetch?: Fetch
   }) {
@@ -149,6 +152,7 @@ export class ReleaseCheckService {
       this.logger.warn('Release checks are off: this desktop build has no valid release version')
     }
     this.installed = installed?.unwrapOr(null) ?? null
+    this.url = deps.url ?? LATEST_RELEASE_URL
     this.fetch = deps.fetch ?? (async (url, init): Promise<Response> => fetch(url, init))
   }
 
@@ -224,7 +228,7 @@ export class ReleaseCheckService {
   private async fetchLatest(): Promise<Result<ReleaseVersion, CheckFailure>> {
     let response: Response
     try {
-      response = await this.fetch(LATEST_RELEASE_URL, {
+      response = await this.fetch(this.url, {
         // Only the request itself: Sentinel keeps no cookies, and the app version is not sent.
         headers: { Accept: 'application/json' },
         // The address is fixed, so a redirect is never followed; it counts as an unusable answer.
