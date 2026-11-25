@@ -599,6 +599,35 @@ const noSwallowedSigningErrorRule = defineRule({
   },
 })
 
+/** Electron and StartOS must draw the UI without Hoseki's asset CDN, so images ship in apps/control-center/public/images. */
+// oxlint-disable-next-line control-center/no-remote-assets -- the host this rule looks for.
+const remoteAssetHost = 'assets.hoseki.app'
+
+const noRemoteAssetsRule = defineRule({
+  meta: {
+    type: 'problem',
+    docs: { description: "Disallow URLs on Hoseki's asset CDN; bundle the file instead." },
+    messages: {
+      bundleIt:
+        "Copy the file into apps/control-center/public/images and use its /images/... path instead of Hoseki's asset CDN.",
+    },
+  },
+  createOnce(context) {
+    return {
+      Literal(node) {
+        if (node.raw?.includes(remoteAssetHost) === true) {
+          context.report({ node, messageId: 'bundleIt' })
+        }
+      },
+      TemplateElement(node) {
+        if (node.value.raw.includes(remoteAssetHost)) {
+          context.report({ node, messageId: 'bundleIt' })
+        }
+      },
+    }
+  },
+})
+
 /** Rules for Control Center's own conventions. */
 export default eslintCompatPlugin({
   meta: { name: 'control-center' },
@@ -607,6 +636,7 @@ export default eslintCompatPlugin({
     'exchange-provider-input': exchangeProviderInputRule,
     'feature-boundary': featureBoundaryRule,
     'format-usd-rounds': formatUsdRoundsRule,
+    'no-remote-assets': noRemoteAssetsRule,
     'no-swallowed-signing-error': noSwallowedSigningErrorRule,
     'use-text-style': useTextStyleRule,
   },

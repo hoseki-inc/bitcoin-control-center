@@ -1,5 +1,4 @@
 import { Box, Flex, Grid, Stack, Text, chakra } from '@chakra-ui/react'
-import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { SectionTitle } from '@hoseki/packages/ui/prove-verify-ui'
 import type { SupportedHardwareWallet } from '@hoseki/packages/wallet/hardware-wallet'
 
@@ -19,7 +18,7 @@ export function SelectWalletType({
       <Grid templateColumns="repeat(4, 1fr)" gap={8}>
         <ConnectionType
           title="Trezor"
-          imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}
+          imagePath="/images/hardware-wallets/trezor.svg"
           imageAltText="Connect your Trezor"
           onClick={() => {
             onConnectionTypeClick('trezor')
@@ -27,7 +26,7 @@ export function SelectWalletType({
         />
         <ConnectionType
           title="Ledger"
-          imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`}
+          imagePath="/images/hardware-wallets/ledger.svg"
           imageAltText="Connect your Ledger"
           onClick={() => {
             onConnectionTypeClick('ledger')
@@ -35,7 +34,7 @@ export function SelectWalletType({
         />
         <ConnectionType
           title="COLDCARD"
-          imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`}
+          imagePath="/images/hardware-wallets/coldcard.svg"
           imageAltText="Connect your Coldcard"
           onClick={() => {
             onConnectionTypeClick('coldcard')

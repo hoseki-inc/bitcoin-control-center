@@ -16,7 +16,6 @@ import {
   useBreakpointValue,
   useToken,
 } from '@chakra-ui/react'
-import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { motion } from '@hoseki/packages/ui/design-system/animations/motion'
 import { Header, Menu } from '@hoseki/packages/ui/prove-verify-ui/layout/header'
 import { Logo } from '@hoseki/packages/ui/prove-verify-ui/logo'
@@ -217,9 +216,9 @@ function Wordmark({ src }: { src: string }): JSX.Element {
 
 /** The same choices, pictures and names as Add Account. */
 const ACCOUNT_TYPES: Array<{ name: string; media: ReactNode }> = [
-  { name: 'Trezor', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`} /> },
-  { name: 'COLDCARD', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`} /> },
-  { name: 'Ledger', media: <Wordmark src={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`} /> },
+  { name: 'Trezor', media: <Wordmark src="/images/hardware-wallets/trezor.svg" /> },
+  { name: 'COLDCARD', media: <Wordmark src="/images/hardware-wallets/coldcard.svg" /> },
+  { name: 'Ledger', media: <Wordmark src="/images/hardware-wallets/ledger.svg" /> },
   { name: 'Keystone', media: <Wordmark src="/images/hardware-wallets/keystone-logo.svg" /> },
   { name: 'Bitkey', media: <Wordmark src="/images/hardware-wallets/bitkey-logo.svg" /> },
   { name: 'Multisig', media: MultisigImage },

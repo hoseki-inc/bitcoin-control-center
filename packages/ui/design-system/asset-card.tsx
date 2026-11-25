@@ -1,9 +1,15 @@
 import { Box, Image, type StackProps, Text, forwardRef } from '@chakra-ui/react'
 import type Decimal from 'decimal.js'
-import { HOSEKI_ASSETS_CDN_URLS } from '../../constants'
 import { formatUsd } from '../utils'
 
 export type Currency = 'USDC' | 'USDT' | 'ETH' | 'BTC'
+
+const coinLogos: Record<Currency, string> = {
+  BTC: '/images/coin_logos/btc.svg',
+  ETH: '/images/coin_logos/eth.svg',
+  USDC: '/images/coin_logos/usdc.svg',
+  USDT: '/images/coin_logos/usdt.svg',
+}
 
 export type AssetCardProps = {
   currency: Currency
@@ -49,7 +55,7 @@ export const AssetCard = forwardRef<AssetCardProps, 'div'>(
             onClick={onClick}
           />
         )}
-        <Image src={HOSEKI_ASSETS_CDN_URLS.COIN_LOGOS[currency]} alt={currency} boxSize="32px" mx="auto" />
+        <Image src={coinLogos[currency]} alt={currency} boxSize="32px" mx="auto" />
 
         <Text mt={2} textStyle="label/md" fontWeight="medium" color="neutral.600">
           {currency}
