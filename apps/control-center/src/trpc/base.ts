@@ -47,7 +47,12 @@ export const queryClient: QueryClient = new QueryClient({
   mutationCache: new MutationCache({
     // Data is reused for 15 seconds, so any change marks all of it stale: whatever page shows next
     // fetches again, as every page did before. Data on screen refreshes where the change asks for it.
-    onSuccess: () => {
+    // Background refresh mutations that inspect for real changes themselves opt out via
+    // `meta: { invalidatesQueries: false }`.
+    onSuccess: (_data, _variables, _context, mutation) => {
+      if (mutation.options.meta?.['invalidatesQueries'] === false) {
+        return
+      }
       void queryClient.invalidateQueries({ refetchType: 'none' })
     },
   }),

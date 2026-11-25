@@ -217,3 +217,24 @@ it('uses the Electrum server chosen in Settings after the source was made', asyn
 
   expect((await source.lookup(tx.txid, height, running())).isOk()).toBe(true)
 })
+
+it('skips block header RPCs and still verifies txid when blockTimes is skip', async () => {
+  const address = walletAddress()
+  const tx = rawTx('coinbase', [{ address, value: 50_000 }])
+  const wrongTx = rawTx('coinbase', [{ address, value: 1 }])
+  const badTxid = 'ef'.repeat(32)
+  const { onchainProvider, getBlock } = setup([tx, { ...wrongTx, txid: badTxid }])
+  const source = new ElectrumSource(onchainProvider, { blockTimes: 'skip' })
+
+  const looked = (await source.lookup(tx.txid, height, running())).unwrap()
+  expect(looked.txid).toBe(tx.txid)
+  expect(looked.blockHeight).toBe(height)
+  expect(looked.blockTime).toBeNull()
+  expect(looked.outputs).toEqual([{ address, value: 50_000 }])
+  expect(getBlock).not.toHaveBeenCalled()
+
+  const mismatch = (await source.lookup(badTxid, height, running())).expectErr('mismatched txid must still fail')
+  expect(mismatch.error.kind).toBe('invalid')
+  expect(mismatch.retry).toBeNull()
+  expect(getBlock).not.toHaveBeenCalled()
+})

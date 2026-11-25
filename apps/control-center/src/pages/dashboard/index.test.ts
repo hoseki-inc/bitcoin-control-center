@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => {
     historyRefreshingAccountIds: Array<string>(),
     historyFailedAccountIds: Array<string>(),
     walletBalancesAsOf: {},
+    walletBalancesSats: {},
   }
   return {
     base,
@@ -760,6 +761,108 @@ describe('custom portfolio range UI', () => {
       expect(container.textContent).toContain('Preparing history for this date range')
     })
   })
+
+  it.each(['All', 'Custom'])(
+    'keeps both charts in place without blanking when switching account selection in %s',
+    async (range) => {
+      await withTestSetup(async () => {
+        mocks.holdings = [
+          {
+            id: 'holding',
+            displayName: 'Test holding',
+            balance: '100',
+            currency: 'BTC' as const,
+            balanceAsOf: null,
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+          {
+            id: 'other',
+            displayName: 'Other holding',
+            balance: '250',
+            currency: 'BTC' as const,
+            balanceAsOf: null,
+            createdAt: '2026-01-01T00:00:00Z',
+          },
+        ]
+        mocks.claims = [claimFixture('re_clmx_wallet', 'Test wallet')]
+        mocks.rangeData = {
+          ...mocks.base,
+          historicalData: [
+            { timestamp: '2020-01-01T00:00:00.000Z', totalBalance: '50' },
+            { timestamp: '2020-01-03T23:59:59.999Z', totalBalance: '75' },
+          ],
+          historySyncedAccountIds: ['re_clmx_wallet'],
+        }
+        await click(range)
+        if (range === 'Custom') {
+          await changeDate('portfolio-range-start', '2020-01-01')
+          await changeDate('portfolio-range-end', '2020-01-03')
+          await click('Apply')
+        }
+        expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+        const settledChart = chartData()
+
+        const defaultQuery = mocks.useQuery.getMockImplementation()
+        assert.exists(defaultQuery, 'Expected the default query implementation')
+        let filteredState: PortfolioQuery = {
+          data: undefined,
+          isLoading: true,
+          isFetching: true,
+          isPreviousData: false,
+          error: null,
+          refetch: mocks.refetch,
+        }
+        mocks.useQuery.mockImplementation((input, options) => {
+          if (input.claimIds === undefined) {
+            return defaultQuery(input, options)
+          }
+          return filteredState
+        })
+
+        // Switching from All accounts -> single holding keeps the prior charts inert/dimmed, never blanks or appends new balance.
+        await click('Select holding')
+        expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+        expect(container.querySelectorAll('[inert]')).toHaveLength(2)
+        expect(chartData()).toEqual(settledChart)
+        expect(container.textContent).not.toContain('Preparing history for this date range')
+
+        // Switching to another selection while previousData carries syncing IDs does not leak into historyNeedsInitialLoad.
+        filteredState = {
+          data: {
+            ...mocks.rangeData,
+            historySyncingAccountIds: ['re_clmx_wallet'],
+          },
+          isLoading: false,
+          isFetching: true,
+          isPreviousData: true,
+          error: null,
+          refetch: mocks.refetch,
+        }
+        await click('Select wallet')
+        expect(container.querySelectorAll('[data-chart]')).toHaveLength(2)
+        expect(container.querySelectorAll('[inert]')).toHaveLength(2)
+        expect(chartData()).toEqual(settledChart)
+        expect(container.textContent).not.toContain('Preparing history for this date range')
+
+        // Once the selected wallet's OWN data arrives and genuinely needs initial backfill, show Preparing history.
+        filteredState = {
+          data: {
+            ...mocks.rangeData,
+            historySyncingAccountIds: ['re_clmx_wallet'],
+            historySyncedAccountIds: [],
+          },
+          isLoading: false,
+          isFetching: false,
+          isPreviousData: false,
+          error: null,
+          refetch: mocks.refetch,
+        }
+        await render()
+        expect(container.querySelectorAll('[data-chart]')).toHaveLength(0)
+        expect(container.textContent).toContain('Preparing history for this date range')
+      })
+    },
+  )
 
   it.each([false, true])('explains failed history and continues polling (refresh: %s)', async (refresh) => {
     await withTestSetup(async () => {

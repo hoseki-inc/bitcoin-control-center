@@ -387,3 +387,51 @@ it('still reads as syncing when the server changes during a read, so pages keep 
   const [read] = await service.readBalances(['first'])
   expect(read).toMatchObject({ accountId: 'first', balanceSats: 900n, syncing: true })
 })
+
+it('reuses a fresh tip within reuseWithinMs without calling Electrum, and refreshes after expiry', async () => {
+  const { service, tipReads } = await setup()
+  await expect(service.currentTip(1_000, { reuseWithinMs: 30_000 })).resolves.toEqual({ tip, failed: false })
+  expect(tipReads).toHaveBeenCalledTimes(1)
+
+  // Even if Electrum hangs, a read within reuseWithinMs returns immediately without calling Electrum.
+  tipReads.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+  vi.setSystemTime(Date.now() + 30_000)
+  await expect(service.currentTip(1_000, { reuseWithinMs: 30_000 })).resolves.toEqual({ tip, failed: false })
+  expect(tipReads).toHaveBeenCalledTimes(1)
+
+  // Past reuseWithinMs + 1, calls Electrum again.
+  const nextTip: Block = { ...tip, height: tip.height + 1, hash: 'next-tip' }
+  tipReads.mockReturnValueOnce(new AsyncResult(Promise.resolve(Ok(nextTip))))
+  vi.setSystemTime(Date.now() + 1)
+  await expect(service.currentTip(1_000, { reuseWithinMs: 30_000 })).resolves.toEqual({ tip: nextTip, failed: false })
+  expect(tipReads).toHaveBeenCalledTimes(2)
+})
+
+it('recentTip reuses a fresh tip and coalesces concurrent reads', async () => {
+  const { service, tipReads } = await setup()
+  let resolveTip: ((result: Result<Block, Error>) => void) | undefined
+  tipReads.mockReturnValueOnce(
+    new AsyncResult(
+      new Promise((resolve) => {
+        resolveTip = resolve
+      }),
+    ),
+  )
+
+  const read1 = service.recentTip(30_000)
+  const read2 = service.recentTip(30_000)
+  expect(tipReads).toHaveBeenCalledTimes(1)
+  resolveTip?.(Ok(tip))
+  expect((await read1).unwrap()).toEqual(tip)
+  expect((await read2).unwrap()).toEqual(tip)
+
+  // Reuses cached tip within 30s.
+  vi.setSystemTime(Date.now() + 30_000)
+  expect((await service.recentTip(30_000)).unwrap()).toEqual(tip)
+  expect(tipReads).toHaveBeenCalledTimes(1)
+
+  // Expires after 30s + 1 and fetches again.
+  vi.setSystemTime(Date.now() + 1)
+  expect((await service.recentTip(30_000)).unwrap()).toEqual(tip)
+  expect(tipReads).toHaveBeenCalledTimes(2)
+})

@@ -3,11 +3,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { Account } from '@hoseki/packages/bitcoin/account'
+import { bitcoin } from '@hoseki/packages/bitcoin/lib'
 import { Network } from '@hoseki/packages/bitcoin/network'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
 import { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
+import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { Txid } from '@hoseki/packages/bitcoin/txid'
 import { ElectrumClient } from '@hoseki/packages/clients/electrum'
+import { ElectrumServerError } from '@hoseki/packages/clients/electrum/lib/protocol'
 import { IndexMap } from '@hoseki/packages/collection'
 import { AsyncResult, Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import { Wallets } from '@hoseki/packages/testing'
@@ -31,6 +34,7 @@ import { EtfService } from '../etf'
 import { ExchangeService } from '../exchanges'
 import { ManualService } from '../manual'
 import { PriceService } from '../price'
+import { TransactionLoadError } from '../statements'
 import { ControlCenterService } from './service'
 
 type Deferred<T> = { promise: Promise<T>; resolve: (value: T) => void }
@@ -61,18 +65,33 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve }
 }
 
-async function createHarness() {
+async function createHarness(options?: { electrumHistory?: boolean }) {
   const directory = mkdtempSync(join(tmpdir(), 'sentinel-history-test-'))
-  const logger = pino({ level: 'silent' })
+  const logLines: string[] = []
+  const logger =
+    options?.electrumHistory === true
+      ? pino(
+          { level: 'warn' },
+          {
+            write(chunk: string): void {
+              logLines.push(chunk)
+            },
+          },
+        )
+      : pino({ level: 'silent' })
   const db = await openDrizzleDatabase(directory, logger)
   await db.insert(accounts).values({ id: accountId, descriptor: account.toString(), displayName: 'Test wallet' })
+  const electrum = new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' })
   const onchainProvider = new ElectrumProvider(Network.Mainnet, {
     logger,
-    electrum: new ElectrumClient({ host: 'localhost', port: 50001, protocol: 'tcp' }),
+    electrum,
   })
   const provider = {
     getBlocksTip: vi.spyOn(onchainProvider, 'getBlocksTip').mockImplementation(asyncFn(async () => Ok(tip))),
-    getBlock: vi.spyOn(onchainProvider, 'getBlock').mockImplementation(asyncFn(async () => Ok(tip))),
+    getBlock:
+      options?.electrumHistory === true
+        ? vi.spyOn(onchainProvider, 'getBlock')
+        : vi.spyOn(onchainProvider, 'getBlock').mockImplementation(asyncFn(async () => Ok(tip))),
     getConfirmedAccountBalances: vi
       .spyOn(onchainProvider, 'getConfirmedAccountBalances')
       .mockImplementation(asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 100n]])))),
@@ -87,6 +106,10 @@ async function createHarness() {
     .mockImplementation(
       asyncFn(async () => Ok({ value: new Decimal(50_000), asOf: now, source: 'block' as const, lastKnown: false })),
     )
+  const sleepCalls: number[] = []
+  const sleep = async (ms: number): Promise<void> => {
+    sleepCalls.push(ms)
+  }
   const service = new ControlCenterService({
     db,
     logger,
@@ -96,12 +119,15 @@ async function createHarness() {
     etfService: new EtfService({ db, logger }),
     priceService,
     walletBalances: new WalletBalanceService({ db, logger, onchainProvider }),
+    sleep: options?.electrumHistory === true ? sleep : undefined,
   })
   // Replace only external history fetching; storage, coverage, scheduling and responses remain real.
   const history = vi
     .fn(service['getTransactionEntriesByAccountSinceBlock'])
     .mockResolvedValue(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-  service['getTransactionEntriesByAccountSinceBlock'] = history
+  if (options?.electrumHistory !== true) {
+    service['getTransactionEntriesByAccountSinceBlock'] = history
+  }
   const sync = async (from = 0, to = tip.height): Promise<void> => {
     await service['recordAccountHistorySync'](accountId, { fromBlockHeight: from, toBlockHeight: to }, tip)
   }
@@ -124,12 +150,28 @@ async function createHarness() {
     db.$client.close()
     rmSync(directory, { recursive: true, force: true })
   }
-  return { directory, db, provider, service, history, price, sync, run, rows, coverage, close }
+  return {
+    directory,
+    db,
+    electrum,
+    onchainProvider,
+    provider,
+    service,
+    history,
+    price,
+    logLines,
+    sleepCalls,
+    sync,
+    run,
+    rows,
+    coverage,
+    close,
+  }
 }
 
 let harness: Awaited<ReturnType<typeof createHarness>>
 
-async function withTestSetup(run: () => Promise<void>): Promise<void> {
+async function withTestSetup(run: () => Promise<void>, options?: { electrumHistory?: boolean }): Promise<void> {
   // Vitest owns teardown so it has its own timeout and runs once, even after a test timeout.
   onTestFinished(async () => {
     harness.close()
@@ -138,7 +180,7 @@ async function withTestSetup(run: () => Promise<void>): Promise<void> {
   })
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(now)
-  harness = await createHarness()
+  harness = await createHarness(options)
 
   await run()
 }
@@ -183,7 +225,7 @@ describe('portfolio history completion', () => {
   it('returns the new snapshots when a backfill finishes while another data source is loading', async () => {
     await withTestSetup(async () => {
       const { service, history, price } = harness
-      const pendingHistory = deferred<Result<TransactionEntry[], Error>>()
+      const pendingHistory = deferred<Result<TransactionEntry[], TransactionLoadError>>()
       const pendingPrice = deferred<ReturnType<typeof Ok<{ value: Decimal; asOf: Date }>>>()
       history.mockReturnValueOnce(pendingHistory.promise)
       price.mockReturnValueOnce(new AsyncResult(pendingPrice.promise))
@@ -205,7 +247,7 @@ describe('portfolio history completion', () => {
 
   it('reports loading until the requested full history has completed', async () => {
     await withTestSetup(async () => {
-      const pending = deferred<Result<TransactionEntry[], Error>>()
+      const pending = deferred<Result<TransactionEntry[], TransactionLoadError>>()
       harness.history.mockReturnValueOnce(pending.promise)
       const data = (await harness.service.getData({ customDateRange: customRange })).unwrap()
       expect(data.historySyncingAccountIds).toEqual([accountId])
@@ -234,7 +276,7 @@ describe('portfolio history completion', () => {
       await harness.sync()
       await harness.service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
       harness.provider.getBlocksTip.mockResolvedValue(Ok(nextTip))
-      const pending = deferred<Result<TransactionEntry[], Error>>()
+      const pending = deferred<Result<TransactionEntry[], TransactionLoadError>>()
       harness.history.mockReturnValueOnce(pending.promise)
       const data = (await harness.service.getData({ timeRange: 'all' })).unwrap()
       expect(data.historySyncingAccountIds).toEqual([accountId])
@@ -319,7 +361,7 @@ describe('portfolio history completion', () => {
       await harness.sync()
       await harness.db.update(accountHistorySyncs).set({ syncVersion: 4 })
       await expect(harness.run()).resolves.toBe(100n)
-      expect(harness.history).toHaveBeenCalledWith(account, 0)
+      expect(harness.history).toHaveBeenCalledWith(account, 0, tip.height)
       await expect(
         harness.db.select({ sync_version: accountHistorySyncs.syncVersion }).from(accountHistorySyncs),
       ).resolves.toEqual([{ sync_version: 5 }])
@@ -371,7 +413,7 @@ describe('history scan boundaries', () => {
       harness.provider.getBlocksTip.mockResolvedValueOnce(Ok(tip)).mockResolvedValue(Ok(nextTip))
       harness.history
         .mockResolvedValueOnce(Ok([entry(100n, '2020-01-02T12:00:00.000Z')]))
-        .mockResolvedValueOnce(Err(new Error('Tail unavailable')))
+        .mockResolvedValueOnce(Err(new TransactionLoadError('unavailable', 'Tail unavailable')))
       await expect(harness.run()).resolves.toBeNull()
       await expect(harness.coverage()).resolves.toEqual([])
       await expect(harness.rows()).resolves.toEqual([])
@@ -434,7 +476,7 @@ describe('history scan boundaries', () => {
 
   it('does not save snapshots or completion after a partial history failure', async () => {
     await withTestSetup(async () => {
-      harness.history.mockResolvedValue(Err(new Error('Electrum unavailable')))
+      harness.history.mockResolvedValue(Err(new TransactionLoadError('unavailable', 'Electrum unavailable')))
       await expect(harness.run()).resolves.toBeNull()
       await expect(harness.coverage()).resolves.toEqual([])
       await expect(harness.rows()).resolves.toEqual([])
@@ -443,7 +485,7 @@ describe('history scan boundaries', () => {
 
   it('does not let an invalidated background scan overwrite account history', async () => {
     await withTestSetup(async () => {
-      const pending = deferred<Result<TransactionEntry[], Error>>()
+      const pending = deferred<Result<TransactionEntry[], TransactionLoadError>>()
       harness.history.mockReturnValueOnce(pending.promise)
       const result = harness.run()
       await vi.waitFor(async () => {
@@ -887,7 +929,7 @@ describe('history retry coordination', () => {
   it('reports persistent failures without stopping automatic retries, then clears the error on success', async () => {
     await withTestSetup(async () => {
       const { service, history } = harness
-      history.mockResolvedValue(Err(new Error('Synthetic address failure')))
+      history.mockResolvedValue(Err(new TransactionLoadError('history', 'Synthetic address failure')))
       for (let attempt = 1; attempt <= 12; attempt++) {
         await service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
         await vi.waitFor(async () => {
@@ -920,7 +962,7 @@ describe('history retry coordination', () => {
     await withTestSetup(async () => {
       const { service, history } = harness
       await harness.sync(tip.height - 60_000)
-      history.mockResolvedValueOnce(Err(new Error('Electrum temporarily unavailable')))
+      history.mockResolvedValueOnce(Err(new TransactionLoadError('unreachable', 'Electrum temporarily unavailable')))
       const request = async (): Promise<void> => {
         await service['queueAccountHistoryBackfill'](accountId, account, 100n, new Date(0), true)
       }
@@ -990,7 +1032,45 @@ describe('balances counted in the portfolio', () => {
       // While it waits to retry, a scan that never answers doesn't hold the next read.
       provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
       const again = (await service.getData({ timeRange: '90d' })).unwrap()
-      expect(again).toMatchObject({ currentTotalBalance: '0', walletBalancesAsOf: { [accountId]: null } })
+      expect(again).toMatchObject({
+        currentTotalBalance: '0',
+        walletBalancesAsOf: { [accountId]: null },
+        walletBalancesSats: { [accountId]: null },
+      })
+    })
+  })
+
+  it('populates walletBalancesSats with exact strings for positive and zero scanned balances and null for provisional unknown', async () => {
+    await withTestSetup(async () => {
+      const { service, provider } = harness
+      provider.getConfirmedAccountBalances.mockImplementation(
+        asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 0n]]))),
+      )
+      const zeroData = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(zeroData.walletBalancesSats).toEqual({ [accountId]: '0' })
+      expect(zeroData.walletBalancesAsOf[accountId]).not.toBeNull()
+    })
+  })
+
+  it('reuses a fresh tip on a second portfolio.getData click within 30s without calling getBlocksTip', async () => {
+    await withTestSetup(async () => {
+      const { service, provider } = harness
+      await harness.sync()
+      await service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+
+      const first = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(first.historySyncedAccountIds).toEqual([accountId])
+      await vi.waitFor(() => {
+        expect(service['accountHistoryBackfillsInFlight'].size).toBe(0)
+      })
+      const callsAfterFirst = provider.getBlocksTip.mock.calls.length
+
+      // Even if getBlocksTip hangs now, a second click within 30s resolves with zero new tip RPCs.
+      provider.getBlocksTip.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const second = (await service.getData({ timeRange: '90d', accountIds: [accountId] })).unwrap()
+      expect(second.historySyncedAccountIds).toEqual([accountId])
+      expect(second.walletBalancesSats).toEqual({ [accountId]: '100' })
+      expect(provider.getBlocksTip).toHaveBeenCalledTimes(callsAfterFirst)
     })
   })
 })
@@ -1112,4 +1192,227 @@ describe('exchange read-path guards', () => {
       ).resolves.toEqual([{ balanceSats: '10000000' }, { balanceSats: 'NaN' }, { balanceSats: '25000000' }])
     })
   })
+})
+
+describe('electrum history backfill integration', () => {
+  const externalAddr = Wallets.singlesigLegacyAccount.receiveAddress(0, Network.Mainnet).toString()
+  const rangeStart90d = new Date('2026-06-07T11:00:00.000Z')
+
+  function blockHeaderHex(timestampSeconds: number, nonce: number): string {
+    const header = Buffer.alloc(80)
+    header.writeUInt32LE(timestampSeconds, 68)
+    header.writeUInt32LE(nonce, 76)
+    return header.toString('hex')
+  }
+
+  interface RawTx {
+    hex: string
+    txid: string
+  }
+
+  function buildTx(
+    spends: Array<{ txid: string; vout: number }> | 'coinbase',
+    outputs: Array<{ address: string; value: number }>,
+    locktime = 0,
+  ): RawTx {
+    const tx = new bitcoin.Transaction()
+    tx.version = 2
+    tx.locktime = locktime
+    if (spends === 'coinbase') {
+      tx.addInput(Buffer.alloc(32), 0xffffffff, 0xffffffff, Buffer.from('03a08601', 'hex'))
+    } else {
+      for (const { txid, vout } of spends) {
+        tx.addInput(Buffer.from(txid, 'hex').reverse(), vout)
+      }
+    }
+    for (const { address, value } of outputs) {
+      tx.addOutput(bitcoin.address.toOutputScript(address, bitcoin.networks.bitcoin), value)
+    }
+    return { hex: tx.toHex(), txid: tx.getId() }
+  }
+
+  it('backfills a 90-day window without fetching external sender prevouts, unconfirmed txs, or parent headers', async () => {
+    await withTestSetup(
+      async () => {
+        const { electrum, onchainProvider, service } = harness
+        const [receive0, receive1] = account.receiveAddresses(0, 2, Network.Mainnet)
+        const [change0] = account.changeAddresses(0, 1, Network.Mainnet)
+        assert(receive0 !== undefined && receive1 !== undefined && change0 !== undefined)
+
+        const h0 = 850_000
+        const h1 = 895_000
+        const h2 = 898_000
+        const h1Time = '2026-08-01T12:00:00.000Z'
+        const h2Time = '2026-08-20T12:00:00.000Z'
+
+        const extParent1 = buildTx('coinbase', [{ address: externalAddr, value: 40_000 }], 1)
+        const extParent2 = buildTx('coinbase', [{ address: externalAddr, value: 30_000 }], 2)
+        const fundingTx = buildTx(
+          [{ txid: 'aa'.repeat(32), vout: 0 }],
+          [{ address: receive0.toString(), value: 100_000 }],
+        )
+        const spendTx = buildTx(
+          [{ txid: fundingTx.txid, vout: 0 }],
+          [
+            { address: externalAddr, value: 30_000 },
+            { address: change0.toString(), value: 69_000 },
+          ],
+        )
+        const receiveTx = buildTx(
+          [
+            { txid: extParent1.txid, vout: 0 },
+            { txid: extParent2.txid, vout: 0 },
+          ],
+          [{ address: receive1.toString(), value: 50_000 }],
+        )
+        const unconfTx = buildTx(
+          [{ txid: 'bb'.repeat(32), vout: 0 }],
+          [{ address: receive1.toString(), value: 12_000 }],
+        )
+
+        const histories = new Map<string, Array<{ tx_hash: string; height: number }>>([
+          [
+            addressToScripthash(receive0).unwrap(),
+            [
+              { tx_hash: fundingTx.txid, height: h0 },
+              { tx_hash: spendTx.txid, height: h1 },
+            ],
+          ],
+          [
+            addressToScripthash(receive1).unwrap(),
+            [
+              { tx_hash: receiveTx.txid, height: h2 },
+              { tx_hash: unconfTx.txid, height: 0 },
+            ],
+          ],
+          [addressToScripthash(change0).unwrap(), [{ tx_hash: spendTx.txid, height: h1 }]],
+        ])
+        const txMap = new Map<string, string>([
+          [extParent1.txid, extParent1.hex],
+          [extParent2.txid, extParent2.hex],
+          [fundingTx.txid, fundingTx.hex],
+          [spendTx.txid, spendTx.hex],
+          [receiveTx.txid, receiveTx.hex],
+          [unconfTx.txid, unconfTx.hex],
+        ])
+        const blockTimes = new Map<number, number>([
+          [h0, Math.floor(Date.parse('2025-09-01T00:00:00.000Z') / 1000)],
+          [h1, Math.floor(Date.parse(h1Time) / 1000)],
+          [h2, Math.floor(Date.parse(h2Time) / 1000)],
+        ])
+
+        vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(
+          asyncFn(async () => Ok({ lastUsedReceiveIndex: 1, lastUsedChangeIndex: 0 })),
+        )
+        vi.spyOn(electrum, 'getHistory').mockImplementation(
+          asyncFn(async (scripthash: string) => Ok(histories.get(scripthash) ?? [])),
+        )
+        const requestedTxids: string[] = []
+        vi.spyOn(electrum, 'getTransaction').mockImplementation(
+          asyncFn(async (txid: string) => {
+            requestedTxids.push(txid)
+            const hex = txMap.get(txid)
+            return hex === undefined ? Err(new ElectrumServerError(`Unknown ${txid}`)) : Ok(hex)
+          }),
+        )
+        const requestedHeaderHeights: number[] = []
+        vi.spyOn(electrum, 'getBlockHeader').mockImplementation(
+          asyncFn(async (blockHeight: number) => {
+            requestedHeaderHeights.push(blockHeight)
+            const ts = blockTimes.get(blockHeight) ?? Math.floor(tip.timestamp.getTime() / 1000)
+            return Ok(blockHeaderHex(ts, blockHeight))
+          }),
+        )
+
+        const result = await service['ensureAccountHistorySnapshots'](
+          accountId,
+          account,
+          119_000n,
+          rangeStart90d,
+          false,
+          undefined,
+          tip,
+        )
+
+        expect(result).toBe(119_000n)
+        await expect(harness.coverage()).resolves.toEqual([{ from_block_height: 886_752, to_block_height: 900_000 }])
+        const snapshots = await harness.rows()
+        expect(snapshots).toHaveLength(4)
+        expect(snapshots[0]?.balance_sats).toBe('100000')
+        expect(snapshots.find((s) => s.timestamp === h1Time)?.balance_sats).toBe('69000')
+        expect(snapshots.find((s) => s.timestamp === h2Time)?.balance_sats).toBe('119000')
+        expect(snapshots.at(-1)?.balance_sats).toBe('119000')
+
+        expect(requestedTxids).not.toContain(extParent1.txid)
+        expect(requestedTxids).not.toContain(extParent2.txid)
+        expect(requestedTxids).not.toContain(unconfTx.txid)
+        expect(requestedTxids).toContain(fundingTx.txid)
+        expect(requestedTxids).toContain(spendTx.txid)
+        expect(requestedTxids).toContain(receiveTx.txid)
+        expect(requestedHeaderHeights).not.toContain(h0)
+      },
+      { electrumHistory: true },
+    )
+  })
+
+  it.each(['server rejection', 'mismatched txid'] as const)(
+    'keeps snapshots atomic and redacts txids from warning logs on %s',
+    async (failureKind) => {
+      await withTestSetup(
+        async () => {
+          const { electrum, onchainProvider, service, logLines } = harness
+          const [receive0] = account.receiveAddresses(0, 1, Network.Mainnet)
+          assert(receive0 !== undefined)
+
+          const receiveTx = buildTx('coinbase', [{ address: receive0.toString(), value: 50_000 }], 1)
+          const wrongTx = buildTx('coinbase', [{ address: receive0.toString(), value: 1 }], 2)
+
+          vi.spyOn(onchainProvider, 'discoverAccount').mockImplementation(
+            asyncFn(async () => Ok({ lastUsedReceiveIndex: 0, lastUsedChangeIndex: -1 })),
+          )
+          vi.spyOn(electrum, 'getHistory').mockImplementation(
+            asyncFn(async (scripthash: string) =>
+              Ok(
+                scripthash === addressToScripthash(receive0).unwrap()
+                  ? [{ tx_hash: receiveTx.txid, height: 898_000 }]
+                  : [],
+              ),
+            ),
+          )
+          vi.spyOn(electrum, 'getTransaction').mockImplementation(
+            asyncFn(async (txid: string) =>
+              failureKind === 'server rejection'
+                ? Err(new ElectrumServerError(`No such transaction ${txid}`))
+                : Ok(wrongTx.hex),
+            ),
+          )
+          vi.spyOn(electrum, 'getBlockHeader').mockImplementation(
+            asyncFn(async (blockHeight: number) =>
+              Ok(blockHeaderHex(Math.floor(Date.parse('2026-08-20T12:00:00.000Z') / 1000), blockHeight)),
+            ),
+          )
+
+          const result = await service['ensureAccountHistorySnapshots'](
+            accountId,
+            account,
+            50_000n,
+            rangeStart90d,
+            false,
+            undefined,
+            tip,
+          )
+
+          expect(result).toBeNull()
+          await expect(harness.rows()).resolves.toEqual([])
+          await expect(harness.coverage()).resolves.toEqual([])
+          expect(logLines.length).toBeGreaterThan(0)
+          for (const line of logLines) {
+            expect(line).not.toContain(receiveTx.txid)
+            expect(line).not.toContain(wrongTx.txid)
+          }
+        },
+        { electrumHistory: true },
+      )
+    },
+  )
 })

@@ -148,7 +148,6 @@ export function DashboardPage({
   views?: DashboardViews
 }): JSX.Element {
   const { AccountFilter, AccumulationChart, MonthlyNetChangeChart, DateInput } = views
-  dataSource.useAutoRefresh()
   // Read the width on the first render so cached data never flashes the phone layout.
   const hasDesktopSidebar = useBreakpointValue({ base: false, lg: true }, { ssr: false }) ?? false
   const [timeRange, setTimeRange] = useState<TimeRange>('90d')
@@ -158,9 +157,16 @@ export function DashboardPage({
   })
   const [selection, setSelected] = useState<Set<string>>(new Set())
   const [recentlySyncedAccountIds, setRecentlySyncedAccountIds] = useState<Set<string>>(new Set())
-  const displayedHistory = useRef<ReturnType<typeof withCurrentBalancePoint> | null>(null)
+  const displayedHistory = useRef<{
+    rangeKey: string
+    points: ReturnType<typeof withCurrentBalancePoint>
+  } | null>(null)
   const previousHistorySync = useRef({ viewKey: '', syncingIds: new Set<string>() })
-  const completedHistory = useRef<{ viewKey: string; points: ReturnType<typeof withCurrentBalancePoint> } | null>(null)
+  const completedHistory = useRef<{
+    viewKey: string
+    rangeKey: string
+    points: ReturnType<typeof withCurrentBalancePoint>
+  } | null>(null)
   const recentlySyncedTimeouts = useRef<Map<string, number>>(new Map())
   const shownRecentlySyncedAccountIds = useRef<Set<string>>(new Set())
   const activeLabelRef = useRef<HTMLParagraphElement>(null)
@@ -170,6 +176,7 @@ export function DashboardPage({
   const today = new Date()
   const { claimsQuery, exchangeAccountsQuery, manualAccountsQuery, etfAccountsQuery, btcPriceQuery } =
     dataSource.useAccounts()
+  dataSource.useAutoRefresh(exchangeAccountsQuery.data)
 
   const claims = useMemo(() => claimsQuery.data ?? [], [claimsQuery.data])
   const exchangeAccounts = useMemo(() => exchangeAccountsQuery.data ?? [], [exchangeAccountsQuery.data])
@@ -214,6 +221,7 @@ export function DashboardPage({
     timeRange === 'custom'
       ? { timeRange: '1y' as const, customDateRange: customDateRangeInput ?? undefined }
       : { timeRange }
+  const historyRangeKey = JSON.stringify([timeRange, customDateRangeInput, userTimezone])
   const historyViewKey = JSON.stringify([timeRange, customDateRangeInput, [...selected].sort()])
 
   const {
@@ -267,7 +275,7 @@ export function DashboardPage({
     cachedHistory !== null &&
     historySyncingAccountIds.length > 0 &&
     historySyncingAccountIds.every((id) => historyRefreshingAccountIds.includes(id))
-  const historyNeedsInitialLoad = historySyncingAccountIds.length > 0 && !isHistoryRefreshing
+  const historyNeedsInitialLoad = hasCurrentRangeData && historySyncingAccountIds.length > 0 && !isHistoryRefreshing
   const recentlySyncedAccountIdList = useMemo(() => Array.from(recentlySyncedAccountIds), [recentlySyncedAccountIds])
   const walletBalancesQuery = dataSource.useWalletBalances(claimIds, { enabled: claimIds.length > 0 })
 
@@ -415,13 +423,19 @@ export function DashboardPage({
     activeError && (!hasCurrentRangeData || (isFullHistoryRange && historyNeedsInitialLoad)) ? activeError : null
   const historyBackfillFailed = hasCurrentRangeData && historyFailedAccountIds.length > 0
   const historyBackfillBlocked = isFullHistoryRange && historyNeedsInitialLoad && historyBackfillFailed
+  // Switching accounts within an already-completed All or Custom range keeps the prior chart
+  // dimmed in place instead of blanking it. Changing ranges still shows the range-loading state.
+  const canRetainSameRangeChart =
+    !hasCurrentRangeData &&
+    completedHistory.current?.rangeKey === historyRangeKey &&
+    displayedHistory.current?.rangeKey === historyRangeKey
   // Offline queries can be paused rather than fetching. Wait for this range's
   // own data instead of exposing previous-range or all-account fallback data.
   const isFullHistoryPending =
     isFullHistoryRange &&
     historyRangeError === null &&
     !historyBackfillBlocked &&
-    (!hasCurrentRangeData || historyNeedsInitialLoad)
+    ((!hasCurrentRangeData && !canRetainSameRangeChart) || historyNeedsInitialLoad)
   const customEndsToday = timeRange === 'custom' && customDateRangeInput?.endDate === format(new Date(), 'yyyy-MM-dd')
   const historicalData = useMemo(() => {
     const history = activeData?.historicalData ?? []
@@ -431,7 +445,7 @@ export function DashboardPage({
     // Keep the prior chart intact while another selection loads. Never mix its
     // history with the newly selected account balance.
     if (!hasCurrentRangeData) {
-      return displayedHistory.current ?? []
+      return displayedHistory.current?.points ?? []
     }
     if (isFullHistoryRange && isHistoryRefreshing) {
       return cachedHistory
@@ -466,7 +480,7 @@ export function DashboardPage({
 
   useEffect(() => {
     if (isFullHistoryRange && hasCurrentRangeData && !activeError && historySyncingAccountIds.length === 0) {
-      completedHistory.current = { viewKey: historyViewKey, points: historicalData }
+      completedHistory.current = { viewKey: historyViewKey, rangeKey: historyRangeKey, points: historicalData }
     }
   }, [
     isFullHistoryRange,
@@ -474,14 +488,15 @@ export function DashboardPage({
     activeError,
     historySyncingAccountIds.length,
     historyViewKey,
+    historyRangeKey,
     historicalData,
   ])
 
   useEffect(() => {
     if (hasCurrentRangeData && !activeError && !isFullHistoryPending && !historyBackfillBlocked) {
-      displayedHistory.current = historicalData
+      displayedHistory.current = { rangeKey: historyRangeKey, points: historicalData }
     }
-  }, [hasCurrentRangeData, activeError, isFullHistoryPending, historyBackfillBlocked, historicalData])
+  }, [hasCurrentRangeData, activeError, isFullHistoryPending, historyBackfillBlocked, historyRangeKey, historicalData])
 
   const periodChange = useMemo(() => {
     if (!historicalData.length) {

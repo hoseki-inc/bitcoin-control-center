@@ -72,3 +72,46 @@ it('reads the portfolio again when a wallet scan finishes during its first read'
   })
   expect(portfolioReads).toHaveLength(2)
 })
+
+it('does not refetch portfolio when a routine rescan advances asOf with the same balanceSats', async () => {
+  let portfolioCalls = 0
+  const rpc = createTestTrpcClient(async ({ path }) => {
+    if (path === 'portalProve.onchain.walletBalances') {
+      return [{ accountId: 'a', balanceSats: '100', asOf: scannedAsOf, syncing: false, failed: false }]
+    }
+    if (path === 'portalProve.portfolio.getData') {
+      portfolioCalls += 1
+      return {
+        currentTotalBalance: '100',
+        walletBalancesAsOf: { a: snapshotAsOf },
+        walletBalancesSats: { a: '100' },
+      }
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+  const root = createRoot(document.createElement('div'))
+  onTestFinished(() => {
+    act(() => {
+      root.unmount()
+    })
+    client.clear()
+  })
+
+  await act(async () => {
+    root.render(
+      <TestTrpcProvider client={client} rpc={rpc}>
+        <Portfolio />
+      </TestTrpcProvider>,
+    )
+  })
+  await vi.waitFor(() => {
+    expect(portfolioCalls).toBe(1)
+  })
+  await act(async () => {
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50)
+    })
+  })
+  expect(portfolioCalls).toBe(1)
+})

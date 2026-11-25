@@ -1,8 +1,6 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
-import type { Address } from '@hoseki/packages/bitcoin/address'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
-import { IndexMap } from '@hoseki/packages/collection'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import type { Timezone } from '@hoseki/packages/schemas'
@@ -21,6 +19,7 @@ import type { EtfService } from '../etf'
 import { type ExchangeService, describeSafeProviderFailure, parseStoredBalanceSats } from '../exchanges'
 import type { ManualService } from '../manual'
 import type { PriceService } from '../price'
+import { type Sleep, type TransactionLoadError, loadAccountEntries } from '../statements'
 import {
   type BalanceDataPoint,
   type BalanceEntry,
@@ -55,6 +54,12 @@ export interface ControlCenterData {
    * notice a newer balance.
    */
   walletBalancesAsOf: Record<string, string | null>
+  /**
+   * For each wallet, the balance in sats counted in `currentTotalBalance`, or null for one counted
+   * as empty because it has never been scanned. Lets the frontend distinguish a real balance change
+   * from a routine rescan that only advances `asOf`.
+   */
+  walletBalancesSats: Record<string, string | null>
 }
 
 interface BalanceSnapshotRow {
@@ -85,6 +90,7 @@ export class ControlCenterService {
   private readonly etfService: EtfService
   private readonly priceService: PriceService
   private readonly walletBalances: WalletBalanceService
+  private readonly sleep: Sleep | undefined
   private readonly accountHistoryBackfillsInFlight = new Set<string>()
   private readonly accountHistoryBackfillCooldownUntil = new Map<string, number>()
   private readonly accountHistoryBackfillFailureCounts = new Map<string, number>()
@@ -100,6 +106,7 @@ export class ControlCenterService {
     etfService: EtfService
     priceService: PriceService
     walletBalances: WalletBalanceService
+    sleep?: Sleep
   }) {
     this.db = deps.db
     this.logger = deps.logger.child({ module: 'control-center' })
@@ -109,6 +116,7 @@ export class ControlCenterService {
     this.etfService = deps.etfService
     this.priceService = deps.priceService
     this.walletBalances = deps.walletBalances
+    this.sleep = deps.sleep
   }
 
   public getData = asyncFn(
@@ -146,6 +154,7 @@ export class ControlCenterService {
       const firstScans = await this.walletBalances.getLiveBalances(waitingIds)
       const balancesByAccountId = new Map<string, bigint>()
       const balancesAsOf = new Map<string, string>()
+      const balancesSatsById = new Map<string, string>()
       const balanceTips = new Map<string, Block>()
       for (const view of views) {
         const first = firstScans.get(view.accountId)
@@ -159,6 +168,7 @@ export class ControlCenterService {
         balancesByAccountId.set(view.accountId, counted.balanceSats ?? 0n)
         if (counted.balanceSats !== null && counted.fetchedAt !== null) {
           balancesAsOf.set(view.accountId, counted.fetchedAt.toISOString())
+          balancesSatsById.set(view.accountId, counted.balanceSats.toString())
         }
         if (counted.tip !== null) {
           balanceTips.set(view.accountId, counted.tip)
@@ -405,6 +415,7 @@ export class ControlCenterService {
         historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
         historyFailedAccountIds: historyStatus.historyFailedAccountIds,
         walletBalancesAsOf: Object.fromEntries(accountRows.map(({ id }) => [id, balancesAsOf.get(id) ?? null])),
+        walletBalancesSats: Object.fromEntries(accountRows.map(({ id }) => [id, balancesSatsById.get(id) ?? null])),
       })
     },
   )
@@ -688,9 +699,11 @@ export class ControlCenterService {
       }
     }
 
-    // Never hold the page for long on Electrum: without a tip, history reads as still syncing and the
-    // page asks again shortly.
-    const { tip, failed } = await this.walletBalances.currentTip(HISTORY_STATUS_TIP_WAIT_MS)
+    // Never hold the page for long on Electrum: reuse a tip read in the last 30 seconds without
+    // another RPC, and if none is fresh wait briefly before falling back to a recent one.
+    const { tip, failed } = await this.walletBalances.currentTip(HISTORY_STATUS_TIP_WAIT_MS, {
+      reuseWithinMs: HISTORY_STATUS_TIP_REUSE_MS,
+    })
     if (tip === null) {
       if (failed) {
         this.logger.warn('Failed to inspect chain tip for history completion status')
@@ -765,7 +778,12 @@ export class ControlCenterService {
     if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
       return null
     }
-    const tipResult = await this.onchainProvider.getBlocksTip()
+    // Dashboard reads reuse a recent tip so clicking around doesn't re-hit Electrum for every
+    // wallet; archival (`currentBalance === undefined`) still reads a live tip.
+    const tipResult =
+      currentBalance !== undefined
+        ? await this.walletBalances.recentTip(HISTORY_STATUS_TIP_REUSE_MS)
+        : await this.onchainProvider.getBlocksTip()
     if (tipResult.isErr()) {
       this.logger.warn({ accountId, err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history backfill')
       return null
@@ -790,10 +808,14 @@ export class ControlCenterService {
     let transactionEntries: TransactionEntry[] = []
 
     if (missingRanges.length > 0) {
-      const entriesResult = await this.getTransactionEntriesByAccountSinceBlock(account, stopBeforeBlockHeight)
+      const entriesResult = await this.getTransactionEntriesByAccountSinceBlock(
+        account,
+        stopBeforeBlockHeight,
+        tip.height,
+      )
       if (entriesResult.isErr()) {
         this.logger.warn(
-          { accountId, err: entriesResult.unwrapErr() },
+          { accountId, kind: entriesResult.unwrapErr().kind },
           'Failed to backfill self-custody history from Electrum',
         )
         return null
@@ -854,8 +876,12 @@ export class ControlCenterService {
         return null
       }
 
-      const tailResult = await this.getTransactionEntriesByAccountSinceBlock(account, tip.height)
+      const tailResult = await this.getTransactionEntriesByAccountSinceBlock(account, tip.height, verifiedTip.height)
       if (tailResult.isErr()) {
+        this.logger.warn(
+          { accountId, kind: tailResult.unwrapErr().kind },
+          'Failed to backfill self-custody history tail from Electrum',
+        )
         return null
       }
       if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
@@ -936,32 +962,16 @@ export class ControlCenterService {
   private async getTransactionEntriesByAccountSinceBlock(
     account: Account,
     stopBeforeBlockHeight: number,
-  ): Promise<Result<TransactionEntry[], Error>> {
-    const discoveredResult = await this.onchainProvider.discoverAccount(account)
-    if (discoveredResult.isErr()) {
-      return Err(discoveredResult.unwrapErr())
-    }
-
-    const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveredResult.unwrap()
-    const addresses = new IndexMap<Address, number | null>()
-
-    for (const address of account.receiveAddresses(0, lastUsedReceiveIndex + 1, this.onchainProvider.network)) {
-      addresses.set(address, stopBeforeBlockHeight)
-    }
-    for (const address of account.changeAddresses(0, lastUsedChangeIndex + 1, this.onchainProvider.network)) {
-      addresses.set(address, stopBeforeBlockHeight)
-    }
-
-    const entries: TransactionEntry[] = []
-    const gen = this.onchainProvider.getTransactionEntries(addresses)
-    for await (const entry of gen) {
-      if (entry.isErr()) {
-        return Err(entry.unwrapErr())
-      }
-      entries.push(entry.unwrap())
-    }
-
-    return Ok(entries)
+    tipHeight: number,
+  ): Promise<Result<TransactionEntry[], TransactionLoadError>> {
+    return loadAccountEntries({
+      account,
+      onchainProvider: this.onchainProvider,
+      afterHeight: stopBeforeBlockHeight,
+      tipHeight,
+      logger: this.logger,
+      sleep: this.sleep,
+    })
   }
 
   private async reconcileAccountSnapshots(
@@ -1297,6 +1307,8 @@ function accountDescriptorNetworkKey(descriptor: string, network: string): strin
 const ESTIMATED_BLOCK_INTERVAL_MS = 10 * 60 * 1000
 /** How long the history status waits for Electrum's chain tip before falling back to a recent one. */
 const HISTORY_STATUS_TIP_WAIT_MS = 1_000
+/** How long a recently read chain tip is reused across dashboard clicks without another Electrum RPC. */
+const HISTORY_STATUS_TIP_REUSE_MS = 30_000
 const HISTORY_SYNC_BLOCK_CUSHION = 288
 // Earlier versions could certify a partial Electrum response as complete.
 const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 5

@@ -22,10 +22,17 @@ import {
   parseStoredBalanceSats,
 } from './amounts'
 import {
+  ExchangeHistoryCache,
+  type ExchangeHistoryEntry,
+  type ExchangeHistoryFetchOutput,
+  type ExchangeHistoryKey,
+} from './history-cache'
+import {
   EXCHANGE_DISPLAY_NAMES,
   ExchangeAccountMismatchError,
   ExchangeAccountUnverifiableError,
   ExchangeCredentialsRevokedError,
+  ExchangeHistoryIncompleteError,
   ExchangeRefreshTimeoutError,
   ExchangeUserError,
   ExchangeVerificationRetryableError,
@@ -50,6 +57,7 @@ export {
   ExchangeAccountMismatchError,
   ExchangeAccountUnverifiableError,
   ExchangeCredentialsRevokedError,
+  ExchangeHistoryIncompleteError,
   ExchangeRefreshTimeoutError,
   ExchangeUserError,
   ExchangeVerificationRetryableError,
@@ -68,6 +76,7 @@ const DEFAULT_EXCHANGE_REFRESH_TIMEOUT_MS = 60_000
 
 export interface RefreshBalanceOptions {
   signal?: AbortSignal
+  reuseUnchangedHistory?: boolean
 }
 
 export interface ExchangeAccountDto {
@@ -409,6 +418,7 @@ export class ExchangeService {
   private readonly refreshTimeLimitMs: number
   private readonly batchRefreshes = new Map<string, BatchRefreshEntry>()
   private refreshAllInFlight: Promise<Result<void, Error>> | null = null
+  private readonly historyCache = new ExchangeHistoryCache()
 
   public constructor(deps: { db: SentinelDb; logger: Logger; refreshTimeLimitMs?: number }) {
     this.db = deps.db
@@ -1356,6 +1366,10 @@ export class ExchangeService {
         )
       }
 
+      if (options?.reuseUnchangedHistory !== true || balanceSats !== row.balanceSats) {
+        this.historyCache.invalidate(accountId)
+      }
+
       this.logger.info({ accountId, balanceSats }, 'Exchange balance refreshed')
       return Ok({
         id: row.id,
@@ -1412,7 +1426,7 @@ export class ExchangeService {
     }, this.refreshTimeLimitMs)
 
     const underlying = (async (): Promise<Result<ExchangeAccountDto, Error>> =>
-      this.refreshBalance(account.id, { signal: controller.signal }))()
+      this.refreshBalance(account.id, { signal: controller.signal, reuseUnchangedHistory: true }))()
 
     void (async (): Promise<void> => {
       try {
@@ -1494,6 +1508,7 @@ export class ExchangeService {
       return Err(new Error('Exchange account not found'))
     }
     this.evictBatchRefresh(accountId)
+    this.historyCache.invalidate(accountId)
     this.logger.info({ accountId }, 'Exchange account removed')
     return Ok(undefined)
   }
@@ -1506,7 +1521,11 @@ export class ExchangeService {
    * Strike does not have a transactions API — only Coinbase accounts are included.
    */
   public getCoinbaseTransactionEntries = asyncFn(
-    async (filterAccountIds?: string[]): Promise<Result<{ timestamp: Date; value: bigint }[], Error>> => {
+    async (filterAccountIds?: string[]): Promise<Result<ExchangeHistoryEntry[], Error>> => {
+      if (filterAccountIds?.length === 0) {
+        return Ok([])
+      }
+
       const rows = await this.db
         .select({
           id: exchangeAccounts.id,
@@ -1518,9 +1537,7 @@ export class ExchangeService {
         .where(
           and(
             eq(exchangeAccounts.provider, 'coinbase'),
-            filterAccountIds !== undefined && filterAccountIds.length > 0
-              ? inArray(exchangeAccounts.id, filterAccountIds)
-              : undefined,
+            filterAccountIds !== undefined ? inArray(exchangeAccounts.id, filterAccountIds) : undefined,
           ),
         )
 
@@ -1529,148 +1546,40 @@ export class ExchangeService {
         'getCoinbaseTransactionEntries: queried exchange_accounts',
       )
 
-      const allEntries: { timestamp: Date; value: bigint }[] = []
+      const results = await Promise.all(
+        rows.map(async (row) => {
+          const key: ExchangeHistoryKey = {
+            encryptedCredentials: row.encryptedCredentials,
+            externalAccountId: row.externalAccountId,
+            credentialsConnectedAt: row.credentialsConnectedAt,
+          }
+          const result = await this.historyCache.get(row.id, key, async () => this.fetchCoinbaseAccountHistory(row))
+          return { accountId: row.id, result }
+        }),
+      )
 
-      for (const row of rows) {
-        const parsedCredentials = parseCredentials(row.encryptedCredentials)
-        if (parsedCredentials.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
-          continue
-        }
-        const credData = parsedCredentials.unwrap()
-
-        // Decrypt credentials — skip account on failure
-        const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-        if (apiKeyEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
-          continue
-        }
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
-          continue
-        }
-
-        const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-        if (secretEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
-          continue
-        }
-        const secret = secretEnc.unwrap().decrypt()
-        if (secret.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
-          continue
-        }
-
-        const clientRes = buildStoredCoinbaseClient(apiKey.unwrap(), secret.unwrap(), credData.coinbaseAuth)
-        if (clientRes.isErr()) {
+      const allEntries: ExchangeHistoryEntry[] = []
+      let firstErr: Error | null = null
+      let succeededCount = 0
+      for (const { accountId, result } of results) {
+        if (result.isErr()) {
+          const err = result.unwrapErr()
+          firstErr ??= err
           this.logProviderWarning(
             'coinbase',
-            'client_init',
-            row.id,
-            clientRes.unwrapErr(),
-            'getCoinbaseTransactionEntries: failed to create Coinbase client — skipping',
+            'transactions',
+            accountId,
+            err,
+            'Skipping Coinbase account with incomplete transaction history',
           )
           continue
         }
-        const client = clientRes.unwrap()
+        succeededCount += 1
+        allEntries.push(...result.unwrap())
+      }
 
-        // Discover and backfill external_account_id if missing (pre-migration accounts)
-        let accountUuid = nonEmpty(row.externalAccountId)
-        if (accountUuid === undefined) {
-          this.logger.info({ accountId: row.id }, 'Discovering Coinbase BTC account UUID')
-          const accountsRes = await listAllCoinbaseAccounts(client)
-          if (accountsRes.isErr()) {
-            this.logProviderWarning(
-              'coinbase',
-              'backfill',
-              row.id,
-              accountsRes.unwrapErr(),
-              'Failed to list Coinbase accounts — skipping',
-            )
-            continue
-          }
-          const btcAccount = pickPrimaryCoinbaseBtcAccount(accountsRes.unwrap())
-          if (!btcAccount) {
-            this.logger.warn({ accountId: row.id }, 'No BTC account found in Coinbase — skipping')
-            continue
-          }
-          accountUuid = btcAccount.uuid
-          await this.backfillExternalAccountId(row.id, accountUuid, {
-            credentialsConnectedAt: row.credentialsConnectedAt,
-            encryptedCredentials: row.encryptedCredentials,
-          })
-          this.logger.info({ accountId: row.id, accountUuid }, 'Backfilled external_account_id')
-        }
-
-        this.logger.info(
-          { accountId: row.id, accountUuid },
-          'getCoinbaseTransactionEntries: fetching transactions from Coinbase API',
-        )
-
-        // Paginate through all transactions in ascending order
-        let startingAfter: string | undefined = undefined
-        let hasMore = true
-
-        while (hasMore) {
-          const txResult = await client.app.transactions.listTransactions({
-            accountId: accountUuid,
-            limit: 100,
-            order: 'asc',
-            startingAfter,
-          })
-
-          if (txResult.isErr()) {
-            this.logProviderWarning(
-              'coinbase',
-              'transactions',
-              row.id,
-              txResult.unwrapErr(),
-              'Failed to fetch Coinbase transactions — stopping pagination',
-            )
-            break
-          }
-
-          const { pagination, data: transactions } = txResult.unwrap().data
-
-          this.logger.info(
-            {
-              accountId: row.id,
-              transactionCount: transactions.length,
-              hasNextUri: pagination.next_uri != null && pagination.next_uri !== '',
-              startingAfter,
-            },
-            'getCoinbaseTransactionEntries: page fetched',
-          )
-
-          for (const tx of transactions) {
-            if (tx.status !== 'completed' || tx.amount.currency !== 'BTC') {
-              continue
-            }
-
-            const amountSatsRes = parseSignedBtcAmountToSats(tx.amount.amount)
-            if (amountSatsRes.isErr()) {
-              this.logProviderWarning(
-                'coinbase',
-                'transactions',
-                row.id,
-                amountSatsRes.unwrapErr(),
-                'Skipped Coinbase transaction with invalid amount',
-              )
-              continue
-            }
-            allEntries.push({
-              timestamp: tx.created_at,
-              value: amountSatsRes.unwrap(),
-            })
-          }
-
-          if (pagination.next_uri != null && pagination.next_uri !== '' && transactions.length > 0) {
-            startingAfter = transactions[transactions.length - 1]?.id
-          } else {
-            hasMore = false
-          }
-        }
+      if (firstErr !== null && succeededCount === 0) {
+        return Err(firstErr)
       }
 
       this.logger.info({ totalEntries: allEntries.length }, 'getCoinbaseTransactionEntries: complete')
@@ -1679,6 +1588,158 @@ export class ExchangeService {
     },
   )
 
+  private async fetchCoinbaseAccountHistory(row: {
+    id: string
+    encryptedCredentials: string
+    externalAccountId: string | null
+    credentialsConnectedAt: string | null
+  }): Promise<Result<ExchangeHistoryFetchOutput, Error>> {
+    const parsedCredentials = parseCredentials(row.encryptedCredentials)
+    if (parsedCredentials.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
+      return Ok({ entries: [] })
+    }
+    const credData = parsedCredentials.unwrap()
+
+    // Decrypt credentials — skip account on failure
+    const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
+    if (apiKeyEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const apiKey = apiKeyEnc.unwrap().decrypt()
+    if (apiKey.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
+    if (secretEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const secret = secretEnc.unwrap().decrypt()
+    if (secret.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const clientRes = buildStoredCoinbaseClient(apiKey.unwrap(), secret.unwrap(), credData.coinbaseAuth)
+    if (clientRes.isErr()) {
+      this.logProviderWarning(
+        'coinbase',
+        'client_init',
+        row.id,
+        clientRes.unwrapErr(),
+        'getCoinbaseTransactionEntries: failed to create Coinbase client — skipping',
+      )
+      return Ok({ entries: [] })
+    }
+    const client = clientRes.unwrap()
+
+    // Discover and backfill external_account_id if missing (pre-migration accounts)
+    let accountUuid = nonEmpty(row.externalAccountId)
+    let resolvedExternalAccountId: string | undefined
+    if (accountUuid === undefined) {
+      this.logger.info({ accountId: row.id }, 'Discovering Coinbase BTC account UUID')
+      const accountsRes = await listAllCoinbaseAccounts(client)
+      if (accountsRes.isErr()) {
+        this.logProviderWarning(
+          'coinbase',
+          'backfill',
+          row.id,
+          accountsRes.unwrapErr(),
+          'Failed to list Coinbase accounts — skipping',
+        )
+        return Err(new ExchangeHistoryIncompleteError('coinbase'))
+      }
+      const btcAccount = pickPrimaryCoinbaseBtcAccount(accountsRes.unwrap())
+      if (!btcAccount) {
+        this.logger.warn({ accountId: row.id }, 'No BTC account found in Coinbase — skipping')
+        return Ok({ entries: [] })
+      }
+      accountUuid = btcAccount.uuid
+      resolvedExternalAccountId = accountUuid
+      await this.backfillExternalAccountId(row.id, accountUuid, {
+        credentialsConnectedAt: row.credentialsConnectedAt,
+        encryptedCredentials: row.encryptedCredentials,
+      })
+      this.logger.info({ accountId: row.id, accountUuid }, 'Backfilled external_account_id')
+    }
+
+    this.logger.info(
+      { accountId: row.id, accountUuid },
+      'getCoinbaseTransactionEntries: fetching transactions from Coinbase API',
+    )
+
+    // Paginate through all transactions in ascending order
+    const entries: ExchangeHistoryEntry[] = []
+    let startingAfter: string | undefined = undefined
+    let hasMore = true
+
+    while (hasMore) {
+      const txResult = await client.app.transactions.listTransactions({
+        accountId: accountUuid,
+        limit: 100,
+        order: 'asc',
+        startingAfter,
+      })
+
+      if (txResult.isErr()) {
+        this.logProviderWarning(
+          'coinbase',
+          'transactions',
+          row.id,
+          txResult.unwrapErr(),
+          'Failed to fetch Coinbase transactions — stopping pagination',
+        )
+        return Err(new ExchangeHistoryIncompleteError('coinbase'))
+      }
+
+      const { pagination, data: transactions } = txResult.unwrap().data
+
+      this.logger.info(
+        {
+          accountId: row.id,
+          transactionCount: transactions.length,
+          hasNextUri: pagination.next_uri != null && pagination.next_uri !== '',
+          startingAfter,
+        },
+        'getCoinbaseTransactionEntries: page fetched',
+      )
+
+      for (const tx of transactions) {
+        if (tx.status !== 'completed' || tx.amount.currency !== 'BTC') {
+          continue
+        }
+
+        const amountSatsRes = parseSignedBtcAmountToSats(tx.amount.amount)
+        if (amountSatsRes.isErr()) {
+          this.logProviderWarning(
+            'coinbase',
+            'transactions',
+            row.id,
+            amountSatsRes.unwrapErr(),
+            'Skipped Coinbase transaction with invalid amount',
+          )
+          continue
+        }
+        entries.push({
+          timestamp: tx.created_at,
+          value: amountSatsRes.unwrap(),
+        })
+      }
+
+      if (pagination.next_uri != null && pagination.next_uri !== '' && transactions.length > 0) {
+        startingAfter = transactions[transactions.length - 1]?.id
+      } else {
+        hasMore = false
+      }
+    }
+
+    return Ok({ entries, resolvedExternalAccountId })
+  }
+
   // ─── Kraken Transaction History ───────────────────────────────────────
 
   /**
@@ -1686,16 +1747,23 @@ export class ExchangeService {
    * Returns entries as { timestamp, value } where value is signed satoshis.
    */
   public getKrakenTransactionEntries = asyncFn(
-    async (filterAccountIds?: string[]): Promise<Result<{ timestamp: Date; value: bigint }[], Error>> => {
+    async (filterAccountIds?: string[]): Promise<Result<ExchangeHistoryEntry[], Error>> => {
+      if (filterAccountIds?.length === 0) {
+        return Ok([])
+      }
+
       const rows = await this.db
-        .select({ id: exchangeAccounts.id, encryptedCredentials: exchangeAccounts.encryptedCredentials })
+        .select({
+          id: exchangeAccounts.id,
+          encryptedCredentials: exchangeAccounts.encryptedCredentials,
+          externalAccountId: exchangeAccounts.externalAccountId,
+          credentialsConnectedAt: exchangeAccounts.credentialsConnectedAt,
+        })
         .from(exchangeAccounts)
         .where(
           and(
             eq(exchangeAccounts.provider, 'kraken'),
-            filterAccountIds !== undefined && filterAccountIds.length > 0
-              ? inArray(exchangeAccounts.id, filterAccountIds)
-              : undefined,
+            filterAccountIds !== undefined ? inArray(exchangeAccounts.id, filterAccountIds) : undefined,
           ),
         )
 
@@ -1704,94 +1772,40 @@ export class ExchangeService {
         'getKrakenTransactionEntries: queried exchange_accounts',
       )
 
-      const allEntries: { timestamp: Date; value: bigint }[] = []
-
-      for (const row of rows) {
-        const parsedCredentials = parseCredentials(row.encryptedCredentials)
-        if (parsedCredentials.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
-          continue
-        }
-        const credData = parsedCredentials.unwrap()
-
-        // Decrypt credentials — skip account on failure
-        const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-        if (apiKeyEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
-          continue
-        }
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
-          continue
-        }
-
-        const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-        if (secretEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
-          continue
-        }
-        const secret = secretEnc.unwrap().decrypt()
-        if (secret.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
-          continue
-        }
-
-        const client = new Kraken.Client({ apiKey: apiKey.unwrap(), secretKey: secret.unwrap() })
-
-        // Paginate through all BTC ledger entries using offset
-        let offset = 0
-        let hasMore = true
-
-        while (hasMore) {
-          const ledgersResult = await client.getLedgers({ asset: 'XBT', ofs: offset })
-
-          if (ledgersResult.isErr()) {
-            this.logProviderWarning(
-              'kraken',
-              'transactions',
-              row.id,
-              ledgersResult.unwrapErr(),
-              'Failed to fetch Kraken ledgers — stopping pagination',
-            )
-            break
+      const results = await Promise.all(
+        rows.map(async (row) => {
+          const key: ExchangeHistoryKey = {
+            encryptedCredentials: row.encryptedCredentials,
+            externalAccountId: row.externalAccountId,
+            credentialsConnectedAt: row.credentialsConnectedAt,
           }
+          const result = await this.historyCache.get(row.id, key, async () => this.fetchKrakenAccountHistory(row))
+          return { accountId: row.id, result }
+        }),
+      )
 
-          const { data } = ledgersResult.unwrap()
-          const ledgerEntries = data.ledger ? Object.values(data.ledger) : []
-
-          this.logger.info(
-            { accountId: row.id, entryCount: ledgerEntries.length, offset },
-            'getKrakenTransactionEntries: page fetched',
+      const allEntries: ExchangeHistoryEntry[] = []
+      let firstErr: Error | null = null
+      let succeededCount = 0
+      for (const { accountId, result } of results) {
+        if (result.isErr()) {
+          const err = result.unwrapErr()
+          firstErr ??= err
+          this.logProviderWarning(
+            'kraken',
+            'transactions',
+            accountId,
+            err,
+            'Skipping Kraken account with incomplete transaction history',
           )
-
-          for (const entry of ledgerEntries) {
-            const amountSatsRes = parseSignedBtcNetToSats(entry.amount, entry.fee)
-            if (amountSatsRes.isErr()) {
-              this.logProviderWarning(
-                'kraken',
-                'transactions',
-                row.id,
-                amountSatsRes.unwrapErr(),
-                'Skipped Kraken ledger entry with invalid amount',
-              )
-              continue
-            }
-            const amountSats = amountSatsRes.unwrap()
-            if (amountSats !== 0n) {
-              allEntries.push({
-                timestamp: new Date(entry.time * 1000),
-                value: amountSats,
-              })
-            }
-          }
-
-          const totalCount = data.count ?? 0
-          offset += ledgerEntries.length
-          if (ledgerEntries.length === 0 || offset >= totalCount) {
-            hasMore = false
-          }
+          continue
         }
+        succeededCount += 1
+        allEntries.push(...result.unwrap())
+      }
+
+      if (firstErr !== null && succeededCount === 0) {
+        return Err(firstErr)
       }
 
       this.logger.info({ totalEntries: allEntries.length }, 'getKrakenTransactionEntries: complete')
@@ -1799,6 +1813,102 @@ export class ExchangeService {
       return Ok(allEntries)
     },
   )
+
+  private async fetchKrakenAccountHistory(row: {
+    id: string
+    encryptedCredentials: string
+    externalAccountId: string | null
+    credentialsConnectedAt: string | null
+  }): Promise<Result<ExchangeHistoryFetchOutput, Error>> {
+    const parsedCredentials = parseCredentials(row.encryptedCredentials)
+    if (parsedCredentials.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
+      return Ok({ entries: [] })
+    }
+    const credData = parsedCredentials.unwrap()
+
+    // Decrypt credentials — skip account on failure
+    const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
+    if (apiKeyEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const apiKey = apiKeyEnc.unwrap().decrypt()
+    if (apiKey.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
+    if (secretEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const secret = secretEnc.unwrap().decrypt()
+    if (secret.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const client = new Kraken.Client({ apiKey: apiKey.unwrap(), secretKey: secret.unwrap() })
+
+    // Paginate through all BTC ledger entries using offset
+    const entries: ExchangeHistoryEntry[] = []
+    let offset = 0
+    let hasMore = true
+
+    while (hasMore) {
+      const ledgersResult = await client.getLedgers({ asset: 'XBT', ofs: offset })
+
+      if (ledgersResult.isErr()) {
+        this.logProviderWarning(
+          'kraken',
+          'transactions',
+          row.id,
+          ledgersResult.unwrapErr(),
+          'Failed to fetch Kraken ledgers — stopping pagination',
+        )
+        return Err(new ExchangeHistoryIncompleteError('kraken'))
+      }
+
+      const { data } = ledgersResult.unwrap()
+      const ledgerEntries = data.ledger ? Object.values(data.ledger) : []
+
+      this.logger.info(
+        { accountId: row.id, entryCount: ledgerEntries.length, offset },
+        'getKrakenTransactionEntries: page fetched',
+      )
+
+      for (const entry of ledgerEntries) {
+        const amountSatsRes = parseSignedBtcNetToSats(entry.amount, entry.fee)
+        if (amountSatsRes.isErr()) {
+          this.logProviderWarning(
+            'kraken',
+            'transactions',
+            row.id,
+            amountSatsRes.unwrapErr(),
+            'Skipped Kraken ledger entry with invalid amount',
+          )
+          continue
+        }
+        const amountSats = amountSatsRes.unwrap()
+        if (amountSats !== 0n) {
+          entries.push({
+            timestamp: new Date(entry.time * 1000),
+            value: amountSats,
+          })
+        }
+      }
+
+      const totalCount = data.count ?? 0
+      offset += ledgerEntries.length
+      if (ledgerEntries.length === 0 || offset >= totalCount) {
+        hasMore = false
+      }
+    }
+
+    return Ok({ entries })
+  }
 
   // ─── Statement Transactions ──────────────────────────────────────────
 
@@ -2011,9 +2121,9 @@ export class ExchangeService {
       if (isSignalAborted(signal)) {
         return
       }
-      const done = await this.db.transaction(async (tx) => {
+      const outcome = await this.db.transaction(async (tx): Promise<'updated' | 'skip' | 'retry'> => {
         if (isSignalAborted(signal)) {
-          return true
+          return 'skip'
         }
         const [current] = await tx
           .select({
@@ -2024,12 +2134,12 @@ export class ExchangeService {
           .where(eq(exchangeAccounts.id, accountId))
 
         if (isSignalAborted(signal) || !current || !isSameCredentialGeneration(current, expectedGeneration)) {
-          return true
+          return 'skip'
         }
 
         const parsed = parseCredentials(current.encryptedCredentials)
         if (parsed.isErr()) {
-          return true
+          return 'skip'
         }
         const credData = parsed.unwrap()
         if (
@@ -2037,7 +2147,7 @@ export class ExchangeService {
             ? nonEmpty(credData.portfolioUuid) !== undefined
             : credData.credentialsRevoked === true
         ) {
-          return true
+          return 'skip'
         }
 
         const rowsAffected = await writeCredentials(
@@ -2048,9 +2158,12 @@ export class ExchangeService {
             change,
           }),
         )
-        return rowsAffected === 1
+        return rowsAffected === 1 ? 'updated' : 'retry'
       })
-      if (done) {
+      if (outcome !== 'retry') {
+        if (outcome === 'updated' && 'credentialsRevoked' in change) {
+          this.historyCache.invalidate(accountId)
+        }
         return
       }
     }
@@ -2461,9 +2574,12 @@ export class ExchangeService {
 
       return Ok({ id, createdAt: args.balanceAsOf })
     })
-
-    if (saved.isOk() && args.replaceAccountId != null && args.replaceAccountId !== '') {
-      this.evictBatchRefresh(saved.unwrap().id)
+    if (saved.isOk()) {
+      const savedId = saved.unwrap().id
+      if (args.replaceAccountId != null && args.replaceAccountId !== '') {
+        this.evictBatchRefresh(savedId)
+      }
+      this.historyCache.invalidate(savedId)
     }
 
     return saved
