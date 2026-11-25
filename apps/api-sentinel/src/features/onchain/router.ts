@@ -1,4 +1,5 @@
 import type { Account } from '@hoseki/packages/bitcoin/account'
+import type { Address } from '@hoseki/packages/bitcoin/address'
 import { NetworkAccount } from '@hoseki/packages/bitcoin/network_account'
 import { IndexMap, IndexSet } from '@hoseki/packages/collection'
 import { TRPCError } from '@trpc/server'
@@ -135,4 +136,76 @@ export const onchainRouter = router({
       }),
     ),
   ),
+
+  scanAccountChunk: protectedProcedure
+    .input(
+      z.object({
+        account: z.string(),
+        chain: z.enum(['receive', 'change']),
+        startIndex: z.number().int().min(0).max(10_000),
+        count: z.number().int().min(1).max(20),
+      }),
+    )
+    .query(async ({ ctx, input }) => {
+      const parsed = NetworkAccount.fromString(input.account)
+      if (parsed.isErr()) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid account' })
+      }
+      const { account, network } = parsed.unwrap()
+      const providerNetwork = ctx.app.onchainProvider.network
+      const isProviderMainnet = providerNetwork.kind === 'Mainnet'
+      if (
+        (account.network().kind === 'Mainnet') !== isProviderMainnet ||
+        (network.kind === 'Mainnet') !== isProviderMainnet
+      ) {
+        throw scanErrorWithoutProviderDetails()
+      }
+      const addresses =
+        input.chain === 'receive'
+          ? account.receiveAddresses(input.startIndex, input.startIndex + input.count, providerNetwork)
+          : account.changeAddresses(input.startIndex, input.startIndex + input.count, providerNetwork)
+
+      let usedResult: Awaited<ReturnType<typeof ctx.app.onchainProvider.areAddressesUsed>>
+      try {
+        usedResult = await ctx.app.onchainProvider.areAddressesUsed(new IndexSet(addresses))
+      } catch (err) {
+        ctx.app.logger.error({ err }, 'Error checking used addresses for account chunk')
+        throw scanErrorWithoutProviderDetails()
+      }
+      if (usedResult.isErr()) {
+        throw scanErrorWithoutProviderDetails()
+      }
+      const usedSet = usedResult.unwrap()
+      const usedIndexes: number[] = []
+      const usedAddresses = new IndexSet<Address>()
+      for (let offset = 0; offset < addresses.length; offset += 1) {
+        const address = addresses[offset]
+        if (address !== undefined && usedSet.has(address)) {
+          usedIndexes.push(input.startIndex + offset)
+          usedAddresses.add(address)
+        }
+      }
+
+      if (usedAddresses.size === 0) {
+        return { usedIndexes, balanceSats: '0' }
+      }
+
+      let balancesResult: Awaited<ReturnType<typeof ctx.app.onchainProvider.getConfirmedAddressBalances>>
+      try {
+        balancesResult = await ctx.app.onchainProvider.getConfirmedAddressBalances(usedAddresses)
+      } catch (err) {
+        ctx.app.logger.error({ err }, 'Error getting confirmed balances for account chunk')
+        throw scanErrorWithoutProviderDetails()
+      }
+      if (balancesResult.isErr()) {
+        throw scanErrorWithoutProviderDetails()
+      }
+
+      let totalSats = 0n
+      for (const sats of balancesResult.unwrap().values()) {
+        totalSats += sats
+      }
+
+      return { usedIndexes, balanceSats: totalSats.toString() }
+    }),
 })

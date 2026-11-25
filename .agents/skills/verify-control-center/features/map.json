@@ -663,7 +663,7 @@
             {
               "id": "plain-xpub-script-type",
               "kind": "edge",
-              "does": "A plain xpub asks for a Script Type"
+              "does": "A plain xpub leaves Script Type unselected on paste, scans each type on Electrum, auto-selects only a unique balance, and disables Track Wallet until a type is chosen"
             },
             {
               "id": "invalid-input",
@@ -859,7 +859,7 @@
             {
               "id": "script-type",
               "kind": "edge",
-              "does": "A plain xpub asks for a script type; descriptors are preferred"
+              "does": "A plain xpub leaves script type unselected on paste, scans each type on Electrum, auto-selects only a unique balance, and disables Add Account until a type is chosen; descriptors are preferred"
             },
             {
               "id": "invalid-input",

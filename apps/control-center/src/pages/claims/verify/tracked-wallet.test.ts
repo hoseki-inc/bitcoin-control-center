@@ -46,6 +46,45 @@ describe('parseTrackedWallet', () => {
     expect(wallet).toEqual({ kind: 'singlesig', account: Wallets.singlesigTaprootAccount })
   })
 
+  it('requires a choice for a plain xpub or tpub', () => {
+    const bip32Vector1Xpub =
+      'xpub661MyMwAqRbcFtXgS5sYJABqqG9YLmC4Q1Rdap9gSE8NqtwybGhePY2gZ29ESFjqJoCu1Rupje8YtGqsefD265TMg7usUDFdp6W1EGMcet8'
+    const tpub =
+      'tpubDD79jZKTZMENaFCfsbnRp3vS3jL4qbrQXUXc8egs34ixe8ovvkUBRx9U1YHkk3aiQfGzLijUEVkjCBSDPT2DxN4NWKzZT9cT3RGkBm7NzcA'
+    const ypub =
+      'ypub6Tu7BpNSDRwABVbsvvig6MfbiGGFBxs1AUs9yepHEtADtK3TZwMpFrBWvL2ipceeFLytz5VueXQXzKzSHpJbmnKgB1A3Yko18YqeLgRr4VK'
+    const zpub =
+      'zpub6rTqhQyDDidVGmbSL1AAK4J8untSw4NKtK9ZbaeW4u6HcWuvTrxNUoAzrCFraECK9DNXybWkVPgsze6c9sWsfKnMXYEapnNTF1d7Hv5PP31'
+
+    expect(parseTrackedWallet(bip32Vector1Xpub, null)).toBeNull()
+    expect(parseTrackedWallet(tpub, null)).toBeNull()
+
+    const legacyXpub = parseTrackedWallet(bip32Vector1Xpub, 'p2pkh')
+    assert(legacyXpub?.kind === 'singlesig')
+    expect(legacyXpub.account.descriptor()).toBe(`pkh(${bip32Vector1Xpub}/<0;1>/*)#nusm4y9w`)
+
+    const nativeTpub = parseTrackedWallet(tpub, 'p2wpkh')
+    assert(nativeTpub?.kind === 'singlesig')
+    expect(nativeTpub.account.scriptType).toBe('p2wpkh')
+
+    const multisig = parseTrackedWallet(multisigWithOrigins, null)
+    assert(multisig?.kind === 'multisig')
+    expect(multisig.account.descriptor()).toBe(Wallets.multisigNativeSegwitAccount.descriptor())
+
+    expect(parseTrackedWallet(Wallets.singlesigNativeSegwitAccount.descriptor(), null)).toEqual({
+      kind: 'singlesig',
+      account: Wallets.singlesigNativeSegwitAccount,
+    })
+
+    const nestedFromPrefix = parseTrackedWallet(ypub, null)
+    assert(nestedFromPrefix?.kind === 'singlesig')
+    expect(nestedFromPrefix.account.scriptType).toBe('p2sh-p2wpkh')
+
+    const nativeFromPrefix = parseTrackedWallet(zpub, null)
+    assert(nativeFromPrefix?.kind === 'singlesig')
+    expect(nativeFromPrefix.account.scriptType).toBe('p2wpkh')
+  })
+
   it.each([
     '',
     'not a wallet',

@@ -1,4 +1,4 @@
-import { FormControl, FormLabel, Input, Stack, Text, Textarea } from '@chakra-ui/react'
+import { Flex, FormControl, FormLabel, Input, Stack, Text, Textarea } from '@chakra-ui/react'
 import {
   type CheckedSinglesigAccountDescriptor,
   Network,
@@ -6,16 +6,15 @@ import {
   SingleSigAccount,
   type SingleSigAccountScriptType,
 } from '@hoseki/packages/bitcoin'
-import { getRecordValue } from '@hoseki/packages/lib'
 import { Slip132 } from '@hoseki/packages/wallet'
 import { type Dispatch, type SetStateAction, useEffect, useMemo, useState } from 'react'
-import { ErrorBanner, FormErrorMessage, LabelWithTooltip, RadioCardGroup } from '..'
-import { type BitcoinInput, encodingsToLabels, labelsToEncodings, monoInputProps } from '../../utils/bitcoin'
+import { FormErrorMessage, LabelWithTooltip } from '..'
+import { type BitcoinInput, monoInputProps } from '../../utils/bitcoin'
 import { BitcoinNetworkSelect } from './bitcoin-network-select'
+import { type ScriptTypeBalances, ScriptTypeRadioGroup, getUniqueFundedScriptType } from './script-type-radio-group'
 
-/** The script type a SLIP-132 prefix implies, or legacy for a plain xpub. */
-export function getDefaultEncoding(btcStr: string): SingleSigAccountScriptType {
-  const firstChar = btcStr[0]
+export function getPrefixScriptType(btcStr: string): SingleSigAccountScriptType | null {
+  const firstChar = btcStr.trim()[0]
   switch (firstChar) {
     case 'y':
     case 'u':
@@ -25,7 +24,7 @@ export function getDefaultEncoding(btcStr: string): SingleSigAccountScriptType {
       return 'p2wpkh'
     case undefined:
     default:
-      return 'p2pkh'
+      return null
   }
 }
 
@@ -48,35 +47,46 @@ function getNetwork(descriptor?: CheckedSinglesigAccountDescriptor): Network {
 export function BitcoinInputFormFields({
   setBitcoinInput,
   defaultValues,
+  scriptTypeBalances,
+  onRawInputChange,
 }: {
   setBitcoinInput: Dispatch<SetStateAction<BitcoinInput | null>>
   defaultValues?: BitcoinInput
+  scriptTypeBalances?: ScriptTypeBalances
+  onRawInputChange?: (raw: string) => void
 }): JSX.Element {
   const [bitcoinRaw, setBitcoinRaw] = useState<string>(defaultValues?.rawInput ?? '')
   const [displayName, setDisplayName] = useState<string>(defaultValues?.displayName ?? '')
+  const [pickedScriptType, setPickedScriptType] = useState<SingleSigAccountScriptType | null>(null)
 
+  const trimmedBitcoinRaw = bitcoinRaw.trim()
   // Keep parsed values stable when publishing the input causes a parent render.
-  const xpub = useMemo(() => Slip132.getXpubFromString(bitcoinRaw), [bitcoinRaw])
+  const xpub = useMemo(() => Slip132.getXpubFromString(trimmedBitcoinRaw), [trimmedBitcoinRaw])
 
-  const bitcoinRawDescriptorInput = bitcoinRaw.split(/[\n\s]+/)[0]?.trim() ?? bitcoinRaw
+  const bitcoinRawDescriptorInput = trimmedBitcoinRaw.split(/[\n\s]+/)[0] ?? trimmedBitcoinRaw
   const singleSigAccount = useMemo(
     () => SingleSigAccount.fromDescriptor(bitcoinRawDescriptorInput),
     [bitcoinRawDescriptorInput],
   )
   const descriptor = singleSigAccount.unwrapOr(null)?.descriptor()
 
-  // Encoding/script-type input should only be shown if x-prefixed xpub
   const showEncodingInput = xpub.match({
-    Ok: () => bitcoinRaw.startsWith('x'),
+    Ok: () => trimmedBitcoinRaw.startsWith('x'),
     Err: () => false,
   })
-  const preSelectedScriptType = defaultValues?.data.account.scriptType
-  const [encoding, setEncoding] = useState<SingleSigAccountScriptType | null>(preSelectedScriptType ?? null)
-  useEffect(() => {
-    setEncoding(showEncodingInput ? (preSelectedScriptType ?? 'p2pkh') : null)
-  }, [showEncodingInput, preSelectedScriptType])
 
-  // Show network input if not on Mainnet
+  const presetScriptType =
+    defaultValues?.rawInput.trim() === trimmedBitcoinRaw ? defaultValues.data.account.scriptType : null
+  const suggestedScriptType = showEncodingInput ? getUniqueFundedScriptType(scriptTypeBalances) : null
+  const effectiveScriptType: SingleSigAccountScriptType | null = showEncodingInput
+    ? (pickedScriptType ?? presetScriptType ?? suggestedScriptType)
+    : (presetScriptType ?? getPrefixScriptType(trimmedBitcoinRaw) ?? 'p2pkh')
+
+  const isScanningBalances =
+    showEncodingInput &&
+    scriptTypeBalances !== undefined &&
+    Object.values(scriptTypeBalances).some((entry) => entry.status === 'loading')
+
   const showNetworkInput = singleSigAccount.match({
     Ok: (acc) => acc.network().kind !== 'Mainnet',
     Err: () => false,
@@ -86,53 +96,44 @@ export function BitcoinInputFormFields({
     setNetwork(showNetworkInput ? getNetwork(descriptor) : Network.Mainnet)
   }, [showNetworkInput, descriptor])
 
-  const [error, setError] = useState<string | null>(null)
-
   useEffect(() => {
-    if (!bitcoinRaw) {
+    if (!trimmedBitcoinRaw) {
+      setBitcoinInput(null)
       return
     }
 
     let input: BitcoinInput
     if (xpub.isOk()) {
       const parsedXpub = xpub.unwrap()
-
-      // If encoding is shown, it means the user has entered an xPub, so encoding is required
-      if (showEncodingInput && !encoding) {
+      if (effectiveScriptType === null) {
         setBitcoinInput(null)
-        setError('Encoding is required for ambiguous single-sig accounts')
         return
       }
       input = {
         variant: 'singlesig',
-        data: new NetworkAccount(network, new SingleSigAccount(encoding ?? getDefaultEncoding(bitcoinRaw), parsedXpub)),
-        rawInput: bitcoinRaw,
+        data: new NetworkAccount(network, new SingleSigAccount(effectiveScriptType, parsedXpub)),
+        rawInput: trimmedBitcoinRaw,
         displayName,
       }
     } else if (singleSigAccount.isOk()) {
       input = {
         variant: 'singlesig',
         data: new NetworkAccount(network, singleSigAccount.unwrap()),
-        rawInput: bitcoinRaw,
+        rawInput: trimmedBitcoinRaw,
         displayName,
       }
     } else {
-      // Validation is displayed in the UI at this point
-      setError(null)
       setBitcoinInput(null)
       return
     }
 
-    setError(null)
     setBitcoinInput(input)
-  }, [bitcoinRaw, displayName, encoding, network, showEncodingInput, setBitcoinInput, xpub, singleSigAccount])
+  }, [trimmedBitcoinRaw, displayName, effectiveScriptType, network, setBitcoinInput, xpub, singleSigAccount])
 
-  const isInvalid = bitcoinRaw !== '' && xpub.isErr() && singleSigAccount.isErr()
+  const isInvalid = trimmedBitcoinRaw !== '' && xpub.isErr() && singleSigAccount.isErr()
 
   return (
     <Stack gap={4}>
-      {error != null && error !== '' && <ErrorBanner mb={4} message={error} />}
-
       <FormControl>
         <FormLabel htmlFor="display-name">Display name</FormLabel>
         <Input
@@ -155,7 +156,12 @@ export function BitcoinInputFormFields({
           rows={3}
           value={bitcoinRaw}
           onChange={(e) => {
-            setBitcoinRaw(e.target.value)
+            const nextRaw = e.target.value
+            setBitcoinRaw(nextRaw)
+            if (nextRaw.trim() !== bitcoinRaw.trim()) {
+              setPickedScriptType(null)
+            }
+            onRawInputChange?.(nextRaw)
           }}
           placeholder="Account descriptor or extended public key"
           sx={{ resize: 'none' }}
@@ -172,18 +178,23 @@ export function BitcoinInputFormFields({
 
       {showEncodingInput && (
         <FormControl>
-          <LabelWithTooltip
-            htmlFor="encoding"
-            labelText="Select script type"
-            tooltipText="Not sure? Pick one and check the balance. If it's wrong, abandon it and try another."
-          />
-          <RadioCardGroup
-            options={Object.keys(labelsToEncodings)}
+          <Flex align="center" justify="space-between" gap={2}>
+            <LabelWithTooltip
+              htmlFor="encoding"
+              labelText="Select script type"
+              tooltipText="Not sure? Pick one and check the balance. If it's wrong, abandon it and try another."
+            />
+            {isScanningBalances && (
+              <Text textStyle="label/xs" color="neutral.500" mb={2}>
+                Checking Electrum…
+              </Text>
+            )}
+          </Flex>
+          <ScriptTypeRadioGroup
             name="encoding"
-            defaultValue={encodingsToLabels[encoding ?? getDefaultEncoding(bitcoinRaw)]}
-            onChange={(label: string) => {
-              setEncoding(getRecordValue(labelsToEncodings, label) ?? 'p2pkh')
-            }}
+            value={effectiveScriptType}
+            onChange={setPickedScriptType}
+            balances={scriptTypeBalances}
           />
         </FormControl>
       )}

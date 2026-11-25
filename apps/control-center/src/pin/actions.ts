@@ -1,6 +1,7 @@
 import { Err, Ok, Result } from '@hoseki/packages/result'
 import { type UseQueryResult, useQuery } from '@tanstack/react-query'
 import { clearFlowSource } from '../lib/flow-tracker'
+import { resetXpubScanStore } from '../pages/claims/verify/xpub-scan-store'
 import { type RouterOutput, baseTrpc, queryClient } from '../trpc'
 import { type PinStatus, currentEpoch, dispatch, endsSession, useGate } from './gate'
 import { retireTabId, tabId } from './tab'
@@ -59,6 +60,7 @@ export async function refreshPinStatus(): Promise<void> {
 /** The app has left the screen: drop everything it loaded, so nothing stays in memory behind the lock screen. */
 export async function forgetApp(): Promise<void> {
   clearFlowSource()
+  resetXpubScanStore()
   const others = { predicate: (query: { queryKey: readonly unknown[] }) => query.queryKey[0] !== PIN_STATUS_KEY[0] }
   await queryClient.cancelQueries(others)
   queryClient.removeQueries(others)
