@@ -6,7 +6,7 @@ On desktop, a user who picks their own node in the introduction enters its addre
 
 Proves: `own-node-form`, `own-node-validation`, `own-node-connect-failed`, `own-node-connected`
 
-The public server path is in `onboarding-server-public.md`. `tor` is not claimed: Tor needs the Electron shell.
+The public server path is in `onboarding-server-public.md`. `tor` is not claimed: Tor needs the Electron shell. `onboarding-server-tor.md` covers it in the packaged app.
 
 ## How to get to it (user POV)
 
@@ -29,6 +29,6 @@ Preconditions: a run launched with `helpers/verify launch --fresh --desktop` and
 ## Gotchas
 
 - Only connect to the run's fake. Any other reachable host is a real outside server; port `1` on `127.0.0.1` is closed.
-- The onion address is checked in the page and never looked up. Never turn on `Connect via Tor`: it needs the Electron shell.
+- The onion address is checked in the page and never looked up. Never turn on `Connect via Tor`: it needs the Electron shell (`onboarding-server-tor.md`).
 - The dialog fades between steps. Read the step number after a second or two.
 - A screenshot can show the frame before the last action. Wait a second before capturing, and trust the page's text over the picture.

@@ -41,7 +41,7 @@ Preconditions: the baseline.
 - The success screen counts up to the balance. Read it after it settles, not on the first frame.
 - Without `Add this amount to balance`, a transaction only logs history: a buy that would make the logged total exceed the balance is refused, and a sell is accepted without changing the balance.
 - The delete dialog's box offers to undo the transaction's effect even when it never moved the balance. Read its label before ticking it.
-- `Remove Account` asks first; an ETF account's does not.
+- `Remove Account` asks first, as it does for ETF and exchange accounts. Only the dialog's `Remove` deletes.
 - Dates are the browser's local days. Compare days, not timestamps.
 - A click can miss when the layout has just shifted, for example when a hint, an error or the script type radios appear, or while a page fades in after loading. Check the result after every click, and find the element again before retrying.
 - A screenshot can show the frame before the last action. Wait a second before capturing, and trust the page's text over the picture.

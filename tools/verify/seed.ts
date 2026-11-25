@@ -1,7 +1,7 @@
 import { Signer } from 'bip322-js'
 import { readArgs } from './args'
 import { SEED_ACCOUNTS, signingWif } from './chain'
-import { countAccounts, sentinelClient, signIn } from './client'
+import { VERIFY_PIN, countAccounts, sentinelClient, signIn } from './client'
 import {
   HELPER,
   fail,
@@ -40,7 +40,7 @@ if (requireJsonFile(readSeedMarker(paths, state))) {
 const client = sentinelClient(state.url)
 const auth = await client.auth.status.query()
 if (state.setupPinInUi && auth.platform !== null && auth.state === 'no-pin') {
-  fail(`Run ${paths.runId} has no PIN yet. Set it in the app at Set up your PIN, then seed.`)
+  fail(`Run ${paths.runId} has no PIN yet. Set PIN ${VERIFY_PIN} in the app at Set up your PIN, then seed.`)
 }
 await signIn(client)
 

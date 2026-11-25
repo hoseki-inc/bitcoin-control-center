@@ -6,7 +6,7 @@ On desktop, a user picks where statements look up their transactions: mempool.sp
 
 Proves: `choose`, `privacy-help`
 
-`tor-note` is not claimed: Tor needs the Electron shell.
+`tor-note` is not claimed: it shows only while the active connection goes through Tor, and no verify run can connect through Tor, because Tor can't reach the run's fake Electrum on `127.0.0.1`. `settings-electrum-tor.md` starts Tor in the packaged app but never connects through it.
 
 ## How to get to it (user POV)
 

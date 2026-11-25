@@ -18,11 +18,11 @@
 
 ## Recipe contract
 
-Each recipe starts with an H1 title and one paragraph describing the user-visible behavior. It then uses exactly four H2 sections in this order.
+Each recipe starts with an H1 title and one paragraph describing the user-visible behavior. It then uses exactly four H2 sections in this order; a test checks the headings.
 
 1. `Sub-features` has one line, `Proves:` followed by the sub-feature IDs in backticks. They must match the recipe's `proves` list in `map.json` exactly; a test checks it. Their descriptions stay in the map.
 2. `How to get to it (user POV)` lists every user entry point, and says which ones this recipe drives.
-3. `Driving it with the browser` starts with `Preconditions:` and uses labeled bullets that pair each user action with the handle to use and the observable result.
+3. `Driving it with the browser`, or `Driving it with CDP (<launch command>)` for a recipe that needs the packaged Electron app, starts with `Preconditions:` and uses labeled bullets that pair each user action with the handle to use and the observable result.
 4. `Gotchas` lists traps that can waste or invalidate a run.
 
 Keep implementation details out. Name only user paths, stable handles, required state and observable proof.

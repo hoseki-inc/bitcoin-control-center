@@ -376,7 +376,7 @@ Run ${runId} is ready (packaged macOS Electron)
   downloads: ${downloadsDir}
   logs:      ${paths.logsDir}
   pin:       ${setupPinInUi ? 'unset (drive PIN setup in UI)' : `${VERIFY_PIN} (desktop)`}
-Next: ${fresh || setupPinInUi ? '' : `${HELPER} seed --run ${runId}\n      `}${HELPER} doctor --run ${runId}`)
+Next: ${setupPinInUi ? `set PIN ${VERIFY_PIN} in the app\n      ` : ''}${fresh ? '' : `${HELPER} seed --run ${runId}\n      `}${HELPER} doctor --run ${runId}`)
   } catch (error) {
     await abort(`Launch failed: ${error instanceof Error ? error.message : String(error)}`)
   }
