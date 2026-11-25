@@ -1,7 +1,8 @@
 import { Coinbase } from '@hoseki/packages/clients/coinbase'
 import { Kraken } from '@hoseki/packages/clients/kraken'
-import { RobinhoodApiError } from '@hoseki/packages/clients/robinhood'
-import { StrikeApiError } from './strike'
+import { RobinhoodApiError, RobinhoodResponseError, RobinhoodTransportError } from '@hoseki/packages/clients/robinhood'
+import { InvalidProviderAmountError } from './amounts'
+import { StrikeApiError, StrikeResponseError, StrikeTransportError } from './strike'
 
 export type SupportedExchange = 'coinbase' | 'strike' | 'robinhood' | 'kraken'
 
@@ -189,6 +190,33 @@ export function classifyProviderFailure(provider: SupportedExchange, err: Error)
   return 'transient'
 }
 
+const SAFE_ERROR_KINDS = new Set([
+  'Error',
+  'TypeError',
+  'RangeError',
+  'SyntaxError',
+  'AbortError',
+  'TimeoutError',
+  'InvalidProviderAmountError',
+  'RobinhoodTransportError',
+  'RobinhoodResponseError',
+  'StrikeTransportError',
+  'StrikeResponseError',
+  'ExchangeUserError',
+  'ExchangeAccountMismatchError',
+  'ExchangeAccountUnverifiableError',
+  'ExchangeCredentialsRevokedError',
+  'ExchangeHistoryIncompleteError',
+  'ExchangeRefreshTimeoutError',
+  'ExchangeVerificationRetryableError',
+  'RobinhoodAccountUnverifiableError',
+  'CoinbaseAccountReplyMismatchError',
+])
+
+export function safeErrorKind(err: Error): string {
+  return SAFE_ERROR_KINDS.has(err.name) ? err.name : 'Error'
+}
+
 export function describeSafeProviderFailure(provider: SupportedExchange, err: Error): SafeProviderFailureMetadata {
   if (err instanceof Coinbase.ApiError) {
     const status = 'response' in err.kind ? err.kind.response?.status : undefined
@@ -204,5 +232,56 @@ export function describeSafeProviderFailure(provider: SupportedExchange, err: Er
   if (err instanceof StrikeApiError) {
     return { provider, errorKind: 'StrikeApiError', status: err.status }
   }
-  return { provider, errorKind: err.name || 'Error' }
+  return { provider, errorKind: safeErrorKind(err) }
+}
+
+function isRetryableHttpStatus(status: number | undefined): boolean {
+  return status !== undefined && (status === 429 || status >= 500)
+}
+
+export function isRetryableProviderFailure(provider: SupportedExchange, err: Error): boolean {
+  if (err instanceof InvalidProviderAmountError) {
+    return true
+  }
+  if (provider === 'coinbase') {
+    if (!(err instanceof Coinbase.ApiError)) {
+      return false
+    }
+    if (err.kind.name === 'NetworkUnreachable' || err.kind.name === 'ResponseNotAcceptable') {
+      return true
+    }
+    return 'response' in err.kind && isRetryableHttpStatus(err.kind.response?.status)
+  }
+  if (provider === 'kraken') {
+    if (!(err instanceof Kraken.ApiError)) {
+      return false
+    }
+    if (err.kind.name === 'NetworkUnreachable' || err.kind.name === 'ResponseNotAcceptable') {
+      return true
+    }
+    if (err.kind.name === 'UnexpectedFailure') {
+      const status = err.kind.response?.status
+      return isRetryableHttpStatus(status) || (status !== undefined && status >= 200 && status < 300)
+    }
+    if (err.kind.name === 'ErrorResponse') {
+      if (isRetryableHttpStatus(err.kind.response.status)) {
+        return true
+      }
+      if (classifyProviderFailure(provider, err) !== 'transient') {
+        return false
+      }
+      return err.kind.errors.some((code) => code.startsWith('EAPI:Rate limit') || code.startsWith('EService:'))
+    }
+    return false
+  }
+  if (provider === 'robinhood') {
+    if (err instanceof RobinhoodTransportError || err instanceof RobinhoodResponseError) {
+      return true
+    }
+    return err instanceof RobinhoodApiError && isRetryableHttpStatus(err.status)
+  }
+  if (err instanceof StrikeTransportError || err instanceof StrikeResponseError) {
+    return true
+  }
+  return err instanceof StrikeApiError && isRetryableHttpStatus(err.status)
 }

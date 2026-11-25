@@ -16,7 +16,7 @@ import {
 import type { WalletBalanceService } from '../../modules/wallet_balances/service'
 import { isWalletActive, upsertWalletSnapshot } from '../../modules/wallet_balances/snapshots'
 import type { EtfService } from '../etf'
-import type { ExchangeService } from '../exchanges'
+import { type ExchangeService, describeSafeProviderFailure, parseStoredBalanceSats } from '../exchanges'
 import type { ManualService } from '../manual'
 import type { PriceService } from '../price'
 import { type Sleep, type TransactionLoadError, loadAccountEntries } from '../statements'
@@ -226,12 +226,12 @@ export class ControlCenterService {
       )
 
       for (const account of connectedExchangeAccounts) {
-        if (account.balanceSats != null && account.balanceSats !== '') {
-          exchangeBalance += BigInt(account.balanceSats)
+        const validBalanceSats = parseStoredBalanceSats(account.balanceSats)
+        if (validBalanceSats !== null) {
+          exchangeBalance += BigInt(validBalanceSats)
         }
       }
 
-      // Coinbase: use real transaction history from the Coinbase API
       const coinbaseAccounts = connectedExchangeAccounts.filter((a) => a.exchange === 'coinbase')
       if (coinbaseAccounts.length > 0) {
         const coinbaseIds = coinbaseAccounts.map((a) => a.id)
@@ -239,11 +239,13 @@ export class ControlCenterService {
         if (coinbaseEntries.isOk()) {
           exchangeEntries.push(...coinbaseEntries.unwrap())
         } else {
-          this.logger.warn({ err: coinbaseEntries.unwrapErr() }, 'Failed to fetch Coinbase transactions')
+          this.logger.warn(
+            describeSafeProviderFailure('coinbase', coinbaseEntries.unwrapErr()),
+            'Failed to fetch Coinbase transactions',
+          )
         }
       }
 
-      // Kraken: use real transaction history from the Kraken Ledgers API
       const krakenAccounts = connectedExchangeAccounts.filter((a) => a.exchange === 'kraken')
       if (krakenAccounts.length > 0) {
         const krakenIds = krakenAccounts.map((a) => a.id)
@@ -251,7 +253,10 @@ export class ControlCenterService {
         if (krakenEntries.isOk()) {
           exchangeEntries.push(...krakenEntries.unwrap())
         } else {
-          this.logger.warn({ err: krakenEntries.unwrapErr() }, 'Failed to fetch Kraken transactions')
+          this.logger.warn(
+            describeSafeProviderFailure('kraken', krakenEntries.unwrapErr()),
+            'Failed to fetch Kraken transactions',
+          )
         }
       }
 
@@ -497,11 +502,12 @@ export class ControlCenterService {
   }
 
   private async getExchangeSnapshots(accountId: string): Promise<Array<{ balance_sats: string; timestamp: string }>> {
-    return this.db
+    const rows = await this.db
       .select({ balance_sats: exchangeBalanceSnapshots.balanceSats, timestamp: exchangeBalanceSnapshots.timestamp })
       .from(exchangeBalanceSnapshots)
       .where(eq(exchangeBalanceSnapshots.accountId, accountId))
       .orderBy(asc(exchangeBalanceSnapshots.timestamp))
+    return rows.filter((row) => parseStoredBalanceSats(row.balance_sats) !== null)
   }
 
   private async getAccountSnapshotEntries(accountId: string, throughTimestamp?: string): Promise<BalanceEntry[]> {

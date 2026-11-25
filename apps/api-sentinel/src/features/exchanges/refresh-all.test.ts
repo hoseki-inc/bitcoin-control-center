@@ -172,10 +172,12 @@ describe('ExchangeService refreshAllBalances and refreshBalanceForBatch', () => 
   )
 
   it(
-    'returns Err with each display name and safe timeout copy when all accounts time out',
+    'returns a sanitized ExchangeUserError and logs safe timeout metadata when all accounts time out',
     { timeout: 5_000 },
     async () => {
-      const { service, pendingCleanups, seedConnectedStrikeAccounts } = await setup({
+      const { service, logs, pendingCleanups, seedConnectedStrikeAccounts } = await setup({
+        captureLogs: true,
+        logLevel: 'info',
         refreshTimeLimitMs: 30,
       })
       const now = new Date()
@@ -196,10 +198,19 @@ describe('ExchangeService refreshAllBalances and refreshBalanceForBatch', () => 
 
       const result = await service.refreshAllBalances()
       expect(result.isErr()).toBe(true)
-      const message = result.unwrapErr().message
-      expect(message).toContain('Primary Strike')
-      expect(message).toContain('Backup Strike')
-      expect(message).toContain("Couldn't refresh your Strike balance right now. Please try again.")
+      const err = result.unwrapErr()
+      expect(err).toBeInstanceOf(ExchangeUserError)
+      if (err instanceof ExchangeUserError) {
+        expect(err.code).toBe('INTERNAL_SERVER_ERROR')
+      }
+      expect(err.message).toBe('Failed to refresh exchange balances. Please try again.')
+      expect(err.message).not.toContain('Primary Strike')
+      expect(err.message).not.toContain('Backup Strike')
+
+      const combinedLogs = logs.join('\n')
+      expect(combinedLogs).toContain('"accountId":"ex-1"')
+      expect(combinedLogs).toContain('"accountId":"ex-2"')
+      expect(combinedLogs).toContain('ExchangeRefreshTimeoutError')
     },
   )
 

@@ -4,7 +4,7 @@ import https from 'node:https'
 import { parseUnknown } from '@hoseki/packages/result'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
-import { RobinhoodApiError, RobinhoodClient } from './index'
+import { RobinhoodApiError, RobinhoodClient, RobinhoodResponseError, RobinhoodTransportError } from './index'
 
 const RequestOptionsSchema = z.object({
   path: z.string().optional(),
@@ -350,5 +350,99 @@ describe('RobinhoodClient', () => {
 
     const accountNumber = await client.findAccountNumberFromOrders()
     expect(accountNumber.unwrap()).toBe('555444333222')
+  })
+
+  it('returns RobinhoodTransportError without echoing raw transport error canary', async () => {
+    const canary = 'RH_TRANSPORT_CANARY_441122'
+    const spy = vi.spyOn(https, 'request').mockImplementation(() => {
+      throw new Error(`socket failed ${canary}`)
+    })
+    onTestFinished(() => {
+      spy.mockRestore()
+    })
+
+    const client = new RobinhoodClient(makeTestCredentials())
+    const result = await client.getAccount()
+
+    expect(result.isErr()).toBe(true)
+    const err = result.unwrapErr()
+    expect(err).toBeInstanceOf(RobinhoodTransportError)
+    expect(err.message).not.toContain(canary)
+  })
+
+  it('returns RobinhoodResponseError on invalid JSON and invalid schema without leaking body canaries', async () => {
+    const htmlCanary = 'RH_HTML_CANARY_773311'
+    const schemaCanary = 'RH_SCHEMA_CANARY_994411'
+    let mode: 'html' | 'schema' = 'html'
+    await stubRobinhoodHttps(() => ({
+      status: 200,
+      body: mode === 'html' ? `<html>${htmlCanary}</html>` : JSON.stringify({ unexpected: schemaCanary }),
+    }))
+
+    const client = new RobinhoodClient(makeTestCredentials())
+    const htmlResult = await client.getAccount()
+    expect(htmlResult.isErr()).toBe(true)
+    expect(htmlResult.unwrapErr()).toBeInstanceOf(RobinhoodResponseError)
+    expect(htmlResult.unwrapErr().message).not.toContain(htmlCanary)
+
+    mode = 'schema'
+    const schemaResult = await client.getAccount()
+    expect(schemaResult.isErr()).toBe(true)
+    expect(schemaResult.unwrapErr()).toBeInstanceOf(RobinhoodResponseError)
+    expect(schemaResult.unwrapErr().message).not.toContain(schemaCanary)
+  })
+
+  it.each(['NaN', 'abc', '-0.1', '1e10000000'])(
+    'getBtcBalance rejects malformed quantity %j with RobinhoodResponseError without throwing',
+    async (quantity) => {
+      await stubRobinhoodHttps(() => ({
+        status: 200,
+        body: JSON.stringify({
+          previous: null,
+          next: null,
+          results: [
+            {
+              account_number: '123456789012',
+              asset_code: 'BTC',
+              total_quantity: quantity,
+              quantity_available_for_trading: '0',
+            },
+          ],
+        }),
+      }))
+
+      const client = new RobinhoodClient(makeTestCredentials())
+      const result = await client.getBtcBalance()
+
+      expect(result.isErr()).toBe(true)
+      expect(result.unwrapErr()).toBeInstanceOf(RobinhoodResponseError)
+      expect(result.unwrapErr().message).not.toContain(quantity)
+    },
+  )
+
+  it('getBtcBalance converts valid decimal holdings to satoshis and returns 0n when absent', async () => {
+    let includeBtc = true
+    await stubRobinhoodHttps(() => ({
+      status: 200,
+      body: JSON.stringify({
+        previous: null,
+        next: null,
+        results: includeBtc
+          ? [
+              {
+                account_number: '123456789012',
+                asset_code: 'BTC',
+                total_quantity: '0.123456789',
+                quantity_available_for_trading: '0.123456789',
+              },
+            ]
+          : [],
+      }),
+    }))
+
+    const client = new RobinhoodClient(makeTestCredentials())
+    expect((await client.getBtcBalance()).unwrap()).toBe(12_345_679n)
+    includeBtc = false
+    expect((await client.getBtcBalance()).unwrap()).toBe(0n)
   })
 })

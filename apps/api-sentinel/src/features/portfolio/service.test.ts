@@ -21,7 +21,14 @@ import { drizzle } from 'drizzle-orm/libsql'
 import pino from 'pino'
 import { assert, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { openDrizzleDatabase } from '../../db/drizzle'
-import { accountHistorySyncs, accounts, balanceSnapshots } from '../../db/schema'
+import {
+  accountHistorySyncs,
+  accounts,
+  balanceSnapshots,
+  exchangeAccounts,
+  exchangeBalanceSnapshots,
+} from '../../db/schema'
+import { Encrypted, generateEncryptionKey, initEncryption } from '../../lib/encrypted'
 import { WalletBalanceService } from '../../modules/wallet_balances/service'
 import { EtfService } from '../etf'
 import { ExchangeService } from '../exchanges'
@@ -1115,6 +1122,74 @@ describe('manual accounts in portfolio history', () => {
         '2026-09-04 5100',
         '2026-09-05 5100',
       ])
+    })
+  })
+})
+
+describe('exchange read-path guards', () => {
+  it('skips corrupt exchange balances and snapshots without throwing or deleting raw rows', async () => {
+    await withTestSetup(async () => {
+      initEncryption(generateEncryptionKey())
+      const { db, service } = harness
+      const encrypted = JSON.stringify({
+        type: 'apiKey',
+        data: { apiKey: { blob: Encrypted.encrypt('strike-key').unwrap().blob } },
+      })
+      const corruptId = 'ex_corrupt_portfolio'
+      const healthyId = 'ex_healthy_portfolio'
+
+      await db.insert(exchangeAccounts).values([
+        {
+          id: corruptId,
+          provider: 'strike',
+          displayName: 'Strike Corrupt',
+          encryptedCredentials: encrypted,
+          balanceSats: 'NaN',
+          balanceAsOf: now.toISOString(),
+          createdAt: now.toISOString(),
+          credentialsConnectedAt: now.toISOString(),
+        },
+        {
+          id: healthyId,
+          provider: 'strike',
+          displayName: 'Strike Healthy',
+          encryptedCredentials: encrypted,
+          balanceSats: '40000000',
+          balanceAsOf: now.toISOString(),
+          createdAt: now.toISOString(),
+          credentialsConnectedAt: now.toISOString(),
+        },
+      ])
+
+      await db.insert(exchangeBalanceSnapshots).values([
+        { accountId: corruptId, timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '10000000' },
+        { accountId: corruptId, timestamp: '2026-09-02T12:00:00.000Z', balanceSats: 'NaN' },
+        { accountId: corruptId, timestamp: '2026-09-03T12:00:00.000Z', balanceSats: '25000000' },
+        { accountId: healthyId, timestamp: '2026-09-01T12:00:00.000Z', balanceSats: '40000000' },
+      ])
+
+      const result = await service.getData({
+        timeRange: '7d',
+        accountIds: [],
+        manualAccountIds: [],
+        etfAccountIds: [],
+        exchangeAccountIds: [corruptId, healthyId],
+      })
+      expect(result.isOk()).toBe(true)
+      const data = result.unwrap()
+      expect(data.currentTotalBalance).toBe('40000000')
+      const byDay = new Map(data.historicalData.map((point) => [point.timestamp.slice(0, 10), point.totalBalance]))
+      expect(byDay.get('2026-09-01')).toBe('50000000')
+      expect(byDay.get('2026-09-02')).toBe('50000000')
+      expect(byDay.get('2026-09-03')).toBe('65000000')
+
+      await expect(
+        db
+          .select({ balanceSats: exchangeBalanceSnapshots.balanceSats })
+          .from(exchangeBalanceSnapshots)
+          .where(eq(exchangeBalanceSnapshots.accountId, corruptId))
+          .orderBy(asc(exchangeBalanceSnapshots.timestamp)),
+      ).resolves.toEqual([{ balanceSats: '10000000' }, { balanceSats: 'NaN' }, { balanceSats: '25000000' }])
     })
   })
 })

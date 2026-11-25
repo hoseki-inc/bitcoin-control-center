@@ -3,7 +3,7 @@ import { TRPCError } from '@trpc/server'
 import type { Logger } from 'pino'
 import { z } from 'zod'
 import { protectedProcedure, router } from '../../modules/trpc/init'
-import { EXCHANGE_DISPLAY_NAMES, ExchangeUserError, type SupportedExchange } from './provider-errors'
+import { EXCHANGE_DISPLAY_NAMES, ExchangeUserError, type SupportedExchange, safeErrorKind } from './provider-errors'
 
 interface ExchangeAccountResponseDto {
   id: string
@@ -42,8 +42,8 @@ function toConnectTrpcError(error: Error, provider: SupportedExchange): TRPCErro
     return new TRPCError({ code: error.code, message: error.message })
   }
   return new TRPCError({
-    code: 'BAD_REQUEST',
-    message: `Couldn't connect to ${EXCHANGE_DISPLAY_NAMES[provider]} right now. Please check your credentials and try again.`,
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `Couldn't connect to ${EXCHANGE_DISPLAY_NAMES[provider]} right now. Please try again.`,
   })
 }
 
@@ -67,7 +67,7 @@ async function runSanitizedConnect<T>(
     result = await action()
   } catch (thrown) {
     const error = thrown instanceof Error ? thrown : new Error('Unexpected error')
-    logger.debug({ provider, errorKind: error.name || 'Error' }, 'Exchange connect threw unexpectedly')
+    logger.debug({ provider, errorKind: safeErrorKind(error) }, 'Exchange connect threw unexpectedly')
     throw toConnectTrpcError(error, provider)
   }
   if (result.isErr()) {
@@ -82,7 +82,7 @@ async function runSanitizedRefresh<T>(logger: Logger, action: () => PromiseLike<
     result = await action()
   } catch (thrown) {
     const error = thrown instanceof Error ? thrown : new Error('Unexpected error')
-    logger.debug({ errorKind: error.name || 'Error' }, 'Exchange refresh threw unexpectedly')
+    logger.debug({ errorKind: safeErrorKind(error) }, 'Exchange refresh threw unexpectedly')
     throw toRefreshTrpcError(error)
   }
   if (result.isErr()) {

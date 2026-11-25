@@ -335,6 +335,74 @@ it('enforces exchange provider error classification, safe logs, and non-401 tRPC
   })
 })
 
+it('enforces exchange provider amount helpers and try-guarded fetch/.json calls', async () => {
+  await withTestSetup(async () => {
+    const blockedProbes = {
+      'apps/api-sentinel/src/features/exchanges/new-decimal-probe.ts':
+        'export const bad = (x: string): unknown => new Decimal(x)',
+      'apps/api-sentinel/src/features/exchanges/call-decimal-probe.ts':
+        'export const bad = (x: string): unknown => Decimal(x)',
+      'apps/api-sentinel/src/features/exchanges/bigint-probe.ts': 'export const bad = (x: string): bigint => BigInt(x)',
+      'apps/api-sentinel/src/features/exchanges/math-round-probe.ts':
+        'export const bad = (x: number): number => Math.round(x)',
+      'apps/api-sentinel/src/features/exchanges/number-probe.ts': 'export const bad = (x: string): number => Number(x)',
+      'apps/api-sentinel/src/features/exchanges/parse-float-probe.ts':
+        'export const bad = (x: string): number => parseFloat(x)',
+      'apps/api-sentinel/src/features/exchanges/parse-int-probe.ts':
+        'export const bad = (x: string): number => parseInt(x, 10)',
+      'apps/api-sentinel/src/features/exchanges/unguarded-fetch-probe.ts':
+        'export const bad = async (url: string): Promise<Response> => fetch(url)',
+      'apps/api-sentinel/src/features/exchanges/unguarded-global-fetch-probe.ts':
+        'export const bad = async (url: string): Promise<Response> => globalThis.fetch(url)',
+      'apps/api-sentinel/src/features/exchanges/unguarded-json-probe.ts':
+        'export const bad = async (res: Response): Promise<unknown> => res.json()',
+      'apps/api-sentinel/src/features/exchanges/nested-fn-fetch-probe.ts':
+        'export function bad(url: string): () => Promise<Response> { try { return () => fetch(url) } catch { return () => Promise.reject(new Error("x")) } }',
+      'apps/api-sentinel/src/features/exchanges/catch-fetch-probe.ts':
+        'export async function bad(url: string): Promise<Response> { try { throw new Error("x") } catch { return fetch(url) } }',
+    }
+    const allowedProbes = {
+      'apps/api-sentinel/src/features/exchanges/amounts.ts':
+        'export const ok = (x: string): bigint => BigInt(new Decimal(x).toFixed(0))',
+      'apps/api-sentinel/src/features/exchanges/service.test.ts':
+        'export const ok = async (url: string, x: string): Promise<bigint> => { const r = await fetch(url); await r.json(); return BigInt(Math.round(Number(x) * 1e8)) }',
+      'apps/api-sentinel/src/features/exchanges/service.fixtures.ts':
+        'export const ok = (x: string): number => parseFloat(x)',
+      'apps/api-sentinel/src/features/exchanges/try-guarded-probe.ts':
+        'export async function ok(url: string, x: number): Promise<boolean> { try { const res = await fetch(url); await res.json(); return Number.isFinite(x) } catch { return false } }',
+      'apps/api-sentinel/src/features/exchanges/decimal-method-probe.ts':
+        'export const ok = (a: { sub: (b: string) => string }, b: string): string => a.sub(b)',
+    }
+    const probes = { ...blockedProbes, ...allowedProbes }
+    for (const [relativePath, source] of Object.entries(probes)) {
+      const path = join(fixture, relativePath)
+      mkdirSync(dirname(path), { recursive: true })
+      writeFileSync(path, `${source}\n`)
+    }
+    const result = spawnSync(
+      process.execPath,
+      [
+        resolve(repository, 'node_modules/oxlint/bin/oxlint'),
+        '--format',
+        'unix',
+        ...Object.keys(probes).map((relativePath) => join(fixture, relativePath)),
+      ],
+      { cwd: fixture, encoding: 'utf8', timeout: 15000 },
+    )
+    const reportedFiles = [
+      ...new Set(
+        result.stdout
+          .split('\n')
+          .filter((line) => line.includes('[Error/control-center(exchange-provider-input)]'))
+          .map((line) => line.slice(0, line.indexOf(':'))),
+      ),
+    ]
+    expect(result.error).toBeUndefined()
+    expect(result.status, result.stdout + result.stderr).toBe(1)
+    expect(reportedFiles.sort(), result.stdout + result.stderr).toEqual(Object.keys(blockedProbes).sort())
+  })
+})
+
 it('blocks swallowed signing errors in signing files while allowing refresh catches and non-signing files', async () => {
   await withTestSetup(async () => {
     const blockedProbes = {

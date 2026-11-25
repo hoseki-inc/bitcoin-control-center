@@ -202,4 +202,24 @@ describe('SafeHttp', () => {
       expect(response.expectErr('error missing').kind.value).toEqual(SafeHttpErrorKind.ErrorResponse)
     })
   })
+
+  it('returns Err without throwing synchronously on illegal header characters', async () => {
+    await withTestSetup(async () => {
+      const fetchMock = vi.fn()
+      global.fetch = fetchMock
+      const response = await safeHttp.get(url, { headers: { Authorization: 'Bearer bad\r\nheader' } })
+      expect(response.expectErr('error missing').kind.value).toEqual(SafeHttpErrorKind.NetworkUnreachable)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+  })
+
+  it('returns Err without throwing synchronously on a malformed URL', async () => {
+    await withTestSetup(async () => {
+      const fetchMock = vi.fn()
+      global.fetch = fetchMock
+      const response = await safeHttp.get('http://[::1')
+      expect(response.expectErr('error missing').kind.value).toEqual(SafeHttpErrorKind.NetworkUnreachable)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+  })
 })
