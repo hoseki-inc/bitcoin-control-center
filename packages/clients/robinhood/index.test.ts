@@ -28,12 +28,24 @@ interface CapturedRequest {
   method: string
 }
 
-async function stubRobinhoodHttps(responder: (args: CapturedRequest) => { status: number; body: string }) {
+async function stubRobinhoodHttps(
+  responder: (args: CapturedRequest) => { status: number; body: string; truncate?: boolean },
+) {
   const requests: CapturedRequest[] = []
   const server = http.createServer((req, res) => {
     const captured = { path: req.url ?? '', method: req.method ?? 'GET' }
     requests.push(captured)
     const reply = responder(captured)
+    if (reply.truncate === true) {
+      res.writeHead(reply.status, {
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(reply.body) + 100,
+      })
+      res.write(reply.body, () => {
+        res.destroy()
+      })
+      return
+    }
     res.writeHead(reply.status, { 'Content-Type': 'application/json' })
     res.end(reply.body)
   })
@@ -77,7 +89,13 @@ async function stubRobinhoodHttps(responder: (args: CapturedRequest) => { status
   return requests
 }
 
-async function stubSilentRobinhood(options: { sendHeaders: boolean }): Promise<number[]> {
+interface SilentRobinhoodSpy {
+  requestedTimeouts: number[]
+  timeoutFiredCount: number
+  destroyErrors: Array<Error | undefined>
+}
+
+async function stubSilentRobinhood(options: { sendHeaders: boolean }): Promise<SilentRobinhoodSpy> {
   const server = http.createServer((_req, res) => {
     if (options.sendHeaders) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
@@ -91,7 +109,11 @@ async function stubSilentRobinhood(options: { sendHeaders: boolean }): Promise<n
   })
   const { port } = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener')
 
-  const requestedTimeouts: number[] = []
+  const state: SilentRobinhoodSpy = {
+    requestedTimeouts: [],
+    timeoutFiredCount: 0,
+    destroyErrors: [],
+  }
   const spy = vi.spyOn(https, 'request').mockImplementation((...args: Parameters<typeof https.request>) => {
     const [first, second] = args
     const opts = parseUnknown(RequestOptionsSchema, first).expect('RequestOptions')
@@ -100,10 +122,18 @@ async function stubSilentRobinhood(options: { sendHeaders: boolean }): Promise<n
       { hostname: '127.0.0.1', port, protocol: 'http:', path: opts.path, method: opts.method, headers: opts.headers },
       callback,
     )
+    const destroyReq = req.destroy.bind(req)
+    vi.spyOn(req, 'destroy').mockImplementation((err?: Error) => {
+      state.destroyErrors.push(err)
+      return destroyReq(err)
+    })
     const setSocketTimeout = req.setTimeout.bind(req)
     vi.spyOn(req, 'setTimeout').mockImplementation((ms, onTimeout) => {
-      requestedTimeouts.push(ms)
-      return setSocketTimeout(50, onTimeout)
+      state.requestedTimeouts.push(ms)
+      return setSocketTimeout(50, () => {
+        state.timeoutFiredCount += 1
+        onTimeout?.()
+      })
     })
     return req
   })
@@ -118,22 +148,28 @@ async function stubSilentRobinhood(options: { sendHeaders: boolean }): Promise<n
     })
   })
 
-  return requestedTimeouts
+  return state
 }
 
 describe('RobinhoodClient request timeout', () => {
   it.each([
     { reply: 'sends nothing', sendHeaders: false },
     { reply: 'sends headers then goes quiet', sendHeaders: true },
-  ])('returns a transient error when Robinhood $reply', async ({ sendHeaders }) => {
-    const requestedTimeouts = await stubSilentRobinhood({ sendHeaders })
+  ])('returns RobinhoodTransportError when Robinhood $reply', async ({ sendHeaders }) => {
+    const spy = await stubSilentRobinhood({ sendHeaders })
 
     const client = new RobinhoodClient(makeTestCredentials())
     const result = await client.getHoldings()
 
-    expect(requestedTimeouts).toEqual([30_000])
+    expect(spy.requestedTimeouts).toEqual([30_000])
+    expect(spy.timeoutFiredCount).toBe(1)
+    expect(spy.destroyErrors).toHaveLength(1)
+    expect(spy.destroyErrors[0]?.message).toBe('Robinhood request timed out')
     expect(result.isErr()).toBe(true)
-    expect(result.unwrapErr()).not.toBeInstanceOf(RobinhoodApiError)
+    const err = result.unwrapErr()
+    expect(err).toBeInstanceOf(RobinhoodTransportError)
+    expect(err).not.toBeInstanceOf(RobinhoodApiError)
+    expect(err.message).toBe('Failed to connect to Robinhood API')
   })
 })
 
@@ -196,6 +232,23 @@ describe('RobinhoodClient', () => {
     if (err instanceof RobinhoodApiError) {
       expect(err.status).toBe(429)
     }
+  })
+
+  it('returns RobinhoodTransportError when a holdings response is cut off mid-body', { timeout: 5_000 }, async () => {
+    await stubRobinhoodHttps(() => ({
+      status: 200,
+      body: '{"results":[{"account_number":"123"',
+      truncate: true,
+    }))
+
+    const client = new RobinhoodClient(makeTestCredentials())
+    const result = await client.getHoldings()
+
+    expect(result.isErr()).toBe(true)
+    const err = result.unwrapErr()
+    expect(err).toBeInstanceOf(RobinhoodTransportError)
+    expect(err).not.toBeInstanceOf(RobinhoodApiError)
+    expect(err.message).toBe('Failed to connect to Robinhood API')
   })
 
   it('returns an error when /accounts/ response is missing account_number', async () => {

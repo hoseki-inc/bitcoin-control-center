@@ -106,6 +106,22 @@ async function httpsRequest(options: {
   body?: string
 }): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
+    let settled = false
+    const resolveOnce = (value: { status: number; body: string }): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      resolve(value)
+    }
+    const rejectOnce = (err: Error): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      reject(err)
+    }
+
     const req = https.request(
       {
         hostname: options.hostname,
@@ -118,17 +134,38 @@ async function httpsRequest(options: {
         res.on('data', (chunk: Uint8Array) => {
           chunks.push(chunk)
         })
+        res.on('error', (err) => {
+          rejectOnce(err)
+          if (!req.destroyed) {
+            req.destroy()
+          }
+        })
+        res.on('close', () => {
+          if (!res.complete) {
+            rejectOnce(new Error('Robinhood response closed before it was complete'))
+            if (!req.destroyed) {
+              req.destroy()
+            }
+          }
+        })
         res.on('end', () => {
-          resolve({
+          resolveOnce({
             status: res.statusCode ?? 0,
             body: Buffer.concat(chunks).toString('utf-8'),
           })
         })
       },
     )
-    req.on('error', reject)
+    req.on('error', rejectOnce)
     req.setTimeout(30_000, () => {
-      req.destroy(new Error('Robinhood request timed out'))
+      if (settled) {
+        return
+      }
+      const timeoutError = new Error('Robinhood request timed out')
+      rejectOnce(timeoutError)
+      if (!req.destroyed) {
+        req.destroy(timeoutError)
+      }
     })
     if (options.body != null && options.body !== '') {
       req.write(options.body)
