@@ -1,4 +1,6 @@
 import http from 'node:http'
+import v8 from 'node:v8'
+import vm from 'node:vm'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { parseUnknown } from '../../result/index.ts'
@@ -8,8 +10,22 @@ import { safeHttp } from './safe-http.ts'
 
 const url = 'https://example.com'
 
-async function startSilentServer(options: { sendHeaders: boolean }): Promise<string> {
+interface SilentServer {
+  url: string
+  nextRequest: () => Promise<void>
+}
+
+async function startSilentServer(options: { sendHeaders: boolean }): Promise<SilentServer> {
+  let pendingArrivals = 0
+  const waiters: Array<() => void> = []
+
   const server = http.createServer((_req, res) => {
+    const waiter = waiters.shift()
+    if (waiter !== undefined) {
+      waiter()
+    } else {
+      pendingArrivals += 1
+    }
     if (options.sendHeaders) {
       res.writeHead(200, { 'Content-Type': 'application/json' })
       res.write('{"partial":')
@@ -21,28 +37,63 @@ async function startSilentServer(options: { sendHeaders: boolean }): Promise<str
     })
   })
   onTestFinished(async () => {
-    server.closeAllConnections()
-    await new Promise<void>((resolve) => {
+    const closed = new Promise<void>((resolve) => {
       server.close(() => {
         resolve()
       })
     })
+    server.closeAllConnections()
+    await closed
   })
   const { port } = parseUnknown(z.object({ port: z.number() }), server.address()).expect('TCP listener')
-  return `http://127.0.0.1:${port}`
+  return {
+    url: `http://127.0.0.1:${port}`,
+    nextRequest: async () => {
+      if (pendingArrivals > 0) {
+        pendingArrivals -= 1
+        return
+      }
+      await new Promise<void>((resolve) => {
+        waiters.push(resolve)
+      })
+    },
+  }
 }
 
-function shortenDefaultTimeout(): number[] {
+interface StubbedTimeout {
+  requested: number[]
+  fire: () => void
+}
+
+function stubDefaultTimeout(): StubbedTimeout {
   const requested: number[] = []
-  const realTimeout = AbortSignal.timeout.bind(AbortSignal)
+  const controllers: AbortController[] = []
   const spy = vi.spyOn(AbortSignal, 'timeout').mockImplementation((ms) => {
     requested.push(ms)
-    return realTimeout(50)
+    const controller = new AbortController()
+    controllers.push(controller)
+    return controller.signal
   })
   onTestFinished(() => {
     spy.mockRestore()
   })
-  return requested
+  return {
+    requested,
+    fire: () => {
+      for (const controller of controllers) {
+        if (!controller.signal.aborted) {
+          controller.abort(new DOMException('The operation was aborted due to timeout', 'TimeoutError'))
+        }
+      }
+    },
+  }
+}
+
+function getGc(): () => void {
+  v8.setFlagsFromString('--expose-gc')
+  return parseUnknown(z.function({ input: [], output: z.void() }), vm.runInNewContext('gc')).expect(
+    'gc exposed by --expose-gc',
+  )
 }
 
 describe('SafeHttp', () => {
@@ -66,20 +117,59 @@ describe('SafeHttp', () => {
 
   it('aborts a silent request after the default timeout unless the caller passes a signal', async () => {
     await withTestSetup(async () => {
-      const silentUrl = await startSilentServer({ sendHeaders: false })
-      const requested = shortenDefaultTimeout()
+      const server = await startSilentServer({ sendHeaders: false })
+      const timeout = stubDefaultTimeout()
 
-      const timedOut = await safeHttp.get(silentUrl)
-      expect(requested).toEqual([30_000])
+      const pendingTimeout = safeHttp.get(server.url)
+      await server.nextRequest()
+      timeout.fire()
+      const timedOut = await pendingTimeout
+      expect(timeout.requested).toEqual([30_000])
       expect(timedOut.expectErr('default timeout').kind.value).toEqual(SafeHttpErrorKind.NetworkUnreachable)
 
       const controller = new AbortController()
       const reason = new Error('caller aborted')
-      setTimeout(() => {
-        controller.abort(reason)
-      }, 200)
-      const callerAborted = await safeHttp.get(silentUrl, { signal: controller.signal })
+      const pendingCaller = safeHttp.get(server.url, { signal: controller.signal })
+      await server.nextRequest()
+      expect(timeout.requested).toEqual([30_000])
+      controller.abort(reason)
+      const callerAborted = await pendingCaller
       const error = callerAborted.expectErr('caller abort')
+      expect(error.kind.value).toEqual(SafeHttpErrorKind.NetworkUnreachable)
+      expect(error.kind.cause).toBe(reason)
+    })
+  })
+
+  it('still aborts an in-flight request after garbage collection', async () => {
+    await withTestSetup(async () => {
+      const server = await startSilentServer({ sendHeaders: false })
+      const gc = getGc()
+      const controller = new AbortController()
+      const reason = new Error('caller aborted after gc')
+
+      const pending = safeHttp.get(server.url, { signal: controller.signal })
+      await server.nextRequest()
+      gc()
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve)
+      })
+      gc()
+      controller.abort(reason)
+
+      let guardTimer: ReturnType<typeof setTimeout> | undefined
+      const settled = await Promise.race([
+        pending,
+        new Promise<'hung'>((resolve) => {
+          guardTimer = setTimeout(() => {
+            resolve('hung')
+          }, 500)
+        }),
+      ])
+      clearTimeout(guardTimer)
+      if (settled === 'hung') {
+        expect.fail('request hung after GC broke abort propagation')
+      }
+      const error = settled.expectErr('caller abort after gc')
       expect(error.kind.value).toEqual(SafeHttpErrorKind.NetworkUnreachable)
       expect(error.kind.cause).toBe(reason)
     })
@@ -87,10 +177,12 @@ describe('SafeHttp', () => {
 
   it('fails the body read when a reply stalls after its headers', async () => {
     await withTestSetup(async () => {
-      const silentUrl = await startSilentServer({ sendHeaders: true })
-      shortenDefaultTimeout()
-      const response = (await safeHttp.get(silentUrl)).expect('headers arrive')
-      const body = await response.text()
+      const server = await startSilentServer({ sendHeaders: true })
+      const timeout = stubDefaultTimeout()
+      const response = (await safeHttp.get(server.url)).expect('headers arrive')
+      const bodyPromise = response.text()
+      timeout.fire()
+      const body = await bodyPromise
       expect(body.expectErr('stalled body').kind).toEqual(SafeBodyErrorKind.Unreadable)
     })
   })
