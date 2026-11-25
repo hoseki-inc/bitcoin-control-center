@@ -4454,10 +4454,10 @@ it.each(['info', 'debug'] as const)(
     )
 
     const cbEntries = await service.getCoinbaseTransactionEntries(['cb-backfill-warn', 'cb-tx-warn'])
-    expect(cbEntries.isOk()).toBe(true)
+    expect(cbEntries.isErr()).toBe(true)
 
     const krEntries = await service.getKrakenTransactionEntries(['kr-ledger-warn'])
-    expect(krEntries.isOk()).toBe(true)
+    expect(krEntries.isErr()).toBe(true)
 
     const output = logs.join('\n')
     expect(output).toContain('Failed to list Coinbase accounts')
@@ -4466,3 +4466,535 @@ it.each(['info', 'debug'] as const)(
     expect(output).not.toContain(secretCanary)
   },
 )
+
+function makeCoinbaseTransaction(args: { id: string; amountBtc: string; createdAt: string }): JsonValue {
+  return {
+    id: args.id,
+    type: 'buy',
+    status: 'completed',
+    amount: { amount: args.amountBtc, currency: 'BTC' },
+    native_amount: { amount: '1000.00', currency: 'USD' },
+    created_at: args.createdAt,
+    resource: 'transaction',
+    resource_path: `/v2/accounts/cb-uuid/transactions/${args.id}`,
+  }
+}
+
+function makeKrakenLedgerEntry(args: { refid: string; time: number; amount: string; fee?: string }): JsonValue {
+  return {
+    refid: args.refid,
+    time: args.time,
+    type: 'deposit',
+    aclass: 'currency',
+    asset: 'XXBT',
+    amount: args.amount,
+    fee: args.fee ?? '0.0000',
+    balance: args.amount,
+  }
+}
+
+it('caches and deduplicates Coinbase and Kraken history, and refetches after the 10 minute TTL', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
+  const baseTime = Date.parse('2026-06-01T12:00:00.000Z')
+  vi.setSystemTime(baseTime)
+
+  const { db, service } = await setup()
+  const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+  const nowIso = new Date(baseTime).toISOString()
+
+  await db.insert(exchangeAccounts).values([
+    {
+      id: 'cb-cache',
+      provider: 'coinbase',
+      displayName: 'Coinbase Cache',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-key', secretKey: 'cb-sec' }),
+      externalAccountId: 'cb-uuid-cache',
+      balanceSats: '10000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+    {
+      id: 'kr-cache',
+      provider: 'kraken',
+      displayName: 'Kraken Cache',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-key', secretKey: krakenSecret }),
+      externalAccountId: 'KR-CACHE-1',
+      balanceSats: '20000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+  ])
+
+  let cbFetches = 0
+  let krFetches = 0
+  let markCbStarted: (() => void) | undefined
+  const cbStarted = new Promise<void>((resolve) => {
+    markCbStarted = resolve
+  })
+  let markKrStarted: (() => void) | undefined
+  const krStarted = new Promise<void>((resolve) => {
+    markKrStarted = resolve
+  })
+  let releaseCb: (() => void) | undefined
+  const cbGate = new Promise<void>((resolve) => {
+    releaseCb = resolve
+  })
+  let releaseKr: (() => void) | undefined
+  const krGate = new Promise<void>((resolve) => {
+    releaseKr = resolve
+  })
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (url.includes('/v2/accounts/cb-uuid-cache/transactions')) {
+        cbFetches += 1
+        if (cbFetches === 1) {
+          markCbStarted?.()
+          await cbGate
+        }
+        return jsonResponse({
+          pagination: { next_uri: null },
+          data: [makeCoinbaseTransaction({ id: 'tx-1', amountBtc: '0.1', createdAt: '2026-01-01T00:00:00.000Z' })],
+        })
+      }
+      if (url.includes('/0/private/Ledgers')) {
+        krFetches += 1
+        if (krFetches === 1) {
+          markKrStarted?.()
+          await krGate
+        }
+        return jsonResponse({
+          error: [],
+          result: {
+            count: 1,
+            ledger: { L1: makeKrakenLedgerEntry({ refid: 'R1', time: 1767225600, amount: '0.2' }) },
+          },
+        })
+      }
+      return jsonResponse({}, 404)
+    }),
+  )
+
+  const cbConcurrent1 = service.getCoinbaseTransactionEntries(['cb-cache'])
+  const cbConcurrent2 = service.getCoinbaseTransactionEntries(['cb-cache'])
+  const krConcurrent1 = service.getKrakenTransactionEntries(['kr-cache'])
+  const krConcurrent2 = service.getKrakenTransactionEntries(['kr-cache'])
+
+  await Promise.all([cbStarted, krStarted])
+  expect(cbFetches).toBe(1)
+  expect(krFetches).toBe(1)
+  releaseCb?.()
+  releaseKr?.()
+
+  const [cb1, cb2, kr1, kr2] = await Promise.all([cbConcurrent1, cbConcurrent2, krConcurrent1, krConcurrent2])
+  expect(cb1.unwrap()).toHaveLength(1)
+  expect(cb2.unwrap()).toHaveLength(1)
+  expect(kr1.unwrap()).toHaveLength(1)
+  expect(kr2.unwrap()).toHaveLength(1)
+  expect(cbFetches).toBe(1)
+  expect(krFetches).toBe(1)
+
+  // Subsequent reads within 10 minutes reuse cached entries without API calls.
+  vi.setSystemTime(baseTime + 10 * 60_000)
+  expect((await service.getCoinbaseTransactionEntries(['cb-cache'])).unwrap()).toHaveLength(1)
+  expect((await service.getKrakenTransactionEntries(['kr-cache'])).unwrap()).toHaveLength(1)
+  expect(cbFetches).toBe(1)
+  expect(krFetches).toBe(1)
+
+  // After 10 min + 1 ms, both refetch.
+  vi.setSystemTime(baseTime + 10 * 60_000 + 1)
+  expect((await service.getCoinbaseTransactionEntries(['cb-cache'])).unwrap()).toHaveLength(1)
+  expect((await service.getKrakenTransactionEntries(['kr-cache'])).unwrap()).toHaveLength(1)
+  expect(cbFetches).toBe(2)
+  expect(krFetches).toBe(2)
+})
+
+it('returns Ok([]) with zero API calls when filterAccountIds is empty', async () => {
+  const { db, service } = await setup()
+  const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+  const nowIso = new Date().toISOString()
+
+  await db.insert(exchangeAccounts).values([
+    {
+      id: 'cb-empty-filter',
+      provider: 'coinbase',
+      displayName: 'Coinbase',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-key', secretKey: 'cb-sec' }),
+      externalAccountId: 'cb-uuid-empty',
+      balanceSats: '10000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+    {
+      id: 'kr-empty-filter',
+      provider: 'kraken',
+      displayName: 'Kraken',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-key', secretKey: krakenSecret }),
+      externalAccountId: 'KR-EMPTY-1',
+      balanceSats: '10000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+  ])
+
+  const fetchMock = vi.fn(async () => jsonResponse({}, 500))
+  vi.stubGlobal('fetch', fetchMock)
+
+  expect((await service.getCoinbaseTransactionEntries([])).unwrap()).toEqual([])
+  expect((await service.getKrakenTransactionEntries([])).unwrap()).toEqual([])
+  expect(fetchMock).not.toHaveBeenCalled()
+})
+
+it('invalidates history cache on credential rotation, removeAccount, revocation, manual refreshBalance, and changed refreshAllBalances while keeping unchanged refreshAllBalances cached', async () => {
+  const { db, service } = await setup()
+  const nowIso = new Date().toISOString()
+
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-inv',
+    provider: 'coinbase',
+    displayName: 'Coinbase Inv',
+    encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-key-1', secretKey: 'cb-sec-1' }, 'port-inv'),
+    externalAccountId: 'cb-uuid-inv',
+    balanceSats: '10000000',
+    balanceAsOf: nowIso,
+    credentialsConnectedAt: nowIso,
+  })
+
+  let txFetches = 0
+  let balanceBtc = '0.1'
+  let revokeBalance = false
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (url.includes('/v2/accounts/cb-uuid-inv/transactions')) {
+        txFetches += 1
+        return jsonResponse({
+          pagination: { next_uri: null },
+          data: [
+            makeCoinbaseTransaction({ id: `tx-${txFetches}`, amountBtc: '0.1', createdAt: '2026-01-01T00:00:00.000Z' }),
+          ],
+        })
+      }
+      if (url.includes('/api/v3/brokerage/accounts/cb-uuid-inv')) {
+        if (revokeBalance) {
+          return jsonResponse({ error: 'unauthorized' }, 401)
+        }
+        return jsonResponse({
+          account: makeCoinbaseAccount({
+            uuid: 'cb-uuid-inv',
+            name: 'BTC Wallet',
+            balance: balanceBtc,
+            retail_portfolio_id: 'port-inv',
+          }),
+        })
+      }
+      return jsonResponse({}, 404)
+    }),
+  )
+
+  // Initial fetch populates cache.
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(1)
+
+  // refreshAllBalances (via refreshBalanceForBatch) with unchanged balance (0.1 BTC = 10000000 sats) keeps history cache warm.
+  expect((await service.refreshAllBalances()).isOk()).toBe(true)
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(1)
+
+  // Direct refreshBalanceForBatch (used by recordAllSnapshots) with unchanged balance also keeps history cache warm.
+  expect((await service.refreshBalanceForBatch({ id: 'cb-inv', exchange: 'coinbase' })).isOk()).toBe(true)
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(1)
+
+  // refreshAllBalances (via refreshBalanceForBatch) with changed balance invalidates history cache.
+  balanceBtc = '0.2'
+  expect((await service.refreshAllBalances()).isOk()).toBe(true)
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(2)
+
+  // Direct refreshBalanceForBatch with changed balance also invalidates history cache.
+  balanceBtc = '0.3'
+  expect((await service.refreshBalanceForBatch({ id: 'cb-inv', exchange: 'coinbase' })).isOk()).toBe(true)
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(3)
+
+  // Manual 1-arg refreshBalance ALWAYS invalidates even when balance is unchanged.
+  expect((await service.refreshBalance('cb-inv')).isOk()).toBe(true)
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(4)
+
+  // Credential rotation changes cache key and refetches.
+  const rotatedCreds = makeEncryptedApiKeyJson({ apiKey: 'cb-key-2', secretKey: 'cb-sec-2' }, 'port-inv')
+  await db
+    .update(exchangeAccounts)
+    .set({
+      encryptedCredentials: rotatedCreds,
+    })
+    .where(eq(exchangeAccounts.id, 'cb-inv'))
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(5)
+
+  // Revocation invalidates history cache.
+  revokeBalance = true
+  const revokedRes = await service.refreshBalance('cb-inv')
+  expect(revokedRes.isErr()).toBe(true)
+  revokeBalance = false
+  // Restore the exact pre-revocation encryptedCredentials string to confirm cache was explicitly invalidated on revocation.
+  await db.update(exchangeAccounts).set({ encryptedCredentials: rotatedCreds }).where(eq(exchangeAccounts.id, 'cb-inv'))
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(6)
+
+  // removeAccount invalidates cache.
+  expect((await service.removeAccount('cb-inv')).isOk()).toBe(true)
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-inv',
+    provider: 'coinbase',
+    displayName: 'Coinbase Inv',
+    encryptedCredentials: rotatedCreds,
+    externalAccountId: 'cb-uuid-inv',
+    balanceSats: '30000000',
+    balanceAsOf: nowIso,
+    credentialsConnectedAt: nowIso,
+  })
+  expect((await service.getCoinbaseTransactionEntries(['cb-inv'])).unwrap()).toHaveLength(1)
+  expect(txFetches).toBe(7)
+})
+
+it('never returns or caches partial pagination results, backs off for 30s, and serves stale-complete history if a later refresh fails mid-pagination', async () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  onTestFinished(() => {
+    vi.useRealTimers()
+  })
+  const baseTime = Date.parse('2026-06-01T12:00:00.000Z')
+  vi.setSystemTime(baseTime)
+
+  const { db, service } = await setup()
+  const nowIso = new Date(baseTime).toISOString()
+
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-partial',
+    provider: 'coinbase',
+    displayName: 'Coinbase Partial',
+    encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-key', secretKey: 'cb-sec' }),
+    externalAccountId: 'cb-uuid-partial',
+    balanceSats: '30000000',
+    balanceAsOf: nowIso,
+    credentialsConnectedAt: nowIso,
+  })
+
+  let failPage2 = true
+  let page1Calls = 0
+  let page2Calls = 0
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (!url.includes('/v2/accounts/cb-uuid-partial/transactions')) {
+        return jsonResponse({}, 404)
+      }
+      if (url.includes('starting_after=tx-p1')) {
+        page2Calls += 1
+        if (failPage2) {
+          return jsonResponse({ errors: [{ id: 'internal_server_error', message: 'boom' }] }, 500)
+        }
+        return jsonResponse({
+          pagination: { next_uri: null },
+          data: [makeCoinbaseTransaction({ id: 'tx-p2', amountBtc: '0.2', createdAt: '2026-02-01T00:00:00.000Z' })],
+        })
+      }
+      page1Calls += 1
+      return jsonResponse({
+        pagination: { next_uri: '/v2/accounts/cb-uuid-partial/transactions?starting_after=tx-p1' },
+        data: [makeCoinbaseTransaction({ id: 'tx-p1', amountBtc: '0.1', createdAt: '2026-01-01T00:00:00.000Z' })],
+      })
+    }),
+  )
+
+  // Page 1 succeeds + page 2 fails => Err(ExchangeHistoryIncompleteError), never partial entries.
+  const firstFail = await service.getCoinbaseTransactionEntries(['cb-partial'])
+  expect(firstFail.isErr()).toBe(true)
+  expect(firstFail.unwrapErr().name).toBe('ExchangeHistoryIncompleteError')
+  expect(page1Calls).toBe(1)
+  expect(page2Calls).toBe(1)
+
+  // Within 30s retry backoff => returns Err without hitting API again.
+  vi.setSystemTime(baseTime + 29_999)
+  const backedOff = await service.getCoinbaseTransactionEntries(['cb-partial'])
+  expect(backedOff.isErr()).toBe(true)
+  expect(page1Calls).toBe(1)
+  expect(page2Calls).toBe(1)
+
+  // After 30s, page 2 succeeds => returns complete 2-page history.
+  failPage2 = false
+  vi.setSystemTime(baseTime + 30_000)
+  const complete = await service.getCoinbaseTransactionEntries(['cb-partial'])
+  expect(complete.unwrap()).toHaveLength(2)
+  expect(page1Calls).toBe(2)
+  expect(page2Calls).toBe(2)
+
+  // TTL expires (10 min + 1 ms) and page 2 fails again => serves previous complete 2-page history!
+  failPage2 = true
+  vi.setSystemTime(baseTime + 30_000 + 10 * 60_000 + 1)
+  const staleFallback = await service.getCoinbaseTransactionEntries(['cb-partial'])
+  expect(staleFallback.isOk()).toBe(true)
+  expect(staleFallback.unwrap()).toHaveLength(2)
+  expect(page1Calls).toBe(3)
+  expect(page2Calls).toBe(3)
+
+  // Within 30s backoff after stale fallback, continues serving stale-complete without hammering API.
+  vi.setSystemTime(baseTime + 30_000 + 10 * 60_000 + 15_000)
+  const staleBackedOff = await service.getCoinbaseTransactionEntries(['cb-partial'])
+  expect(staleBackedOff.unwrap()).toHaveLength(2)
+  expect(page1Calls).toBe(3)
+  expect(page2Calls).toBe(3)
+})
+
+it('reuses cached Coinbase history on the very next read after backfilling a missing externalAccountId', async () => {
+  const { db, service } = await setup()
+  const nowIso = new Date().toISOString()
+
+  await db.insert(exchangeAccounts).values({
+    id: 'cb-backfill-cache',
+    provider: 'coinbase',
+    displayName: 'Coinbase Legacy',
+    encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-key', secretKey: 'cb-sec' }),
+    externalAccountId: null,
+    balanceSats: '10000000',
+    balanceAsOf: nowIso,
+    credentialsConnectedAt: nowIso,
+  })
+
+  let listCalls = 0
+  let txCalls = 0
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request) => {
+      const url = extractUrl(input)
+      if (url.includes('/api/v3/brokerage/accounts')) {
+        listCalls += 1
+        return jsonResponse({
+          accounts: [makeCoinbaseAccount({ uuid: 'cb-uuid-discovered', name: 'BTC Wallet', balance: '0.1' })],
+          has_next: false,
+          cursor: '',
+          size: 1,
+        })
+      }
+      if (url.includes('/v2/accounts/cb-uuid-discovered/transactions')) {
+        txCalls += 1
+        return jsonResponse({
+          pagination: { next_uri: null },
+          data: [makeCoinbaseTransaction({ id: 'tx-1', amountBtc: '0.1', createdAt: '2026-01-01T00:00:00.000Z' })],
+        })
+      }
+      return jsonResponse({}, 404)
+    }),
+  )
+
+  expect((await service.getCoinbaseTransactionEntries(['cb-backfill-cache'])).unwrap()).toHaveLength(1)
+  expect(listCalls).toBe(1)
+  expect(txCalls).toBe(1)
+
+  // Second call reads backfilled externalAccountId from DB and must still hit cache!
+  expect((await service.getCoinbaseTransactionEntries(['cb-backfill-cache'])).unwrap()).toHaveLength(1)
+  expect(listCalls).toBe(1)
+  expect(txCalls).toBe(1)
+})
+
+it('isolates per-account history failures so healthy Coinbase and Kraken siblings still return entries', async () => {
+  const { db, service } = await setup()
+  const krakenSecret = Buffer.from('kraken-secret').toString('base64')
+  const nowIso = new Date().toISOString()
+
+  await db.insert(exchangeAccounts).values([
+    {
+      id: 'cb-healthy',
+      provider: 'coinbase',
+      displayName: 'Coinbase Healthy',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-good', secretKey: 'cb-sec' }),
+      externalAccountId: 'cb-uuid-healthy',
+      balanceSats: '15000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+    {
+      id: 'cb-broken',
+      provider: 'coinbase',
+      displayName: 'Coinbase Broken',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'cb-bad', secretKey: 'cb-sec' }),
+      externalAccountId: 'cb-uuid-broken',
+      balanceSats: '5000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+    {
+      id: 'kr-healthy',
+      provider: 'kraken',
+      displayName: 'Kraken Healthy',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-good', secretKey: krakenSecret }),
+      externalAccountId: 'KR-HEALTHY',
+      balanceSats: '25000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+    {
+      id: 'kr-broken',
+      provider: 'kraken',
+      displayName: 'Kraken Broken',
+      encryptedCredentials: makeEncryptedApiKeyJson({ apiKey: 'kr-bad', secretKey: krakenSecret }),
+      externalAccountId: 'KR-BROKEN',
+      balanceSats: '5000000',
+      balanceAsOf: nowIso,
+      credentialsConnectedAt: nowIso,
+    },
+  ])
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = extractUrl(input)
+      if (url.includes('/v2/accounts/cb-uuid-healthy/transactions')) {
+        return jsonResponse({
+          pagination: { next_uri: null },
+          data: [makeCoinbaseTransaction({ id: 'tx-ok', amountBtc: '0.15', createdAt: '2026-01-01T00:00:00.000Z' })],
+        })
+      }
+      if (url.includes('/v2/accounts/cb-uuid-broken/transactions')) {
+        return jsonResponse({ errors: [{ id: 'internal_server_error', message: 'boom' }] }, 500)
+      }
+      if (url.includes('/0/private/Ledgers')) {
+        const apiKey = extractHeader(input, init, 'API-Key')
+        if (apiKey === 'kr-good') {
+          return jsonResponse({
+            error: [],
+            result: {
+              count: 1,
+              ledger: { L1: makeKrakenLedgerEntry({ refid: 'R-OK', time: 1767225600, amount: '0.25' }) },
+            },
+          })
+        }
+        return jsonResponse({ error: ['EService:Unavailable'] }, 503)
+      }
+      return jsonResponse({}, 404)
+    }),
+  )
+
+  const cbMulti = await service.getCoinbaseTransactionEntries(['cb-healthy', 'cb-broken'])
+  expect(cbMulti.isOk()).toBe(true)
+  expect(cbMulti.unwrap()).toEqual([{ timestamp: new Date('2026-01-01T00:00:00.000Z'), value: 15_000_000n }])
+
+  const krMulti = await service.getKrakenTransactionEntries(['kr-healthy', 'kr-broken'])
+  expect(krMulti.isOk()).toBe(true)
+  expect(krMulti.unwrap()).toEqual([{ timestamp: new Date(1767225600 * 1000), value: 25_000_000n }])
+
+  // Single-account requests for a failing account still return Err.
+  expect((await service.getCoinbaseTransactionEntries(['cb-broken'])).isErr()).toBe(true)
+  expect((await service.getKrakenTransactionEntries(['kr-broken'])).isErr()).toBe(true)
+})
