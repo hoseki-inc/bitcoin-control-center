@@ -2,8 +2,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { type AddressInfo, type Server, createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { Err, Ok, asyncFn } from '@hoseki/packages/result'
+import { Err, Ok, type Result, asyncFn } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
+import type { Logger } from 'pino'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import type { AppContext } from './context'
@@ -17,24 +18,41 @@ interface FakeContext {
   releaseCheckStops: () => number
 }
 
+interface QueuedContext {
+  context: AppContext
+  onLogger?: (logger: Logger) => void
+}
+
 let running: SentinelServer[]
 let sockets: Server[]
-let queued: AppContext[]
+let queued: QueuedContext[]
 
 // main() takes contexts in order, so each fake answers exactly one start.
-const createContext = asyncFn(async () => {
+const createContext = asyncFn(async (logger: Logger) => {
   const next = queued.shift()
-  return next ? Ok(next) : Err(new Error('No test context queued'))
+  if (!next) {
+    return Err(new Error('No test context queued'))
+  }
+  next.onLogger?.(logger)
+  return Ok(next.context)
 })
 
-function queueContext(port: number): FakeContext {
+function queueContext(
+  port: number,
+  options?: {
+    recordAllSnapshots?: () => Promise<Result<void, Error>>
+    onLogger?: (logger: Logger) => void
+  },
+): FakeContext {
   let closes = 0
   let stops = 0
   let releaseCheckStarts = 0
   let releaseCheckStops = 0
+  const recordAllSnapshots =
+    options?.recordAllSnapshots ?? asyncFn(async (): Promise<Result<void, Error>> => Ok(undefined))
   const fake = {
     env: { HOST: '127.0.0.1', PORT: port, APP_DIR: '/nonexistent-sentinel-test-assets' },
-    controlCenterService: { recordAllSnapshots: async (): Promise<void> => undefined },
+    controlCenterService: { recordAllSnapshots },
     releaseCheckService: {
       start: (): void => {
         releaseCheckStarts += 1
@@ -57,7 +75,7 @@ function queueContext(port: number): FakeContext {
   // SAFETY: main() reads only these members before serving /health and shutting down.
   // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The test serves no routes that need the rest of the context.
   const context = fake as AppContext
-  queued.push(context)
+  queued.push({ context, onLogger: options?.onLogger })
   return {
     context,
     closes: () => closes,
@@ -289,5 +307,118 @@ describe('Sentinel routes', () => {
     } finally {
       releaseRequest()
     }
+  })
+})
+
+describe('Sentinel snapshot schedule', () => {
+  it('skips overlapping 15-minute ticks, logs fixed warnings on Err or rejection without leaking secrets, resumes after settlement, and stops on shutdown', async () => {
+    setup()
+    vi.stubEnv('LOG_LEVEL', 'warn')
+
+    let unhandledCount = 0
+    const onUnhandled = (): void => {
+      unhandledCount += 1
+    }
+    process.on('unhandledRejection', onUnhandled)
+    onTestFinished(() => {
+      process.off('unhandledRejection', onUnhandled)
+    })
+
+    const originalSetInterval = globalThis.setInterval
+    const createdTimers: Array<ReturnType<typeof setInterval>> = []
+    let snapshotTick: (() => void) | undefined
+    let snapshotTimerHandle: ReturnType<typeof setInterval> | undefined
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval').mockImplementation((callback, delay) => {
+      const handle = originalSetInterval(() => undefined, 60 * 60 * 1000)
+      createdTimers.push(handle)
+      if (delay === 15 * 60 * 1000) {
+        snapshotTimerHandle = handle
+        snapshotTick = () => {
+          callback()
+        }
+      }
+      return handle
+    })
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval')
+    onTestFinished(() => {
+      setIntervalSpy.mockRestore()
+      clearIntervalSpy.mockRestore()
+      for (const timer of createdTimers) {
+        clearInterval(timer)
+      }
+    })
+
+    let resolveFirstPass: (result: Result<void, Error>) => void = () => undefined
+    const firstPass = new Promise<Result<void, Error>>((resolve) => {
+      resolveFirstPass = resolve
+    })
+    onTestFinished(() => {
+      resolveFirstPass(Ok(undefined))
+    })
+
+    let callCount = 0
+    const recordAllSnapshots = async (): Promise<Result<void, Error>> => {
+      callCount += 1
+      if (callCount === 1) {
+        return firstPass
+      }
+      if (callCount === 2) {
+        throw new Error('secret-rejected-err-canary')
+      }
+      return Ok(undefined)
+    }
+
+    const warnCalls: string[] = []
+    queueContext(0, {
+      recordAllSnapshots,
+      onLogger: (logger) => {
+        vi.spyOn(logger, 'warn').mockImplementation((...args) => {
+          warnCalls.push(JSON.stringify(args))
+        })
+      },
+    })
+
+    const server = await start({ listenPort: 0, registerSignalHandlers: false })
+    expect(callCount).toBe(1)
+    expect(snapshotTick).toBeDefined()
+
+    // While startup pass is still in flight, 15-minute ticks must skip.
+    snapshotTick?.()
+    snapshotTick?.()
+    expect(callCount).toBe(1)
+
+    // Returned Err logs a fixed warning without leaking raw error text.
+    resolveFirstPass(Err(new Error('secret-returned-err-canary')))
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20)
+    })
+    expect(warnCalls).toHaveLength(1)
+    expect(warnCalls[0]).toContain('Balance snapshot pass failed')
+    expect(warnCalls[0]).not.toContain('secret-returned-err-canary')
+
+    // Next tick after settlement runs pass 2, which rejects unexpectedly.
+    snapshotTick?.()
+    expect(callCount).toBe(2)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20)
+    })
+    expect(unhandledCount).toBe(0)
+    expect(warnCalls).toHaveLength(2)
+    expect(warnCalls[1]).toContain('Balance snapshot pass failed')
+    expect(warnCalls[1]).not.toContain('secret-rejected-err-canary')
+
+    // Next tick resumes cleanly after rejection.
+    snapshotTick?.()
+    expect(callCount).toBe(3)
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20)
+    })
+    expect(warnCalls).toHaveLength(2)
+
+    // Shutdown clears the interval and prevents any queued/late tick from running.
+    await server.shutdown()
+    expect(clearIntervalSpy).toHaveBeenCalledWith(snapshotTimerHandle)
+    snapshotTick?.()
+    expect(callCount).toBe(3)
   })
 })
