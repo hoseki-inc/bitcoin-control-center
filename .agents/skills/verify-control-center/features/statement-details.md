@@ -6,7 +6,7 @@ A user opens a saved statement: the side panel shows contact details (or N/A), s
 
 Proves: `format-switch`, `delete`, `close`, `contact-na`, `unknown-id`
 
-`pdf-preview` is not claimed: the PDF pane paints blank in the built-in browser. `download` is not claimed: it saves a file.
+`pdf-preview` is not claimed: the PDF pane paints blank in the built-in browser. `download` is not claimed: it saves a file. `statement-pdf-download.md` proves both in the packaged Electron app.
 
 ## How to get to it (user POV)
 
@@ -20,7 +20,7 @@ Preconditions: at least one statement over two months, such as the Feb to Mar 20
 - **No contact**: generate a statement for `2026-04-01` to `2026-04-30` with `Name` cleared and `Address` empty. Its page shows Contact Details `N/A`, `Completed`, `Currency: USD`, `Period: Apr 1 - 30, 2026`.
 - **Close**: click link `Back to statements`. The URL is `/statements`.
 - **Format switch**: open the Feb to Mar statement. Under `Full Period` the PDF has one `SUMMARY: FEB 1 - MARCH 31, 2026`. Click `Monthly`: it is pressed, the PDF reloads, and it has `SUMMARY: FEB 1 - 28, 2026` and `SUMMARY: MAR 1 - 31, 2026`.
-- **Delete**: on a statement's page, click `Delete`. The dialog `Delete statement?` says `This can't be undone.` Click its `Delete`. The URL is `/statements`, toast `Statement deleted`, and its card is gone.
+- **Delete**: on the Feb to Mar statement's page, click `Delete`. The dialog `Delete statement?` says `This can't be undone.` Click its `Delete`. The URL is `/statements`, toast `Statement deleted`, and its card is gone.
 - **Unknown ID**: go to the deleted statement's URL. After a few seconds: `Error: Statement not found`. Go to `/statements/not-an-id`: `Invalid statement ID provided in URL`.
 - **Stored proof**: `helpers/verify query --sql "SELECT id, user_name, user_address, quote_currency, opening_date FROM statements ORDER BY created_at"` into `stored.json`: the April row has no name or address, and the deleted ID is absent.
 

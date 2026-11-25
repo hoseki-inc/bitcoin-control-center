@@ -21,7 +21,7 @@ Preconditions: a run launched with `--fresh`, not seeded, with `helpers/verify f
 
 ## Gotchas
 
-- `30d Change` reads `+0.10000000 BTC` here, though the wallet's only payment is from 2026-03-01. That is a separate finding, not this recipe's claim.
+- `30d Change` reads `—` here. It is not this recipe's claim.
 - Open the app only after the fault is on: one price fetch gives Sentinel a last known price for about an hour.
 - Put the fault right even if the recipe fails: the doctor fails while it is on.
 - A click or typing can miss while a page fades in after loading. Check the result after every action, and find the element again before retrying.

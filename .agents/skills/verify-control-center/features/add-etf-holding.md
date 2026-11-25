@@ -1,6 +1,6 @@
 # ETF holdings
 
-A user tracks the bitcoin a spot ETF holds for them. They name the account and enter one row per ETF with shares and an optional purchase date, and see an estimated BTC total as they type. The account page shows the computed balance and a holdings table where they add and remove holdings. Removing the account deletes it at once. This recipe adds an ETF account and removes it again.
+A user tracks the bitcoin a spot ETF holds for them. They name the account and enter one row per ETF with shares and an optional purchase date, and see an estimated BTC total as they type. The account page shows the computed balance and a holdings table where they add and remove holdings. Removing the account asks first, then deletes it. This recipe adds an ETF account and removes it again.
 
 ## Sub-features
 
@@ -35,12 +35,12 @@ On 2026-11-18 they were A `0.05659690`, B `0.10007180`, C `0.10778292`, D `0.064
 - **Remove a holding**: click `Remove` on the `FBTC` row. Toast `Holding removed`; the row is gone and Computed Balance is D.
 - **Second view**: click link `Accounts` in the navigation. A card `Verify Brokerage` shows D. Open it again.
 - **Stored proof, before removal**: `helpers/verify query --sql "SELECT a.display_name, h.ticker, h.shares, h.date_purchased FROM etf_accounts a JOIN etf_holdings h ON h.account_id = a.id ORDER BY h.created_at"` into `stored.json`: `IBIT` 100 with a purchase date on 2026-01-15, and `GBTC` 10 with none.
-- **Remove**: click `Remove Account`. With no dialog, the URL becomes `/accounts` and the card is gone.
+- **Remove**: click `Remove Account`. The dialog `Remove Verify Brokerage?` shows with `Cancel` and `Remove`. Click `Remove`. The URL becomes `/accounts` and the card is gone.
 - **Stored proof, after removal**: `helpers/verify query --sql "SELECT (SELECT count(*) FROM etf_accounts) AS accounts, (SELECT count(*) FROM etf_holdings) AS holdings"` into `stored.json` under its own key: both 0.
 
 ## Gotchas
 
-- `Remove Account` deletes at once, with no confirmation. Do it last.
+- `Remove` in the dialog deletes the account and its holdings. Do it last.
 - The stored purchase date carries a time that depends on the browser's time zone. Compare the day.
 - The success screen counts up to the total. Read it after it settles.
 - The page rounds BTC per share to 8 places, so shares times the shown value can be off by a few sats. Check BTC Amounts against A to D.

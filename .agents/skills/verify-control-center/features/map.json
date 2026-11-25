@@ -12,6 +12,7 @@
     "camera": "Needs QR camera input.",
     "exchange-fake": "Needs a local fake of the exchange APIs; Sentinel calls the real hosts today.",
     "outside": "Reaches a real outside service. Check the link or request, never load it.",
+    "manual": "Needs a person at the Mac: native menus, the system browser or the macOS administrator prompt. No script drives it.",
     "platform": "Needs a StartOS or Umbrel install."
   },
   "areas": [
@@ -826,7 +827,7 @@
             {
               "id": "remove-account",
               "kind": "happy",
-              "does": "Remove Account deletes at once, with no confirmation"
+              "does": "Remove Account asks first; the dialog's Remove deletes it"
             }
           ],
           "recipes": [
@@ -1193,7 +1194,7 @@
             {
               "id": "remove",
               "kind": "happy",
-              "does": "Remove Account deletes at once, with no confirmation"
+              "does": "Remove Account asks first; the dialog's Remove deletes it"
             },
             {
               "id": "duplicate",
@@ -1742,7 +1743,8 @@
             {
               "id": "download",
               "kind": "happy",
-              "does": "Download saves statement-<id>.pdf in the chosen format"
+              "does": "Download saves statement-<id>.pdf in the chosen format",
+              "needs": "electron"
             },
             {
               "id": "delete",
@@ -2004,8 +2006,14 @@
             {
               "id": "tor",
               "kind": "edge",
-              "does": "Connect via Tor, onion addresses, and Tor failures",
+              "does": "Connect via Tor starts Tor with its progress; an onion address keeps Tor on; leaving Tor asks first",
               "needs": "electron"
+            },
+            {
+              "id": "tor-failed",
+              "kind": "failure",
+              "does": "A failed Tor start turns the switch red with its message; Test or Connect tries Tor again",
+              "needs": "fault"
             }
           ],
           "recipes": [
@@ -2147,13 +2155,13 @@
               "id": "desktop-reset",
               "kind": "happy",
               "does": "Reset PIN asks the computer's administrator, then relaunches",
-              "needs": "electron"
+              "needs": "manual"
             },
             {
               "id": "desktop-cancelled",
               "kind": "failure",
               "does": "PIN not reset. Nothing changed.",
-              "needs": "electron"
+              "needs": "manual"
             }
           ],
           "recipes": [{ "file": "pin-reset.md", "proves": ["forgot", "umbrel-steps"] }]
@@ -2219,7 +2227,8 @@
             {
               "id": "tray",
               "kind": "happy",
-              "does": "Tray menu Show Control Center and Quit"
+              "does": "Tray menu Show Control Center and Quit",
+              "needs": "manual"
             },
             {
               "id": "close-to-hide",
@@ -2234,7 +2243,8 @@
             {
               "id": "external-links",
               "kind": "happy",
-              "does": "Help and Download open in the system browser"
+              "does": "Help and Download open in the system browser",
+              "needs": "manual"
             },
             {
               "id": "pin-first",

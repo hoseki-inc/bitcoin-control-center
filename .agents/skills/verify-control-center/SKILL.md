@@ -1,11 +1,11 @@
 ---
 name: verify-control-center
-description: Launch Bitcoin Control Center's web app on a fresh, seeded data folder with local fake Electrum and mempool servers, drive a feature the way a user does in your own browser, and leave evidence in verify-output/. Use to prove a change to Control Center or Sentinel works in the real app, or to walk the feature map in features/ before a release.
+description: Launch Bitcoin Control Center's web app, or the packaged macOS Electron app (--electron), on a fresh, seeded data folder with local fake Electrum and mempool servers, drive a feature the way a user does (your own browser, or CDP for Electron), and leave evidence in verify-output/. Also runs the automated macOS desktop smoke (smoke). Use to prove a change to Control Center, Sentinel or the desktop app works in the real app, or to walk the feature map in features/ before a release.
 ---
 
 # Verify Control Center
 
-Drives the standalone web app: Sentinel serving the built UI from one origin, as StartOS and Umbrel do. Each run gets its own scratch folder, data folder and free ports, so runs can sit side by side and never touch `pnpm dev` or its data. Runs belong to the checkout that launched them; another worktree never sees them. Sentinel talks only to local fakes of Electrum and mempool that serve a made-up chain and made-up prices.
+Drives the standalone web app (Sentinel serving the built UI from one origin, as StartOS and Umbrel do), or with `--electron` the packaged macOS app over CDP. `smoke` runs a fixed end-to-end check of the packaged app. Each run gets its own scratch folder, data folder and free ports, so runs can sit side by side and never touch `pnpm dev` or its data. Runs belong to the checkout that launched them; another worktree never sees them. Sentinel talks only to local fakes of Electrum and mempool that serve a made-up chain and made-up prices.
 
 Every command runs from the repository root through `.agents/skills/verify-control-center/helpers/verify`, written `helpers/verify` here. Pass `--run <id>` when this checkout has more than one run.
 
@@ -33,7 +33,7 @@ For features the map marks `electron` or `packaged` on macOS, launch the real pa
 
 - Builds the unsigned ad-hoc macOS app via `./desktop/build.sh --mac-dir` (reusing `desktop/node_modules` when `package-lock.json` is unchanged), or reuses a prebuilt bundle via `--app <path>`.
 - Copies `Bitcoin Control Center.app` into the run's scratch folder and launches it with an isolated `--user-data-dir`, a loopback-only `BCC_VERIFY_CONFIG`, and `--remote-debugging-port=<free-port>` on `127.0.0.1` so nothing ever touches `~/Library/Application Support/desktop` or `desktop-dev`.
-- Desktop PINs are always enabled (`246813` by default, or unset with `--setup-pin-in-ui` so the first-run PIN setup UI is driven directly).
+- Desktop PINs are always enabled (`246813` by default, or unset with `--setup-pin-in-ui` so the first-run PIN setup UI is driven directly). On a `--setup-pin-in-ui` run, `seed` refuses until the PIN is set in the app; set `246813` there, then run `seed`. It also makes the fake mempool the only price source, which launch can't do before a PIN exists. With `--fresh --setup-pin-in-ui` the run stays fresh: `seed` refuses even after the PIN is set, so the price settings stay as the app left them and the doctor's `prices` check fails.
 - Release checks are disabled by default; pass `--release-tag <tag>` (for example `v99.0.0_0`) to serve that tag from the local fake `/latest.json` endpoint.
 - `--electron` does not combine with `--desktop` or `--pin`.
 
@@ -70,7 +70,21 @@ Never verify against `pnpm dev` or `turbo`: turbo drops `DATA_DIR`, so Sentinel 
 
 For web runs (`launch`, `--desktop`, `--pin`), use your own browser tool on the URL launch printed, such as `http://127.0.0.1:61664`. In the Claude desktop app that is the built-in browser: open the URL with `preview_start`, read the page with `read_page` or `find`, act with `computer` or `form_input`, and capture with `computer` screenshots. If your harness has no browser, record each journey as unreachable with the reason `no browser in this harness`.
 
-For `--electron` runs, drive the real Electron BrowserWindow over CDP at the `cdp` URL launch printed (`http://127.0.0.1:<cdpPort>`) using `playwright-core` `chromium.connectOverCDP`, or run `helpers/verify smoke` for the full automated Mac desktop smoke. Ledger/Trezor hardware wallet testing and macOS administrator PIN-reset prompts remain manual/interactive checks.
+For `--electron` runs, drive the real Electron BrowserWindow over CDP at the `cdp` URL launch printed, with `playwright-core` from a script inside this checkout (a gitignored spot such as `verify-output/` resolves the package):
+
+```js
+const browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`, { noDefaults: true })
+const page = browser.contexts().flatMap((context) => context.pages())[0]
+await page.screenshot({ path: `${attempt}/01-step.png` })
+writeFileSync(`${attempt}/01-step.aria.txt`, await page.locator('body').ariaSnapshot())
+```
+
+- Pass `noDefaults: true`. Without it Playwright takes over downloads, and Electron's downloads never reach the run's `downloads` folder.
+- `browser.close()` only disconnects; the app keeps running for the next script.
+- Without `--setup-pin-in-ui`, launch sets the PIN after the window has loaded, so the window can still show `Set up your PIN`. Reload the page; it then asks for `246813`.
+- CDP key events reach the page, not the macOS menu, so a script can't press `Cmd+W`. `kill -USR2 <electronPid>` closes the window the same way in verify mode.
+- Build the `.app` once and reuse it on every later run with `launch --electron --app <path>` (for example `desktop/release/mac-arm64/Bitcoin Control Center.app`). Launch prints the bundle's commit and warns when it isn't the checkout's.
+- Ledger and Trezor devices stay manual checks. So do the tray menu, links that open the system browser, and the macOS administrator prompt for a PIN reset, which the map marks `manual`.
 
 - Read the feature's recipe before driving. It lists the entry points, the exact handles and the end state that proves the feature works.
 - Find elements by role and accessible name, never by coordinates or tab order. Take a fresh snapshot after every navigation, since references go stale.
@@ -86,7 +100,7 @@ Evidence goes in `verify-output/<run-id>/`, which git ignores.
 
 Evidence is recorded per recipe, the recipe file name without `.md` (`statements` for `statements.md`). A journey without a recipe can't be recorded: write its recipe and its map entry first.
 
-1. Before the first recipe: `helpers/verify evidence start`. It writes `evidence.json` with the commit, whether the code had uncommitted changes at launch, whether the run is seeded or fresh, the URL and versions (including Electron and Chromium versions on `--electron` runs).
+1. Before the first recipe: `helpers/verify evidence start`. It writes `evidence.json` with the commit, whether the code had uncommitted changes at launch, the baseline (`seeded`; `fresh` for any `--fresh` run, `--setup-pin-in-ui` included; or `unseeded` when a `--setup-pin-in-ui` run without `--fresh` starts evidence before `seed`), the URL and versions (including Electron and Chromium versions on `--electron` runs). On `--electron` runs the report adds an `App bundle:` line with the bundle's source, commit and release, and the release tag served. It refuses a run whose folder holds a smoke report (`smoke.json`): launch a new run ID for recipes.
 2. Before driving a recipe: `helpers/verify evidence begin <recipe>`. It needs the run to be live and still running the code it launched with, checks the recipe, saves what the recipe proves at that moment, opens a new, empty attempt folder, `verify-output/<run-id>/<recipe>/attempt-<n>/`, and prints its path. Save this attempt's evidence there, and nowhere else:
    - `trace.md`: one line per step, in order: the action, the handle used, and what the page showed afterwards.
    - `NN-<step>.jpg` (or `.png`): a screenshot of the state after each key action, with the app header visible where the page allows. In the Claude desktop app the screenshot result names the saved image file; copy it here with its own extension.
@@ -108,6 +122,19 @@ Proof standards:
 ## Cleanup
 
 `helpers/verify cleanup`. It stops every process launch recorded, only while it is still that process, copies the run's logs to `verify-output/<run-id>/logs/`, and deletes the scratch folder. On `--electron` runs it signals the Electron leader with `SIGTERM` first so `before-quit` stops Sentinel and Tor cleanly before escalating. It never kills by name or port and never deletes anything in `verify-output/`. Run it after every run, failed and interrupted ones included.
+
+## Weekly online smoke
+
+Running the desktop smoke online in the weekly verify is planned; the weekly verify doesn't run it yet. Online mode needs bundled Tor to reach the public Tor network:
+
+```bash
+helpers/verify smoke --run weekly-electron-$(date +%Y%m%d) --tor-mode online
+```
+
+- Allow 20 minutes. A cold checkout downloads Tor and the Electron dependencies and builds the `.app` before Tor starts.
+- In online mode a Tor start that doesn't reach 100% fails the run, and a failed run exits 1. Still read `smoke.json` rather than trusting the exit code: a pass has `status` `pass`, all nine steps `pass` (`launch`, then checks 1 to 8), `cleanedUp` true and no hygiene errors. (`offline-unverified` comes only from `--tor-mode allow-offline`, and it exits 0.)
+- Report the commit, Electron and Chromium versions, each check's status and the evidence folder from `smoke.json` and `report.md`.
+- The evidence lives in this checkout's `verify-output/`. Copy it out before deleting a temporary worktree.
 
 ## Helpers
 

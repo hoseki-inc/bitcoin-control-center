@@ -501,6 +501,21 @@ describe('map.json', () => {
     assert.equal(readRecipes()?.has('statements'), true)
     assert.equal(readRecipes()?.has('Statements'), false)
   })
+
+  it('gives every recipe the four sections of the recipe contract, in order', () => {
+    const offContract = recipes.flatMap(({ file }) => {
+      const headings = Array.from(readFileSync(join(FEATURES, file), 'utf8').matchAll(/^## (.+)$/gm), (m) => m[1])
+      const [sub, how, drive, gotchas, ...extra] = headings
+      const ok =
+        sub === 'Sub-features' &&
+        how === 'How to get to it (user POV)' &&
+        (drive === 'Driving it with the browser' || /^Driving it with CDP \(.+\)$/.test(drive ?? '')) &&
+        gotchas === 'Gotchas' &&
+        extra.length === 0
+      return ok ? [] : [`${file}: ${headings.join(' | ')}`]
+    })
+    assert.deepEqual(offContract, [])
+  })
 })
 
 describe('freshSeedCheck', () => {
