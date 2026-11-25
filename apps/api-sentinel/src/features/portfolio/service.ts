@@ -1,8 +1,6 @@
 import { Account } from '@hoseki/packages/bitcoin/account'
-import type { Address } from '@hoseki/packages/bitcoin/address'
 import type { Block, TransactionEntry } from '@hoseki/packages/bitcoin/onchain'
 import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
-import { IndexMap } from '@hoseki/packages/collection'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
 import type { Timezone } from '@hoseki/packages/schemas'
@@ -21,6 +19,7 @@ import type { EtfService } from '../etf'
 import type { ExchangeService } from '../exchanges'
 import type { ManualService } from '../manual'
 import type { PriceService } from '../price'
+import { type Sleep, type TransactionLoadError, loadAccountEntries } from '../statements'
 import {
   type BalanceDataPoint,
   type BalanceEntry,
@@ -91,6 +90,7 @@ export class ControlCenterService {
   private readonly etfService: EtfService
   private readonly priceService: PriceService
   private readonly walletBalances: WalletBalanceService
+  private readonly sleep: Sleep | undefined
   private readonly accountHistoryBackfillsInFlight = new Set<string>()
   private readonly accountHistoryBackfillCooldownUntil = new Map<string, number>()
   private readonly accountHistoryBackfillFailureCounts = new Map<string, number>()
@@ -106,6 +106,7 @@ export class ControlCenterService {
     etfService: EtfService
     priceService: PriceService
     walletBalances: WalletBalanceService
+    sleep?: Sleep
   }) {
     this.db = deps.db
     this.logger = deps.logger.child({ module: 'control-center' })
@@ -115,6 +116,7 @@ export class ControlCenterService {
     this.etfService = deps.etfService
     this.priceService = deps.priceService
     this.walletBalances = deps.walletBalances
+    this.sleep = deps.sleep
   }
 
   public getData = asyncFn(
@@ -800,10 +802,14 @@ export class ControlCenterService {
     let transactionEntries: TransactionEntry[] = []
 
     if (missingRanges.length > 0) {
-      const entriesResult = await this.getTransactionEntriesByAccountSinceBlock(account, stopBeforeBlockHeight)
+      const entriesResult = await this.getTransactionEntriesByAccountSinceBlock(
+        account,
+        stopBeforeBlockHeight,
+        tip.height,
+      )
       if (entriesResult.isErr()) {
         this.logger.warn(
-          { accountId, err: entriesResult.unwrapErr() },
+          { accountId, kind: entriesResult.unwrapErr().kind },
           'Failed to backfill self-custody history from Electrum',
         )
         return null
@@ -864,8 +870,12 @@ export class ControlCenterService {
         return null
       }
 
-      const tailResult = await this.getTransactionEntriesByAccountSinceBlock(account, tip.height)
+      const tailResult = await this.getTransactionEntriesByAccountSinceBlock(account, tip.height, verifiedTip.height)
       if (tailResult.isErr()) {
+        this.logger.warn(
+          { accountId, kind: tailResult.unwrapErr().kind },
+          'Failed to backfill self-custody history tail from Electrum',
+        )
         return null
       }
       if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
@@ -946,32 +956,16 @@ export class ControlCenterService {
   private async getTransactionEntriesByAccountSinceBlock(
     account: Account,
     stopBeforeBlockHeight: number,
-  ): Promise<Result<TransactionEntry[], Error>> {
-    const discoveredResult = await this.onchainProvider.discoverAccount(account)
-    if (discoveredResult.isErr()) {
-      return Err(discoveredResult.unwrapErr())
-    }
-
-    const { lastUsedReceiveIndex, lastUsedChangeIndex } = discoveredResult.unwrap()
-    const addresses = new IndexMap<Address, number | null>()
-
-    for (const address of account.receiveAddresses(0, lastUsedReceiveIndex + 1, this.onchainProvider.network)) {
-      addresses.set(address, stopBeforeBlockHeight)
-    }
-    for (const address of account.changeAddresses(0, lastUsedChangeIndex + 1, this.onchainProvider.network)) {
-      addresses.set(address, stopBeforeBlockHeight)
-    }
-
-    const entries: TransactionEntry[] = []
-    const gen = this.onchainProvider.getTransactionEntries(addresses)
-    for await (const entry of gen) {
-      if (entry.isErr()) {
-        return Err(entry.unwrapErr())
-      }
-      entries.push(entry.unwrap())
-    }
-
-    return Ok(entries)
+    tipHeight: number,
+  ): Promise<Result<TransactionEntry[], TransactionLoadError>> {
+    return loadAccountEntries({
+      account,
+      onchainProvider: this.onchainProvider,
+      afterHeight: stopBeforeBlockHeight,
+      tipHeight,
+      logger: this.logger,
+      sleep: this.sleep,
+    })
   }
 
   private async reconcileAccountSnapshots(

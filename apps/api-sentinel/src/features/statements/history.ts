@@ -1,6 +1,6 @@
 import type { Account } from '@hoseki/packages/bitcoin/account'
 import type { Address } from '@hoseki/packages/bitcoin/address'
-import type { ElectrumProvider } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
+import { type ElectrumProvider, mapWithLimit } from '@hoseki/packages/bitcoin/onchain/electrum_provider'
 import { addressToScripthash } from '@hoseki/packages/bitcoin/scripthash'
 import { Err, Ok, asyncFn } from '@hoseki/packages/result'
 import type { Result } from '@hoseki/packages/result'
@@ -14,6 +14,7 @@ interface HistoryTransaction {
 }
 
 const TXID_PATTERN = /^[0-9a-f]{64}$/i
+const HISTORY_CONCURRENCY = 10
 
 /** An account's confirmed transactions by txid, in the order Electrum listed them. */
 export type AccountHistory = Map<string, HistoryTransaction>
@@ -42,24 +43,39 @@ export const collectAccountHistory = asyncFn(
 
     onProgress?.(0.5)
 
-    const history: AccountHistory = new Map()
-    for (const [index, address] of addresses.entries()) {
+    const addressEntries: Array<{ address: Address; scripthash: string }> = []
+    for (const address of addresses) {
       // A statement missing an address's transactions would look complete, so any failure stops it.
       const scripthashRes = addressToScripthash(address)
       if (scripthashRes.isErr()) {
         const cause = scripthashRes.unwrapErr()
         return Err(new TransactionLoadError('history', cause.message, { cause }))
       }
+      addressEntries.push({ address, scripthash: scripthashRes.unwrap() })
+    }
 
-      const historyRes = await onchainProvider.deps.electrum.getHistory(scripthashRes.unwrap())
+    let done = 0
+    const fetchedResult = await mapWithLimit(addressEntries, HISTORY_CONCURRENCY, async ({ scripthash }) => {
+      const historyRes = await onchainProvider.deps.electrum.getHistory(scripthash)
       if (historyRes.isErr()) {
         const cause = historyRes.unwrapErr()
         return Err(
           new TransactionLoadError('history', `Could not fetch transaction history: ${cause.message}`, { cause }),
         )
       }
+      done += 1
+      onProgress?.(0.5 + (0.5 * done) / addressEntries.length)
+      return Ok(historyRes.unwrap())
+    })
+    if (fetchedResult.isErr()) {
+      return Err(fetchedResult.unwrapErr())
+    }
 
-      for (const entry of historyRes.unwrap()) {
+    // Fold results in original discovery order so concurrent completion never scrambles history order.
+    const history: AccountHistory = new Map()
+    const fetchedHistories = fetchedResult.unwrap()
+    for (const [index, { address }] of addressEntries.entries()) {
+      for (const entry of fetchedHistories[index] ?? []) {
         // A txid goes into lookup URLs, so anything but 64 hex digits from the server stops the statement.
         if (!TXID_PATTERN.test(entry.tx_hash)) {
           return Err(new TransactionLoadError('history', 'Electrum returned an invalid txid'))
@@ -78,7 +94,6 @@ export const collectAccountHistory = asyncFn(
           known.addresses.push(address)
         }
       }
-      onProgress?.(0.5 + (0.5 * (index + 1)) / addresses.length)
     }
 
     return Ok(history)
