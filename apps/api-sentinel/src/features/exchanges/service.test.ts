@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from 'node:crypto'
+import { type KeyObject, generateKeyPairSync, verify } from 'node:crypto'
 import { mkdtempSync, rmSync } from 'node:fs'
 import http from 'node:http'
 import https from 'node:https'
@@ -719,6 +719,579 @@ it('Coinbase: fails closed when legacy old key returns 401 Unauthorized and row 
     .from(exchangeBalanceSnapshots)
     .where(eq(exchangeBalanceSnapshots.accountId, 'cb-legacy-revoked'))
   expect(snapshotsAfter).toEqual(snapshotsBefore)
+})
+
+function ed25519SecretKey() {
+  const { privateKey, publicKey } = generateKeyPairSync('ed25519')
+  const pkcs8Der = privateKey.export({ format: 'der', type: 'pkcs8' })
+  const spkiDer = publicKey.export({ format: 'der', type: 'spki' })
+  const seed = pkcs8Der.subarray(16)
+  const rawPublic = spkiDer.subarray(12)
+  return {
+    secretKey: Buffer.concat([seed, rawPublic]).toString('base64'),
+    publicKey,
+    pkcs8Pem: privateKey.export({ format: 'pem', type: 'pkcs8' }).toString(),
+    seed,
+  }
+}
+
+const CdpJwtHeaderSchema = z.object({ alg: z.enum(['ES256', 'EdDSA']), kid: z.string() })
+
+function verifyCdpBearerJwt(
+  authorization: string,
+  publicKey: KeyObject,
+): { alg: 'ES256' | 'EdDSA'; kid: string } | null {
+  if (!authorization.startsWith('Bearer ')) {
+    return null
+  }
+  const parts = authorization.slice('Bearer '.length).split('.')
+  const [header, payload, signature] = parts
+  if (parts.length !== 3 || header === undefined || payload === undefined || signature === undefined) {
+    return null
+  }
+  const headerParsed = parseUnknown(CdpJwtHeaderSchema, JSON.parse(Buffer.from(header, 'base64url').toString()))
+  if (headerParsed.isErr()) {
+    return null
+  }
+  const { alg, kid } = headerParsed.unwrap()
+  if ((alg === 'EdDSA') !== (publicKey.asymmetricKeyType === 'ed25519')) {
+    return null
+  }
+  const signingInput = Buffer.from(`${header}.${payload}`)
+  const sigBytes = Buffer.from(signature, 'base64url')
+  const ok =
+    alg === 'EdDSA'
+      ? verify(null, signingInput, publicKey, sigBytes)
+      : verify('sha256', signingInput, { key: publicKey, dsaEncoding: 'ieee-p1363' }, sigBytes)
+  return ok ? { alg, kid } : null
+}
+
+function stubCoinbaseCdpFetch(
+  publicKey: KeyObject,
+  options?: {
+    account?: MockCoinbaseAccount
+    portfolioUuid?: string
+    onVerified?: (info: { alg: 'ES256' | 'EdDSA'; kid: string }) => void
+  },
+) {
+  const acct =
+    options?.account ??
+    makeCoinbaseAccount({
+      uuid: 'cb-cdp-btc-1',
+      name: 'Coinbase BTC',
+      balance: '0.75',
+      retail_portfolio_id: options?.portfolioUuid ?? 'port-cdp',
+    })
+  const portfolioUuid = options?.portfolioUuid ?? acct.retail_portfolio_id ?? 'port-cdp'
+  const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+    const auth = extractHeader(input, init, 'Authorization')
+    const verified = verifyCdpBearerJwt(auth, publicKey)
+    if (verified === null) {
+      return jsonResponse({ error: 'Unauthorized' }, 401)
+    }
+    options?.onVerified?.(verified)
+    const url = extractUrl(input)
+    if (url.includes('/api/v3/brokerage/key_permissions')) {
+      return jsonResponse({
+        can_view: true,
+        can_trade: false,
+        can_transfer: false,
+        portfolio_uuid: portfolioUuid,
+        portfolio_type: 'DEFAULT',
+      })
+    }
+    if (url.includes(`/api/v3/brokerage/accounts/${acct.uuid}`)) {
+      return jsonResponse({ account: acct })
+    }
+    if (url.includes('/api/v3/brokerage/accounts')) {
+      return jsonResponse({ accounts: [acct], has_next: false, cursor: '', size: 1 })
+    }
+    return jsonResponse({ error: 'unexpected' }, 404)
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return fetchMock
+}
+
+it('Coinbase: connects and refreshes with an Ed25519 secret key, storing coinbaseAuth cdp', async () => {
+  const { db, service } = await setup()
+  const ed = ed25519SecretKey()
+  const algs: string[] = []
+  const keyId = '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0'
+  stubCoinbaseCdpFetch(ed.publicKey, {
+    onVerified: ({ alg, kid }) => {
+      algs.push(alg)
+      expect(kid).toBe(keyId)
+    },
+  })
+
+  const connected = (
+    await service.connectCoinbase({ apiKey: ` "${keyId}", `, secretKey: ` "${ed.secretKey}", ` })
+  ).unwrap()
+  expect(connected.balanceSats).toBe('75000000')
+  expect(algs.length).toBeGreaterThan(0)
+  expect(algs.every((a) => a === 'EdDSA')).toBe(true)
+
+  const [stored] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, connected.id))
+  expect(stored).toBeDefined()
+  const storedJson = parseUnknown(
+    z.object({ coinbaseAuth: z.literal('cdp').optional() }),
+    JSON.parse(stored?.encryptedCredentials ?? '{}'),
+  ).unwrap()
+  expect(storedJson.coinbaseAuth).toBe('cdp')
+
+  algs.length = 0
+  const freshService = new ExchangeService({ db, logger: pino({ level: 'silent' }) })
+  const refreshed = (await freshService.refreshBalance(connected.id)).unwrap()
+  expect(refreshed.balanceSats).toBe('75000000')
+  expect(algs).toEqual(['EdDSA'])
+})
+
+it.each([
+  { variant: 'trailing quote', format: (secret: string) => `${secret}"` },
+  { variant: 'trailing quote and comma', format: (secret: string) => `${secret}",` },
+])('Coinbase: connects and refreshes Ed25519 key pasted with $variant', async ({ format }) => {
+  const { service } = await setup()
+  const ed = ed25519SecretKey()
+  const algs: string[] = []
+  const keyId = 'ed25519-unpaired-quote-key'
+  stubCoinbaseCdpFetch(ed.publicKey, {
+    onVerified: ({ alg, kid }) => {
+      algs.push(alg)
+      expect(kid).toBe(keyId)
+    },
+  })
+
+  const connected = (await service.connectCoinbase({ apiKey: keyId, secretKey: format(ed.secretKey) })).unwrap()
+  expect(connected.balanceSats).toBe('75000000')
+  expect(algs.length).toBeGreaterThan(0)
+  expect(algs.every((a) => a === 'EdDSA')).toBe(true)
+
+  algs.length = 0
+  const refreshed = (await service.refreshBalance(connected.id)).unwrap()
+  expect(refreshed.balanceSats).toBe('75000000')
+  expect(algs).toEqual(['EdDSA'])
+})
+
+it.each([
+  {
+    variant: 'quoted with escaped newlines',
+    format: (pem: string) => `"${pem.replaceAll('\n', '\\n')}"`,
+  },
+  {
+    variant: 'curly-quoted PEM',
+    format: (pem: string) => `\u201c${pem.replaceAll('\n', '\\n')}\u201d`,
+  },
+  {
+    variant: 'trailing comma',
+    format: (pem: string) => `"${pem.replaceAll('\n', '\\n')}",`,
+  },
+  {
+    variant: 'newlines turned into spaces',
+    format: (pem: string) => pem.trim().replaceAll('\n', ' '),
+  },
+  {
+    variant: 'CRLF newlines',
+    format: (pem: string) => pem.replaceAll('\n', '\r\n'),
+  },
+])('Coinbase: connects and refreshes ECDSA key pasted as $variant', async ({ format }) => {
+  const { service } = await setup()
+  const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const pem = ec.privateKey.export({ format: 'pem', type: 'sec1' }).toString()
+  const keyName = 'organizations/00000000-0000-0000-0000-000000000000/apiKeys/ec-paste'
+  stubCoinbaseCdpFetch(ec.publicKey)
+
+  const connected = (await service.connectCoinbase({ apiKey: `"${keyName}",`, secretKey: format(pem) })).unwrap()
+  expect(connected.balanceSats).toBe('75000000')
+  const refreshed = (await service.refreshBalance(connected.id)).unwrap()
+  expect(refreshed.balanceSats).toBe('75000000')
+})
+
+it('Coinbase: connects with PKCS#8 P-256 and PKCS#8 Ed25519 keys', async () => {
+  const { service } = await setup()
+  const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const ecPkcs8 = ec.privateKey.export({ format: 'pem', type: 'pkcs8' }).toString()
+  const seenAlgs: string[] = []
+  stubCoinbaseCdpFetch(ec.publicKey, {
+    onVerified: ({ alg }) => {
+      seenAlgs.push(alg)
+    },
+  })
+  const ecConnected = (await service.connectCoinbase({ apiKey: 'pkcs8-ec', secretKey: ecPkcs8 })).unwrap()
+  expect(ecConnected.balanceSats).toBe('75000000')
+  expect(seenAlgs.every((a) => a === 'ES256')).toBe(true)
+
+  seenAlgs.length = 0
+  const ed = ed25519SecretKey()
+  stubCoinbaseCdpFetch(ed.publicKey, {
+    account: makeCoinbaseAccount({
+      uuid: 'cb-pkcs8-ed',
+      name: 'Ed PKCS8',
+      balance: '1.25',
+      retail_portfolio_id: 'port-ed',
+    }),
+    onVerified: ({ alg }) => {
+      seenAlgs.push(alg)
+    },
+  })
+  const edConnected = (await service.connectCoinbase({ apiKey: 'pkcs8-ed', secretKey: ed.pkcs8Pem })).unwrap()
+  expect(edConnected.balanceSats).toBe('125000000')
+  expect(seenAlgs.every((a) => a === 'EdDSA')).toBe(true)
+})
+
+it('Coinbase: reconnects a saved ECDSA account using an Ed25519 key for the same portfolio', async () => {
+  const { db, service } = await setup()
+  const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const ecPem = ec.privateKey.export({ format: 'pem', type: 'sec1' }).toString()
+  const ed = ed25519SecretKey()
+  const acct = makeCoinbaseAccount({
+    uuid: 'cb-shared-btc',
+    name: 'Primary BTC',
+    balance: '0.5',
+    retail_portfolio_id: 'port-shared',
+  })
+
+  stubCoinbaseCdpFetch(ec.publicKey, { account: acct, portfolioUuid: 'port-shared' })
+  const initial = (await service.connectCoinbase({ apiKey: 'ec-key-1', secretKey: ecPem })).unwrap()
+
+  const refreshAlgs: string[] = []
+  stubCoinbaseCdpFetch(ed.publicKey, {
+    account: { ...acct, available_balance: { value: '0.8', currency: 'BTC' } },
+    portfolioUuid: 'port-shared',
+    onVerified: ({ alg }) => {
+      refreshAlgs.push(alg)
+    },
+  })
+  const reconnected = (
+    await service.connectCoinbase({
+      apiKey: 'ed-key-2',
+      secretKey: ed.secretKey,
+      replaceAccountId: initial.id,
+    })
+  ).unwrap()
+  expect(reconnected.id).toBe(initial.id)
+  expect(reconnected.balanceSats).toBe('80000000')
+
+  refreshAlgs.length = 0
+  const refreshed = (await service.refreshBalance(initial.id)).unwrap()
+  expect(refreshed.balanceSats).toBe('80000000')
+  expect(refreshAlgs).toEqual(['EdDSA'])
+
+  const rows = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.provider, 'coinbase'))
+  expect(rows).toHaveLength(1)
+})
+
+it('Coinbase: pre-existing unmarked ECDSA, legacy HMAC, and 64-byte base64 HMAC rows keep their existing auth on refresh', async () => {
+  const { db, service } = await setup()
+  const ec = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+  const ecPem = ec.privateKey.export({ format: 'pem', type: 'sec1' }).toString()
+  const ed = ed25519SecretKey()
+
+  const recentIso = new Date().toISOString()
+  const ecBlob = makeEncryptedApiKeyJson({ apiKey: 'unmarked-ec-key', secretKey: ecPem }, 'port-ec')
+  const hmacBlob = makeEncryptedApiKeyJson(
+    { apiKey: 'unmarked-hmac-key', secretKey: 'legacy-hmac-secret' },
+    'port-hmac',
+  )
+  const base64HmacBlob = makeEncryptedApiKeyJson({ apiKey: 'unmarked-b64-key', secretKey: ed.secretKey }, 'port-b64')
+
+  await db.insert(exchangeAccounts).values([
+    {
+      id: 'cb-unmarked-ec',
+      provider: 'coinbase',
+      displayName: 'Unmarked EC',
+      encryptedCredentials: ecBlob,
+      externalAccountId: 'acct-ec',
+      balanceSats: '10000000',
+      balanceAsOf: recentIso,
+      credentialsConnectedAt: recentIso,
+    },
+    {
+      id: 'cb-unmarked-hmac',
+      provider: 'coinbase',
+      displayName: 'Unmarked HMAC',
+      encryptedCredentials: hmacBlob,
+      externalAccountId: 'acct-hmac',
+      balanceSats: '20000000',
+      balanceAsOf: recentIso,
+      credentialsConnectedAt: recentIso,
+    },
+    {
+      id: 'cb-unmarked-b64-hmac',
+      provider: 'coinbase',
+      displayName: 'Unmarked B64 HMAC',
+      encryptedCredentials: base64HmacBlob,
+      externalAccountId: 'acct-b64',
+      balanceSats: '30000000',
+      balanceAsOf: recentIso,
+      credentialsConnectedAt: recentIso,
+    },
+  ])
+
+  const seenAuthModes: Record<string, string> = {}
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = extractUrl(input)
+      const auth = extractHeader(input, init, 'Authorization')
+      const accessKey = extractHeader(input, init, 'CB-ACCESS-KEY')
+      if (url.includes('/accounts/acct-ec')) {
+        const verified = verifyCdpBearerJwt(auth, ec.publicKey)
+        expect(verified?.alg).toBe('ES256')
+        seenAuthModes['acct-ec'] = 'ES256'
+        return jsonResponse({ account: makeCoinbaseAccount({ uuid: 'acct-ec', name: 'EC', balance: '0.11' }) })
+      }
+      if (url.includes('/accounts/acct-hmac')) {
+        expect(auth).toBe('')
+        expect(accessKey).toBe('unmarked-hmac-key')
+        seenAuthModes['acct-hmac'] = 'HMAC'
+        return jsonResponse({ account: makeCoinbaseAccount({ uuid: 'acct-hmac', name: 'HMAC', balance: '0.22' }) })
+      }
+      if (url.includes('/accounts/acct-b64')) {
+        expect(auth).toBe('')
+        expect(accessKey).toBe('unmarked-b64-key')
+        seenAuthModes['acct-b64'] = 'HMAC'
+        return jsonResponse({ account: makeCoinbaseAccount({ uuid: 'acct-b64', name: 'B64', balance: '0.33' }) })
+      }
+      return jsonResponse({ error: 'unexpected' }, 404)
+    }),
+  )
+
+  expect((await service.refreshBalance('cb-unmarked-ec')).unwrap().balanceSats).toBe('11000000')
+  expect((await service.refreshBalance('cb-unmarked-hmac')).unwrap().balanceSats).toBe('22000000')
+  expect((await service.refreshBalance('cb-unmarked-b64-hmac')).unwrap().balanceSats).toBe('33000000')
+  expect(seenAuthModes).toEqual({ 'acct-ec': 'ES256', 'acct-hmac': 'HMAC', 'acct-b64': 'HMAC' })
+
+  const [ecAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-unmarked-ec'))
+  const [hmacAfter] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-unmarked-hmac'))
+  const [b64After] = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.id, 'cb-unmarked-b64-hmac'))
+  expect(ecAfter?.encryptedCredentials).toBe(ecBlob)
+  expect(hmacAfter?.encryptedCredentials).toBe(hmacBlob)
+  expect(b64After?.encryptedCredentials).toBe(base64HmacBlob)
+})
+
+it.each([
+  {
+    variant: 'missing leading quote with trailing quote and comma',
+    format: (pem: string) => `${JSON.stringify(pem).slice(1)},`,
+  },
+  {
+    variant: 'escaped newlines with trailing quote',
+    format: (pem: string) => `${pem.replaceAll('\n', '\\n')}"`,
+  },
+])(
+  'Coinbase: unmarked saved ECDSA row ($variant) works across refresh, transactions, and old-key identity backfill',
+  async ({ format }) => {
+    const { db, service } = await setup()
+    const oldEc = generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+    const oldEcPem = oldEc.privateKey.export({ format: 'pem', type: 'sec1' }).toString()
+    const newEd = ed25519SecretKey()
+    const recentIso = new Date().toISOString()
+
+    const refreshBlob = makeEncryptedApiKeyJson({ apiKey: 'old-ec-key', secretKey: format(oldEcPem) }, 'port-legacy-ec')
+    const backfillBlob = makeEncryptedApiKeyJson({ apiKey: 'old-ec-backfill', secretKey: format(oldEcPem) })
+
+    await db.insert(exchangeAccounts).values([
+      {
+        id: 'cb-old-ec-refresh',
+        provider: 'coinbase',
+        displayName: 'Old EC Refresh',
+        encryptedCredentials: refreshBlob,
+        externalAccountId: 'acct-old-ec',
+        balanceSats: '10000000',
+        balanceAsOf: recentIso,
+        credentialsConnectedAt: recentIso,
+      },
+      {
+        id: 'cb-old-ec-backfill',
+        provider: 'coinbase',
+        displayName: 'Old EC Backfill',
+        encryptedCredentials: backfillBlob,
+        externalAccountId: null,
+        balanceSats: '50000000',
+        balanceAsOf: recentIso,
+        credentialsConnectedAt: recentIso,
+      },
+    ])
+
+    const verifiedCalls: Array<{ path: string; alg: 'ES256' | 'EdDSA'; kid: string }> = []
+    const acct = makeCoinbaseAccount({
+      uuid: 'acct-old-ec',
+      name: 'Old EC BTC',
+      balance: '0.45',
+      retail_portfolio_id: 'port-legacy-ec',
+    })
+    const backfillAcct = makeCoinbaseAccount({
+      uuid: 'acct-old-ec-backfill',
+      name: 'Old EC Backfill BTC',
+      balance: '0.6',
+      retail_portfolio_id: 'port-backfill-ec',
+    })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        const url = extractUrl(input)
+        const parsedUrl = new URL(url)
+        const auth = extractHeader(input, init, 'Authorization')
+        const oldVerified = verifyCdpBearerJwt(auth, oldEc.publicKey)
+        const newVerified = verifyCdpBearerJwt(auth, newEd.publicKey)
+        const verified = oldVerified ?? newVerified
+        if (verified === null) {
+          return jsonResponse({ error: 'Unauthorized' }, 401)
+        }
+        verifiedCalls.push({ path: parsedUrl.pathname, alg: verified.alg, kid: verified.kid })
+
+        if (parsedUrl.pathname === '/api/v3/brokerage/accounts/acct-old-ec') {
+          return jsonResponse({ account: acct })
+        }
+        if (parsedUrl.pathname === '/api/v3/brokerage/accounts/acct-old-ec-backfill') {
+          return jsonResponse({ account: backfillAcct })
+        }
+        if (parsedUrl.pathname === '/v2/accounts/acct-old-ec/transactions') {
+          return jsonResponse({
+            pagination: { next_uri: null },
+            data: [
+              {
+                id: 'tx-ec-1',
+                type: 'buy',
+                status: 'completed',
+                amount: { amount: '0.25', currency: 'BTC' },
+                native_amount: { amount: '25000.00', currency: 'USD' },
+                created_at: '2026-01-15T00:00:00Z',
+                resource: 'transaction',
+                resource_path: '/v2/accounts/acct-old-ec/transactions/tx-ec-1',
+              },
+            ],
+          })
+        }
+        if (parsedUrl.pathname === '/api/v3/brokerage/accounts') {
+          return jsonResponse({ accounts: [backfillAcct], has_next: false, cursor: '', size: 1 })
+        }
+        if (parsedUrl.pathname === '/api/v3/brokerage/key_permissions') {
+          return jsonResponse({
+            can_view: true,
+            can_trade: false,
+            can_transfer: false,
+            portfolio_uuid: 'port-backfill-ec',
+            portfolio_type: 'DEFAULT',
+          })
+        }
+        return jsonResponse({ error: 'unexpected' }, 404)
+      }),
+    )
+
+    const refreshed = (await service.refreshBalance('cb-old-ec-refresh')).unwrap()
+    expect(refreshed.balanceSats).toBe('45000000')
+    const [refreshRowAfter] = await db
+      .select()
+      .from(exchangeAccounts)
+      .where(eq(exchangeAccounts.id, 'cb-old-ec-refresh'))
+    expect(refreshRowAfter?.encryptedCredentials).toBe(refreshBlob)
+    expect(verifiedCalls).toContainEqual({
+      path: '/api/v3/brokerage/accounts/acct-old-ec',
+      alg: 'ES256',
+      kid: 'old-ec-key',
+    })
+
+    const txEntries = (await service.getCoinbaseTransactionEntries(['cb-old-ec-refresh'])).unwrap()
+    expect(txEntries).toHaveLength(1)
+    expect(txEntries[0]?.value).toBe(25000000n)
+    expect(verifiedCalls).toContainEqual({
+      path: '/v2/accounts/acct-old-ec/transactions',
+      alg: 'ES256',
+      kid: 'old-ec-key',
+    })
+
+    const reconnected = (
+      await service.connectCoinbase({
+        apiKey: 'new-ed-key',
+        secretKey: newEd.secretKey,
+        replaceAccountId: 'cb-old-ec-backfill',
+      })
+    ).unwrap()
+    expect(reconnected.id).toBe('cb-old-ec-backfill')
+    expect(reconnected.balanceSats).toBe('60000000')
+    expect(verifiedCalls).toContainEqual({
+      path: '/api/v3/brokerage/accounts',
+      alg: 'ES256',
+      kid: 'old-ec-backfill',
+    })
+    expect(verifiedCalls).toContainEqual({
+      path: '/api/v3/brokerage/accounts',
+      alg: 'EdDSA',
+      kid: 'new-ed-key',
+    })
+  },
+)
+
+it.each([
+  {
+    label: 'broken PEM',
+    apiKey: 'test-key-id',
+    secretKey: '-----BEGIN EC PRIVATE KEY-----\nMIGHAgEAMBMGByqGSM49AgEG',
+  },
+  {
+    label: '64-byte base64 with mismatched halves',
+    apiKey: 'test-key-id',
+    secretKey: Buffer.concat([ed25519SecretKey().seed, Buffer.alloc(32, 0xcd)]).toString('base64'),
+  },
+  {
+    label: 'P-384 PKCS#8 key',
+    apiKey: 'test-key-id',
+    secretKey: generateKeyPairSync('ec', { namedCurve: 'secp384r1' })
+      .privateKey.export({ format: 'pem', type: 'pkcs8' })
+      .toString(),
+  },
+  {
+    label: 'JSON key export in apiKey',
+    apiKey: JSON.stringify({ id: 'test-key-id', privateKey: ed25519SecretKey().secretKey }),
+    secretKey: ed25519SecretKey().secretKey,
+  },
+  {
+    label: 'PEM pasted into apiKey',
+    apiKey: generateKeyPairSync('ec', { namedCurve: 'prime256v1' })
+      .privateKey.export({ format: 'pem', type: 'sec1' })
+      .toString(),
+    secretKey: ed25519SecretKey().secretKey,
+  },
+])('Coinbase: returns format error with zero fetches and zero writes for $label', async ({ apiKey, secretKey }) => {
+  const { db, service } = await setup()
+  const fetchMock = vi.fn(async () => jsonResponse({ error: 'should not be called' }, 500))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const res = await service.connectCoinbase({ apiKey, secretKey })
+  expect(res.isErr()).toBe(true)
+  const err = res.unwrapErr()
+  expect(err).toBeInstanceOf(ExchangeUserError)
+  expect(err).not.toBeInstanceOf(ExchangeCredentialsRevokedError)
+  if (!(err instanceof ExchangeUserError)) {
+    throw new Error('Expected ExchangeUserError')
+  }
+  expect(err.code).toBe('BAD_REQUEST')
+  expect(err.message).toBe('This is not a valid API Key Secret. Copy it from Coinbase and paste it again.')
+  expect(fetchMock).not.toHaveBeenCalled()
+
+  const rows = await db.select().from(exchangeAccounts).where(eq(exchangeAccounts.provider, 'coinbase'))
+  expect(rows).toHaveLength(0)
+})
+
+it('Coinbase: returns invalid-credentials error when Coinbase rejects a well-formed Ed25519 key with 401', async () => {
+  const { service } = await setup()
+  const ed = ed25519SecretKey()
+  const fetchMock = vi.fn(async () => jsonResponse({ error: 'Unauthorized' }, 401))
+  vi.stubGlobal('fetch', fetchMock)
+
+  const res = await service.connectCoinbase({ apiKey: 'valid-format-key', secretKey: ed.secretKey })
+  expect(res.isErr()).toBe(true)
+  const err = res.unwrapErr()
+  expect(err).toBeInstanceOf(ExchangeUserError)
+  expect(err).not.toBeInstanceOf(ExchangeCredentialsRevokedError)
+  if (!(err instanceof ExchangeUserError)) {
+    throw new Error('Expected ExchangeUserError')
+  }
+  expect(err.code).toBe('BAD_REQUEST')
+  expect(err.message).toContain('Invalid Coinbase API credentials.')
+  expect(fetchMock).toHaveBeenCalledTimes(1)
 })
 
 it('Coinbase: consults key_permissions when legacy old key gets 403 on accounts list, rejecting mismatch and allowing match', async () => {

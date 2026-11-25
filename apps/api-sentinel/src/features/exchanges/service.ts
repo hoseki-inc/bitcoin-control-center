@@ -68,6 +68,7 @@ const CredentialDataSchema = z.object({
   data: z.record(z.string(), z.object({ blob: z.string() })),
   portfolioUuid: z.string().optional(),
   credentialsRevoked: z.boolean().optional(),
+  coinbaseAuth: z.literal('cdp').optional(),
 })
 type CredentialData = z.infer<typeof CredentialDataSchema>
 
@@ -180,17 +181,41 @@ function decryptCredentialField(credData: CredentialData, fieldName: string): Re
   return encrypted.unwrap().decrypt()
 }
 
-function buildCoinbaseClient(apiKey: string, secretKey: string): Result<ReturnType<typeof Coinbase.Client>, Error> {
-  const isPem = secretKey.trim().startsWith('-----BEGIN') && secretKey.includes('-----END')
-  const credentials = isPem
-    ? { variant: 'CdpKey' as const, name: apiKey, secret: secretKey }
-    : { variant: 'ApiKey' as const, key: apiKey, secret: secretKey }
-
+function buildCoinbaseClientFromCredentials(
+  credentials: Coinbase.ApiKey | Coinbase.CdpKey,
+): Result<ReturnType<typeof Coinbase.Client>, Error> {
   try {
     return Ok(Coinbase.Client({ credentials }))
   } catch {
     return Err(new ExchangeUserError('Invalid Coinbase API credentials. Check your key and try again.', 'BAD_REQUEST'))
   }
+}
+
+function buildCoinbaseSubmissionClient(
+  apiKey: string,
+  secretKey: string,
+): Result<{ client: ReturnType<typeof Coinbase.Client>; credentials: Coinbase.ApiKey | Coinbase.CdpKey }, Error> {
+  const credentialsRes = Coinbase.apiKeyCredentials(apiKey, secretKey)
+  if (credentialsRes.isErr()) {
+    return Err(credentialsRes.unwrapErr())
+  }
+  const credentials = credentialsRes.unwrap()
+  return buildCoinbaseClientFromCredentials(credentials).map((client) => ({ client, credentials }))
+}
+
+function buildStoredCoinbaseClient(
+  apiKey: string,
+  secretKey: string,
+  coinbaseAuth?: 'cdp',
+): Result<ReturnType<typeof Coinbase.Client>, Error> {
+  if (coinbaseAuth === 'cdp') {
+    return buildCoinbaseClientFromCredentials({ variant: 'CdpKey', name: apiKey, secret: secretKey })
+  }
+  const isPem = secretKey.trim().startsWith('-----BEGIN') && secretKey.includes('-----END')
+  const credentials = isPem
+    ? { variant: 'CdpKey' as const, name: apiKey, secret: secretKey }
+    : { variant: 'ApiKey' as const, key: apiKey, secret: secretKey }
+  return buildCoinbaseClientFromCredentials(credentials)
 }
 
 async function listAllCoinbaseAccounts(
@@ -362,11 +387,11 @@ export class ExchangeService {
       const { apiKey, secretKey } = args
       this.logger.info('Connecting Coinbase account via API key')
 
-      const clientRes = buildCoinbaseClient(apiKey, secretKey)
+      const clientRes = buildCoinbaseSubmissionClient(apiKey, secretKey)
       if (clientRes.isErr()) {
-        return Err(clientRes.unwrapErr())
+        return Err(this.toSafeConnectError('coinbase', clientRes.unwrapErr()))
       }
-      const client = clientRes.unwrap()
+      const { client, credentials } = clientRes.unwrap()
 
       const accountsResult = await listAllCoinbaseAccounts(client)
       if (accountsResult.isErr()) {
@@ -482,11 +507,14 @@ export class ExchangeService {
       const btcValue = balanceAccountRes.unwrap().available_balance.value
       const balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
 
-      const encApiKey = Encrypted.encrypt(apiKey)
+      const storedApiKey = credentials.variant === 'CdpKey' ? credentials.name : credentials.key
+      const storedSecretKey = credentials.secret
+
+      const encApiKey = Encrypted.encrypt(storedApiKey)
       if (encApiKey.isErr()) {
         return Err(encApiKey.unwrapErr())
       }
-      const encSecret = Encrypted.encrypt(secretKey)
+      const encSecret = Encrypted.encrypt(storedSecretKey)
       if (encSecret.isErr()) {
         return Err(encSecret.unwrapErr())
       }
@@ -497,6 +525,9 @@ export class ExchangeService {
           apiKey: { blob: encApiKey.unwrap().blob },
           secretKey: { blob: encSecret.unwrap().blob },
         },
+      }
+      if (credentials.variant === 'CdpKey') {
+        credentialData.coinbaseAuth = 'cdp'
       }
       if (effectiveNewPortfolioUuid !== undefined) {
         credentialData.portfolioUuid = effectiveNewPortfolioUuid
@@ -966,7 +997,7 @@ export class ExchangeService {
         return Err(secret.unwrapErr())
       }
 
-      const clientRes = buildCoinbaseClient(apiKey.unwrap(), secret.unwrap())
+      const clientRes = buildStoredCoinbaseClient(apiKey.unwrap(), secret.unwrap(), credData.coinbaseAuth)
       if (clientRes.isErr()) {
         return Err(clientRes.unwrapErr())
       }
@@ -1174,7 +1205,7 @@ export class ExchangeService {
           continue
         }
 
-        const clientRes = buildCoinbaseClient(apiKey.unwrap(), secret.unwrap())
+        const clientRes = buildStoredCoinbaseClient(apiKey.unwrap(), secret.unwrap(), credData.coinbaseAuth)
         if (clientRes.isErr()) {
           this.logProviderWarning(
             'coinbase',
@@ -1541,9 +1572,22 @@ export class ExchangeService {
   }
 
   private toSafeConnectError(provider: SupportedExchange, err: Error): ExchangeUserError {
+    if (provider === 'coinbase' && err instanceof Coinbase.CoinbaseKeyFormatError) {
+      this.logger.warn({ provider, errorKind: err.name }, 'Rejected malformed Coinbase API key secret')
+      return new ExchangeUserError(
+        'This is not a valid API Key Secret. Copy it from Coinbase and paste it again.',
+        'BAD_REQUEST',
+      )
+    }
     this.logProviderFailure(provider, 'connect', err)
     const displayName = EXCHANGE_DISPLAY_NAMES[provider]
     if (classifyProviderFailure(provider, err) !== 'transient') {
+      if (provider === 'coinbase') {
+        return new ExchangeUserError(
+          'Invalid Coinbase API credentials. Check your API Key ID, Read permission, and IP settings in Coinbase.',
+          'BAD_REQUEST',
+        )
+      }
       return new ExchangeUserError(
         `Invalid ${displayName} API credentials. Check your key and permissions, then try again.`,
         'BAD_REQUEST',
@@ -1694,7 +1738,7 @@ export class ExchangeService {
       return hasAnyStoredId ? Ok({}) : Err(new ExchangeAccountUnverifiableError('coinbase'))
     }
 
-    const clientRes = buildCoinbaseClient(apiKeyRes.unwrap(), secretRes.unwrap())
+    const clientRes = buildStoredCoinbaseClient(apiKeyRes.unwrap(), secretRes.unwrap(), credData.coinbaseAuth)
     if (clientRes.isErr()) {
       return hasAnyStoredId ? Ok({}) : Err(new ExchangeAccountUnverifiableError('coinbase'))
     }
