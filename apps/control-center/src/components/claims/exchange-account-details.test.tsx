@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
+import { MotionGlobalConfig } from 'framer-motion'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router'
@@ -22,6 +23,7 @@ const browser = await vi.hoisted(async () => {
 
 async function mountDetails(props: ExchangeAccountDetailsProps) {
   const dom = browser.acquire()
+  MotionGlobalConfig.skipAnimations = true
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   const container = document.createElement('div')
   document.body.append(container)
@@ -32,6 +34,7 @@ async function mountDetails(props: ExchangeAccountDetailsProps) {
       root.unmount()
     })
     container.remove()
+    MotionGlobalConfig.skipAnimations = false
     dom.window.close()
   })
 
@@ -45,8 +48,22 @@ async function mountDetails(props: ExchangeAccountDetailsProps) {
     )
   })
 
+  const dialog = (): Element | null => document.body.querySelector('[role="dialog"]')
+
+  const clickDialogButton = async (label: string): Promise<void> => {
+    const activeDialog = dialog()
+    assert(activeDialog !== null, 'Expected confirmation dialog to be open')
+    const button = [...activeDialog.querySelectorAll('button')].find((node) => node.textContent.trim() === label)
+    assert(button, `Dialog button not found: ${label}`)
+    await act(async () => {
+      button.click()
+    })
+  }
+
   return {
     container,
+    dialog,
+    clickDialogButton,
     text: () => container.textContent,
     clickButton: async (label: string) => {
       const button = [...container.querySelectorAll('button')].find((node) => node.textContent.trim() === label)
@@ -93,6 +110,18 @@ it('renders the expired Option D1 layout with Expired status, tooltip trigger, a
   expect(onReconnect).toHaveBeenCalledTimes(1)
 
   await view.clickButton('Remove Account')
+  expect(onDelete).not.toHaveBeenCalled()
+  expect(view.dialog()?.textContent).toContain('Remove Personal BTC Wallet?')
+  expect(view.dialog()?.textContent).toContain('Coinbase account')
+
+  await view.clickDialogButton('Cancel')
+  expect(onDelete).not.toHaveBeenCalled()
+  await vi.waitFor(() => {
+    expect(view.dialog()).toBeNull()
+  })
+
+  await view.clickButton('Remove Account')
+  await view.clickDialogButton('Remove')
   expect(onDelete).toHaveBeenCalledTimes(1)
 })
 
@@ -132,6 +161,7 @@ it('renders the connected layout with balance, Connected status, and Refresh Bal
 
 it('renders the expired Option D1 layout for Strike with children preserved below', async () => {
   const onReconnect = vi.fn<() => void>()
+  const onDelete = vi.fn<() => void>()
 
   const view = await mountDetails({
     exchangeName: 'Strike',
@@ -144,7 +174,7 @@ it('renders the expired Option D1 layout for Strike with children preserved belo
     isDeleting: false,
     onReconnect,
     onRefresh: vi.fn<() => void>(),
-    onDelete: vi.fn<() => void>(),
+    onDelete,
     children: <div>Account Statements</div>,
   })
 
@@ -156,4 +186,12 @@ it('renders the expired Option D1 layout for Strike with children preserved belo
 
   await view.clickButton('Reconnect Account')
   expect(onReconnect).toHaveBeenCalledTimes(1)
+
+  await view.clickButton('Remove Account')
+  expect(onDelete).not.toHaveBeenCalled()
+  expect(view.dialog()?.textContent).toContain('Remove My Strike Account?')
+  expect(view.dialog()?.textContent).toContain('imported statements')
+
+  await view.clickDialogButton('Cancel')
+  expect(onDelete).not.toHaveBeenCalled()
 })

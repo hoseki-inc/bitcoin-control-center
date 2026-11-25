@@ -1,10 +1,11 @@
-import { Box, Button, HStack, SimpleGrid, Stack, Text, Tooltip, chakra } from '@chakra-ui/react'
+import { Box, Button, HStack, SimpleGrid, Stack, Text, Tooltip, chakra, useDisclosure } from '@chakra-ui/react'
 import { CheckCircleFilledIcon, StatusBadge } from '@hoseki/packages/ui/prove-verify-ui'
 import { TopBar } from '@hoseki/packages/ui/prove-verify-ui/top-bar'
 import { format } from 'date-fns'
 import { InfoIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router'
+import { RemoveAccountModal } from './remove-account-modal'
 
 export interface ExchangeAccountDetailsProps {
   exchangeName: 'Coinbase' | 'Kraken' | 'Robinhood' | 'Strike'
@@ -37,9 +38,14 @@ export function ExchangeAccountDetails({
   onDelete,
   children,
 }: ExchangeAccountDetailsProps): JSX.Element {
+  const removeConfirm = useDisclosure()
   const btcSats = balance != null && balance !== '' ? Number(balance) : 0
   const btcAmount = (btcSats / 100_000_000).toFixed(8)
   const createdDate = new Date(createdAt)
+  const removeDescription =
+    exchangeName === 'Strike'
+      ? 'This Strike account will be removed from all your charts and totals, and its balance history and imported statements will be deleted.'
+      : `This ${exchangeName} account will be removed from all your charts and totals, and its balance history will be deleted.`
 
   return (
     <Box py={6}>
@@ -47,10 +53,19 @@ export function ExchangeAccountDetails({
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item as="button" color="error.600" onClick={onDelete}>
-          {isDeleting ? 'Removing...' : 'Remove Account'}
+        <TopBar.Item as="button" color="error.600" onClick={removeConfirm.onOpen}>
+          Remove Account
         </TopBar.Item>
       </TopBar>
+
+      <RemoveAccountModal
+        isOpen={removeConfirm.isOpen}
+        onClose={removeConfirm.onClose}
+        accountName={displayName}
+        description={removeDescription}
+        isDeleting={isDeleting}
+        onConfirm={onDelete}
+      />
 
       <Stack spacing={4}>
         <Box>
