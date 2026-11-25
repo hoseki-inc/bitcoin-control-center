@@ -983,7 +983,45 @@ describe('balances counted in the portfolio', () => {
       // While it waits to retry, a scan that never answers doesn't hold the next read.
       provider.getConfirmedAccountBalances.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
       const again = (await service.getData({ timeRange: '90d' })).unwrap()
-      expect(again).toMatchObject({ currentTotalBalance: '0', walletBalancesAsOf: { [accountId]: null } })
+      expect(again).toMatchObject({
+        currentTotalBalance: '0',
+        walletBalancesAsOf: { [accountId]: null },
+        walletBalancesSats: { [accountId]: null },
+      })
+    })
+  })
+
+  it('populates walletBalancesSats with exact strings for positive and zero scanned balances and null for provisional unknown', async () => {
+    await withTestSetup(async () => {
+      const { service, provider } = harness
+      provider.getConfirmedAccountBalances.mockImplementation(
+        asyncFn(async () => Ok(new IndexMap<Account, bigint>([[account, 0n]]))),
+      )
+      const zeroData = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(zeroData.walletBalancesSats).toEqual({ [accountId]: '0' })
+      expect(zeroData.walletBalancesAsOf[accountId]).not.toBeNull()
+    })
+  })
+
+  it('reuses a fresh tip on a second portfolio.getData click within 30s without calling getBlocksTip', async () => {
+    await withTestSetup(async () => {
+      const { service, provider } = harness
+      await harness.sync()
+      await service.recordAccountSnapshot(accountId, '100', '2020-01-02T12:00:00.000Z')
+
+      const first = (await service.getData({ timeRange: '90d' })).unwrap()
+      expect(first.historySyncedAccountIds).toEqual([accountId])
+      await vi.waitFor(() => {
+        expect(service['accountHistoryBackfillsInFlight'].size).toBe(0)
+      })
+      const callsAfterFirst = provider.getBlocksTip.mock.calls.length
+
+      // Even if getBlocksTip hangs now, a second click within 30s resolves with zero new tip RPCs.
+      provider.getBlocksTip.mockReturnValue(new AsyncResult(new Promise(() => undefined)))
+      const second = (await service.getData({ timeRange: '90d', accountIds: [accountId] })).unwrap()
+      expect(second.historySyncedAccountIds).toEqual([accountId])
+      expect(second.walletBalancesSats).toEqual({ [accountId]: '100' })
+      expect(provider.getBlocksTip).toHaveBeenCalledTimes(callsAfterFirst)
     })
   })
 })

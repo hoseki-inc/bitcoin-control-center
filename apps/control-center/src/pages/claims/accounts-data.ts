@@ -1,5 +1,5 @@
 import { toast } from 'sonner'
-import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
+import { type ExchangeRefreshSnapshotAccount, useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { type WalletBalancesQuery, useWalletBalances } from '../../lib/wallet-balances'
 import { type RouterOutput, trpc } from '../../trpc'
 import type { ClaimDto } from '../../trpc/server-types'
@@ -36,7 +36,7 @@ export interface AccountsDataSource {
   useLists: () => AccountsLists
   useWalletBalances: (claimIds: string[], options: { enabled: boolean }) => WalletBalancesQuery
   useRestore: () => AccountRestore
-  useAutoRefresh: () => void
+  useAutoRefresh: (accounts: readonly ExchangeRefreshSnapshotAccount[] | undefined) => void
 }
 
 export const accountsDataSource: AccountsDataSource = {
