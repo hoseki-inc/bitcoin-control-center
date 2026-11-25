@@ -63,6 +63,8 @@ test('forwards desktop offline and managed Tor options to the bundled server', a
     moduleUrl(`
     export async function main(options) {
       if (options.waitForElectrum !== false) throw new Error('Offline startup flag missing')
+      if (options.registerSignalHandlers !== false) throw new Error('registerSignalHandlers flag missing')
+      if (options.releaseCheckUrl !== 'http://127.0.0.1:41234/latest.json') throw new Error('releaseCheckUrl missing')
       if (options.tor.getStatus().state !== 'ready') throw new Error('Tor manager missing')
       await options.tor.start()
       return { port: options.listenPort, async shutdown() {} }
@@ -71,6 +73,8 @@ test('forwards desktop offline and managed Tor options to the bundled server', a
     {
       waitForElectrum: false,
       listenPort: 51235,
+      registerSignalHandlers: false,
+      releaseCheckUrl: 'http://127.0.0.1:41234/latest.json',
       tor: {
         start: async () => {
           starts += 1

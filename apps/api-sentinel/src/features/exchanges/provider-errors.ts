@@ -95,6 +95,34 @@ export class ExchangeCredentialsRevokedError extends ExchangeUserError {
   }
 }
 
+export class ExchangeRefreshTimeoutError extends ExchangeUserError {
+  public readonly tag = 'ExchangeRefreshTimeout'
+  public readonly provider: SupportedExchange
+
+  public constructor(provider: SupportedExchange) {
+    super(
+      `Couldn't refresh your ${EXCHANGE_DISPLAY_NAMES[provider]} balance right now. Please try again.`,
+      'INTERNAL_SERVER_ERROR',
+    )
+    this.name = 'ExchangeRefreshTimeoutError'
+    this.provider = provider
+  }
+}
+
+export class ExchangeHistoryIncompleteError extends ExchangeUserError {
+  public readonly tag = 'ExchangeHistoryIncomplete'
+  public readonly provider: SupportedExchange
+
+  public constructor(provider: SupportedExchange) {
+    super(
+      `Couldn't load the full transaction history from ${EXCHANGE_DISPLAY_NAMES[provider]}.`,
+      'INTERNAL_SERVER_ERROR',
+    )
+    this.name = 'ExchangeHistoryIncompleteError'
+    this.provider = provider
+  }
+}
+
 export type ProviderFailureKind = 'revoked' | 'permission_denied' | 'transient'
 
 export interface SafeProviderFailureMetadata {
@@ -178,8 +206,11 @@ const SAFE_ERROR_KINDS = new Set([
   'ExchangeAccountMismatchError',
   'ExchangeAccountUnverifiableError',
   'ExchangeCredentialsRevokedError',
+  'ExchangeHistoryIncompleteError',
+  'ExchangeRefreshTimeoutError',
   'ExchangeVerificationRetryableError',
   'RobinhoodAccountUnverifiableError',
+  'CoinbaseAccountReplyMismatchError',
 ])
 
 export function safeErrorKind(err: Error): string {

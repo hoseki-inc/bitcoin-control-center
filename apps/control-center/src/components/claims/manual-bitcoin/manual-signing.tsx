@@ -7,12 +7,14 @@ import { BitcoinSigningFormFields } from '@hoseki/packages/ui/design-system/form
 import { formatUsd, toBitcoinAmountDisplayValue } from '@hoseki/packages/ui/utils'
 import type { BitcoinInput } from '@hoseki/packages/ui/utils/bitcoin'
 import { WizardFooter } from '@hoseki/packages/ui/wallet-ui'
+import { Decimal } from 'decimal.js'
 import { useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { useBitcoinAccountBalances } from '../../../lib/balance/bitcoin-account'
 import type { SigningFlowProps } from '../../../lib/claim-flow'
+import { useHandedOffAccountScan } from '../../../pages/claims/verify/use-xpub-script-balances'
 import { trpc } from '../../../trpc'
 import type { ChallengeDto, ChallengeMessageDto, ClaimDto } from '../../../trpc/server-types'
+import { toastSigningError } from '../../../utils/signing-error-message'
 import type { ClaimingState } from './shared'
 
 export function ManualSigning({
@@ -78,8 +80,8 @@ function BitcoinSigningStep({
       await completeChallengeMutation.mutateAsync({ challengeId: challenge.id })
 
       onSuccess(claimingState.claimId)
-    } catch {
-      toast.error("Couldn't verify this account")
+    } catch (cause) {
+      toastSigningError(cause, "Couldn't verify this account")
     }
   }
 
@@ -125,13 +127,38 @@ function ManualSigningAccountAccordion({
   onEditClick: () => void
 }) {
   const networkAccount = bitcoinInput?.data
+  const accountKey = networkAccount ? networkAccount.toString() : null
+  const handedOffScan = useHandedOffAccountScan(accountKey)
+  const useHandedOff = handedOffScan !== undefined && handedOffScan.status !== 'error'
+
+  const priceQuery = trpc.portalProve.price.current.useQuery(undefined, {
+    enabled: useHandedOff,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    staleTime: 60_000,
+  })
   const balancesQuery = useBitcoinAccountBalances(networkAccount ? [networkAccount.toString()] : [], {
-    enabled: !!networkAccount?.account,
+    enabled: !!networkAccount?.account && !useHandedOff,
   })
 
   const balance = useMemo(() => {
     if (!networkAccount) {
       return { noBalance: 'No account found', btc: null, usd: null }
+    }
+    if (useHandedOff) {
+      const sats = handedOffScan.balanceSats ?? 0n
+      if (handedOffScan.status === 'loading' && sats === 0n) {
+        return { noBalance: 'Scanning…', btc: null, usd: null, isScanning: true }
+      }
+      const btcAmount = new Decimal(sats.toString()).div(100_000_000)
+      const usd = priceQuery.data ? formatUsd(btcAmount.mul(priceQuery.data.value)) : 'n/a'
+      return {
+        noBalance: null,
+        btc: toBitcoinAmountDisplayValue(sats.toString()),
+        usd,
+        isScanning: handedOffScan.status === 'loading',
+        balanceSats: sats,
+      }
     }
     if (balancesQuery.isLoading) {
       return { noBalance: 'Loading...', btc: null, usd: null }
@@ -149,7 +176,7 @@ function ManualSigningAccountAccordion({
       btc: toBitcoinAmountDisplayValue(accountBalance.current.toString()),
       usd: accountBalance.usd ? formatUsd(accountBalance.usd) : 'n/a',
     }
-  }, [networkAccount, balancesQuery])
+  }, [networkAccount, useHandedOff, handedOffScan, priceQuery.data, balancesQuery])
 
   if (!bitcoinInput) {
     return null

@@ -1,4 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { readArgs } from './args'
 import { countAccounts, sentinelClient, signIn } from './client'
 import { activeFaults } from './rules'
@@ -7,6 +9,7 @@ import {
   type RunState,
   buildStamp,
   isOurProcess,
+  isPathInside,
   listeners,
   portOwnedBy,
   readAppliedFaults,
@@ -40,13 +43,13 @@ const attempt = async (name: string, run: () => Promise<[boolean, string]>): Pro
   }
 }
 
-/** Process, port and build checks. True when the run's processes own their ports, so its URL is safe to call. */
+/** Process, port, isolation and build checks. True when the run's processes own their ports, so its URL is safe to call. */
 function checkProcesses(state: RunState): boolean {
   const { sentinel, fakes } = state
   const alive = (ok: boolean, pid: number): string => (ok ? `PID ${pid}` : `PID ${pid} is not this run's process`)
   const sentinelOurs = isOurProcess(sentinel)
   const fakesOurs = isOurProcess(fakes)
-  check('sentinel process', sentinelOurs, alive(sentinelOurs, sentinel.pid))
+  check(state.electron ? 'electron process' : 'sentinel process', sentinelOurs, alive(sentinelOurs, sentinel.pid))
   check('fakes process', fakesOurs, alive(fakesOurs, fakes.pid))
   const port = (name: string, number: number, leader: number): [boolean, string] => {
     const holders = listeners(number)
@@ -57,13 +60,33 @@ function checkProcesses(state: RunState): boolean {
           `${name} ${number} ${holders.length === 0 ? 'has no listener' : `is held by PID ${holders.join(', ')}`}`,
         ]
   }
-  const ports = [
+  const ports: Array<[boolean, string]> = [
     port('Sentinel', sentinel.port, sentinel.pid),
     port('Electrum', fakes.electrumPort, fakes.pid),
     port('mempool', fakes.mempoolPort, fakes.pid),
   ]
+  if (state.electron) {
+    ports.push(
+      state.cdpPort === undefined ? [false, 'CDP port missing in run.json'] : port('CDP', state.cdpPort, sentinel.pid),
+    )
+  }
   const portsOk = ports.every(([ok]) => ok)
   check('ports', portsOk, ports.map(([, detail]) => detail).join(', '))
+
+  if (state.electron) {
+    const appSupport = join(homedir(), 'Library', 'Application Support')
+    const isolated =
+      state.userDataDir !== undefined &&
+      isPathInside(state.userDataDir, paths.runDir) &&
+      !isPathInside(state.userDataDir, appSupport)
+    check(
+      'isolation',
+      isolated,
+      isolated && state.userDataDir !== undefined
+        ? `userData isolated at ${state.userDataDir}`
+        : `userDataDir is missing or not isolated inside ${paths.runDir}`,
+    )
+  }
 
   const current = buildStamp()
   const sameBuild = current.commit === state.build.commit && current.tree === state.build.tree
@@ -85,8 +108,23 @@ async function checkApp(state: RunState): Promise<void> {
     return [response.ok, `/health answered ${response.status}`]
   })
   await attempt('web app', async () => [await servesWebApp(url), 'Sentinel serves the built web app'])
+  const pinProgress = { awaitingUiPinSetup: false }
   await attempt('pin', async () => {
     const status = await client.auth.status.query()
+    if (state.electron) {
+      if (status.platform !== 'desktop') {
+        return [false, `expected PINs on for desktop; got ${status.platform ?? 'PINs off'}`]
+      }
+      if (status.state === 'no-pin') {
+        if (state.setupPinInUi) {
+          pinProgress.awaitingUiPinSetup = true
+          return [true, 'PINs are on (desktop); awaiting UI PIN setup']
+        }
+        return [false, "expected desktop PIN to be set; got state 'no-pin'"]
+      }
+      await signIn(client)
+      return [true, "PINs are on (desktop); signed in with the run's PIN"]
+    }
     if (!state.pin) {
       // Standalone Sentinel runs with PINs off, so every tab is already signed in.
       return [
@@ -101,6 +139,9 @@ async function checkApp(state: RunState): Promise<void> {
     await signIn(client)
     return [true, "PINs are on (umbrel); signed in with the run's PIN"]
   })
+  if (pinProgress.awaitingUiPinSetup) {
+    return
+  }
   await attempt('electrum', async () => {
     const status = await client.portalProve.settings.electrumStatus.query()
     const fake = status.host === '127.0.0.1' && status.port === fakes.electrumPort
@@ -117,7 +158,7 @@ async function checkApp(state: RunState): Promise<void> {
     ]
   })
   await attempt('seed', async () => {
-    const marker = readSeedMarker(paths)
+    const marker = readSeedMarker(paths, state)
     if (state.fresh) {
       return marker.status === 'missing' && (await countAccounts(client)) === 0
         ? [true, 'fresh run: not seeded, no accounts']
@@ -150,7 +191,7 @@ if (state.status === 'missing') {
   check(
     'run',
     true,
-    `${state.value.runId} launched ${state.value.launchedAt}${state.value.fresh ? ' (fresh)' : ''}${state.value.desktop ? ' (desktop)' : ''}${state.value.pin ? ' (PIN)' : ''}`,
+    `${state.value.runId} launched ${state.value.launchedAt}${state.value.fresh ? ' (fresh)' : ''}${state.value.electron ? ' (electron)' : ''}${state.value.desktop ? ' (desktop)' : ''}${state.value.pin ? ' (PIN)' : ''}`,
   )
   if (checkProcesses(state.value)) {
     await checkApp(state.value)

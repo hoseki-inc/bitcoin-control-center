@@ -3,17 +3,36 @@ import { SafeHttpError, SafeHttpErrorKind } from './errors.ts'
 import { SafeResponse } from './response.ts'
 import type { Input, Options } from './types.ts'
 
+const REQUEST_TIMEOUT_MS = 30_000
+
 export class SafeHttp {
-  public readonly options?: Options
+  private readonly defaults?: Options
 
   public constructor(options?: Options) {
-    this.options = options
+    this.defaults = options
+  }
+
+  public get options(): Options {
+    return { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS), ...this.defaults }
   }
 
   public request(input: Input, options?: Options): AsyncResult<SafeResponse, SafeHttpError> {
-    let request: Request
+    const init: Options = { ...this.defaults, ...options }
+    let responsePromise: Promise<Response>
     try {
-      request = new Request(input, { ...this.options, ...options })
+      if (!(input instanceof Request) && !(input instanceof URL)) {
+        void new URL(input)
+      }
+      if (init.headers !== undefined) {
+        void new Headers(init.headers)
+      }
+      if (init.signal === undefined) {
+        init.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      }
+      // Pass input and init directly to fetch rather than wrapping in an intermediate Request:
+      // in Node/undici, an unreferenced Request can be GC'd with its dependent AbortSignal,
+      // breaking timeout and caller abort propagation.
+      responsePromise = fetch(input, init)
     } catch (thrown) {
       const cause = thrown instanceof Error ? thrown : new Error('Invalid request')
       return new AsyncResult(
@@ -28,7 +47,7 @@ export class SafeHttp {
         ),
       )
     }
-    return Result.fromPromise(fetch(request))
+    return Result.fromPromise(responsePromise)
       .mapErr(
         (error) =>
           new SafeHttpError({

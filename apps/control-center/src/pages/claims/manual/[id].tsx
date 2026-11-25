@@ -33,6 +33,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { RemoveAccountModal } from '../../../components/claims/remove-account-modal'
 import { AccountDetailsSkeleton } from '../../../components/loading/page-skeletons'
 import { trpc } from '../../../trpc'
 import { localDateToIso, todayLocalDate } from '../../../utils/local-date'
@@ -186,39 +187,16 @@ export function ManualAccountDetailsPage(): JSX.Element {
         </TopBar.Item>
       </TopBar>
 
-      <Modal isOpen={removeConfirm.isOpen} onClose={removeConfirm.onClose} isCentered>
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>
-            <Text textStyle="text/lg" color="neutral.900">
-              Remove {account.displayName}?
-            </Text>
-          </ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <Text textStyle="text/sm" color="neutral.600">
-              It will be removed from all your charts and totals, and its balance history and transactions will be
-              deleted.
-            </Text>
-          </ModalBody>
-          <ModalFooter gap={2}>
-            <Button variant="outline" onClick={removeConfirm.onClose} size="md" flex={1} isDisabled={isDeleting}>
-              Cancel
-            </Button>
-            <Button
-              variant="error"
-              size="md"
-              flex={1}
-              isLoading={isDeleting}
-              onClick={() => {
-                void handleDelete()
-              }}
-            >
-              Remove
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
+      <RemoveAccountModal
+        isOpen={removeConfirm.isOpen}
+        onClose={removeConfirm.onClose}
+        accountName={account.displayName}
+        description="It will be removed from all your charts and totals, and its balance history and transactions will be deleted."
+        isDeleting={isDeleting}
+        onConfirm={() => {
+          void handleDelete()
+        }}
+      />
 
       <Modal
         isOpen={txToDelete !== null}

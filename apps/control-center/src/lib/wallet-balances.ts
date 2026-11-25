@@ -93,21 +93,37 @@ export interface WalletBalancesQuery {
   isError: boolean
 }
 
-const PortfolioBalanceTimesSchema = z.object({ walletBalancesAsOf: z.record(z.string(), z.string().nullable()) })
+const PortfolioBalanceTimesSchema = z.object({
+  walletBalancesAsOf: z.record(z.string(), z.string().nullable()),
+  walletBalancesSats: z.record(z.string(), z.string().nullable()).optional(),
+})
 
 /**
- * The wallets whose balance in `rows` is newer than the one a portfolio read counted, as a key that
- * changes with each newer balance, or null when the read is up to date.
+ * The wallets whose balance in `rows` differs from (or newly resolves) the balance a portfolio read
+ * counted, as a key that changes with each real change, or null when the read is up to date.
+ * Routine rescans that only advance `asOf` with the same `balanceSats` return null.
  */
 export function newerWalletBalancesKey(
   rows: readonly WalletBalanceRow[],
-  counted: Readonly<Record<string, string | null>>,
+  countedAsOfById: Readonly<Record<string, string | null>>,
+  countedSatsById?: Readonly<Record<string, string | null>>,
 ): string | null {
-  const newer = rows.flatMap(({ accountId, asOf }) => {
-    if (asOf === null || !Object.hasOwn(counted, accountId)) {
+  const newer = rows.flatMap(({ accountId, asOf, balanceSats }) => {
+    if (asOf === null || !Object.hasOwn(countedAsOfById, accountId)) {
       return []
     }
-    const countedAsOf = counted[accountId] ?? null
+    const countedAsOf = countedAsOfById[accountId] ?? null
+    if (countedSatsById !== undefined && Object.hasOwn(countedSatsById, accountId)) {
+      if (balanceSats === null) {
+        return []
+      }
+      const countedSats = countedSatsById[accountId] ?? null
+      if (countedSats === null) {
+        return [`${accountId}:null->${balanceSats}`]
+      }
+      const isNewer = countedAsOf === null || Date.parse(asOf) > Date.parse(countedAsOf)
+      return isNewer && balanceSats !== countedSats ? [`${accountId}:${countedSats}->${balanceSats}`] : []
+    }
     return countedAsOf === null || Date.parse(asOf) > Date.parse(countedAsOf) ? [`${accountId}@${asOf}`] : []
   })
   return newer.length === 0 ? null : newer.join(',')
@@ -116,7 +132,7 @@ export function newerWalletBalancesKey(
 /**
  * Refetches each settled portfolio read whose total counted an older wallet balance than `rows` shows,
  * such as one Sentinel answered from a snapshot while a scan finished. Each read is refetched once per
- * newer balance, so a balance Sentinel can't count yet doesn't refetch it again and again.
+ * balance discrepancy, and cleared once caught up so a later return to the same transition still triggers.
  */
 export function refetchPortfolioWhenBehind(
   queryClient: QueryClient,
@@ -130,8 +146,14 @@ export function refetchPortfolioWhenBehind(
       continue
     }
     const counted = parseUnknown(PortfolioBalanceTimesSchema, query.state.data)
-    const key = counted.isOk() ? newerWalletBalancesKey(rows, counted.unwrap().walletBalancesAsOf) : null
-    if (key === null || refetched.get(query.queryHash) === key) {
+    const key = counted.isOk()
+      ? newerWalletBalancesKey(rows, counted.unwrap().walletBalancesAsOf, counted.unwrap().walletBalancesSats)
+      : null
+    if (key === null) {
+      refetched.delete(query.queryHash)
+      continue
+    }
+    if (refetched.get(query.queryHash) === key) {
       continue
     }
     refetched.set(query.queryHash, key)

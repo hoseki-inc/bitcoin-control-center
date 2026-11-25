@@ -473,7 +473,8 @@ it('Coinbase: transient connect error shows exact retryable copy inline without 
 })
 
 it('Coinbase: invalid credentials error shows exact safe copy inline without new-account CTA, navigation, or PIN lock', async () => {
-  const safeMessage = 'Invalid Coinbase API credentials. Check your key and permissions, then try again.'
+  const safeMessage =
+    'Invalid Coinbase API credentials. Check your API Key ID, Read permission, and IP settings in Coinbase.'
   const view = await mountConnectForm({
     element: <ConnectCoinbase />,
     route: '/accounts/verify/coinbase',
@@ -484,6 +485,9 @@ it('Coinbase: invalid credentials error shows exact safe copy inline without new
       return null
     },
   })
+
+  await view.clickButton('Next')
+  await view.clickButton('I have my key')
 
   const apiKeyInput = view.container.querySelector<HTMLInputElement>('input[name="apiKey"]')
   const secretInput = view.container.querySelector<HTMLTextAreaElement>('textarea[name="secretKey"]')

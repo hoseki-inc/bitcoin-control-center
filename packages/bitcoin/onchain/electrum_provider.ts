@@ -19,13 +19,13 @@ const BATCH_SIZE = 10
  * so one slow request doesn't hold back the rest the way fixed batches did. Results keep the items'
  * order. After the first error no new calls start, and that error is returned once running calls settle.
  */
-export async function mapWithLimit<T, R>(
+export async function mapWithLimit<T, R, E = Error>(
   items: readonly T[],
   limit: number,
-  map: (item: T) => Promise<Result<R, Error>>,
-): Promise<Result<R[], Error>> {
+  map: (item: T) => Promise<Result<R, E>>,
+): Promise<Result<R[], E>> {
   const results: R[] = []
-  const failures: Error[] = []
+  const failures: E[] = []
   let next = 0
   const work = async (): Promise<void> => {
     while (failures.length === 0 && next < items.length) {

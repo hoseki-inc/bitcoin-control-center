@@ -48,7 +48,6 @@ import {
 } from './accounts-data'
 
 export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: AccountsDataSource }): JSX.Element {
-  dataSource.useAutoRefresh()
   const navigate = useNavigate()
   const location = useLocation()
   const {
@@ -59,6 +58,7 @@ export function ClaimsPage({ dataSource = accountsDataSource }: { dataSource?: A
     archivedClaimsQuery,
     btcPriceQuery,
   } = dataSource.useLists()
+  dataSource.useAutoRefresh(exchangeAccountsQuery.data)
   const { restore, restoringId } = dataSource.useRestore()
 
   const claims = claimsQuery.data ?? []

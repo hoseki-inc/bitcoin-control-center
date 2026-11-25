@@ -364,4 +364,20 @@ describe('release check', () => {
     await checking
     expect(service.status()).toEqual({ newVersion: null, pending: false })
   })
+
+  it('uses an overridden release check URL when provided', async () => {
+    const fetch = vi.fn<Fetch>(async () => Response.json({ tag: 'v99.0.0_0' }))
+    const service = new ReleaseCheckService({
+      logger,
+      installedVersion: '0.5.0:0',
+      url: 'http://127.0.0.1:45678/latest.json',
+      fetch,
+    })
+    onTestFinished(() => {
+      service.stop()
+    })
+    await service.checkIfDue()
+    expect(fetch).toHaveBeenCalledWith('http://127.0.0.1:45678/latest.json', expect.any(Object))
+    expect(service.status()).toEqual({ newVersion: '99.0.0', pending: false })
+  })
 })

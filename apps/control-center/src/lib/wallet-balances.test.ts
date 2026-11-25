@@ -105,6 +105,31 @@ describe('newerWalletBalancesKey', () => {
     expect(newerWalletBalancesKey(rows, { b: null })).toBe(`b@${minutesAgo(5)}`)
     expect(newerWalletBalancesKey([row('a', { asOf: null })], { a: null })).toBeNull()
   })
+
+  it('skips routine rescans with unchanged balanceSats and triggers on null->0 or changed balanceSats when walletBalancesSats is present', () => {
+    // Routine 60s rescan: newer timestamp, identical balanceSats -> null (no refetch).
+    expect(
+      newerWalletBalancesKey(
+        [row('a', { balanceSats: '100000', asOf: minutesAgo(1) })],
+        { a: minutesAgo(5) },
+        { a: '100000' },
+      ),
+    ).toBeNull()
+
+    // First scan transitioning provisional null -> known "0" -> triggers refetch.
+    expect(
+      newerWalletBalancesKey([row('a', { balanceSats: '0', asOf: minutesAgo(1) })], { a: null }, { a: null }),
+    ).toBe('a:null->0')
+
+    // Real balance change with newer timestamp -> triggers refetch.
+    expect(
+      newerWalletBalancesKey(
+        [row('a', { balanceSats: '150000', asOf: minutesAgo(1) })],
+        { a: minutesAgo(5) },
+        { a: '100000' },
+      ),
+    ).toBe('a:100000->150000')
+  })
 })
 
 describe('refetchPortfolioWhenBehind', () => {
@@ -152,5 +177,58 @@ describe('refetchPortfolioWhenBehind', () => {
     })
     refetchPortfolioWhenBehind(queryClient, rows, refetched)
     expect(read).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores routine 60s rescans with identical balanceSats and retriggers cleanly across A -> B -> A -> B', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    onTestFinished(() => {
+      queryClient.clear()
+    })
+    let serverSnapshot = {
+      walletBalancesAsOf: { a: minutesAgo(10) },
+      walletBalancesSats: { a: '100000' },
+    }
+    const read = vi.fn(async () => ({ ...serverSnapshot }))
+    const observer = new QueryObserver(queryClient, {
+      queryKey: getQueryKey(trpc.portalProve.portfolio.getData, { timeRange: '30d' }, 'query'),
+      queryFn: read,
+    })
+    onTestFinished(observer.subscribe(() => undefined))
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(1)
+      expect(observer.getCurrentResult().fetchStatus).toBe('idle')
+    })
+
+    const refetched = new Map<string, string>()
+    // Routine 60s rescan: newer timestamp, identical balanceSats -> NO refetch.
+    refetchPortfolioWhenBehind(queryClient, [row('a', { balanceSats: '100000', asOf: minutesAgo(5) })], refetched)
+    expect(read).toHaveBeenCalledTimes(1)
+
+    // A -> B
+    serverSnapshot = { walletBalancesAsOf: { a: minutesAgo(4) }, walletBalancesSats: { a: '200000' } }
+    refetchPortfolioWhenBehind(queryClient, [row('a', { balanceSats: '200000', asOf: minutesAgo(4) })], refetched)
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(2)
+      expect(observer.getCurrentResult().fetchStatus).toBe('idle')
+    })
+    // Caught up at B -> clears recorded key.
+    refetchPortfolioWhenBehind(queryClient, [row('a', { balanceSats: '200000', asOf: minutesAgo(4) })], refetched)
+
+    // B -> A
+    serverSnapshot = { walletBalancesAsOf: { a: minutesAgo(3) }, walletBalancesSats: { a: '100000' } }
+    refetchPortfolioWhenBehind(queryClient, [row('a', { balanceSats: '100000', asOf: minutesAgo(3) })], refetched)
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(3)
+      expect(observer.getCurrentResult().fetchStatus).toBe('idle')
+    })
+    // Caught up at A -> clears recorded key.
+    refetchPortfolioWhenBehind(queryClient, [row('a', { balanceSats: '100000', asOf: minutesAgo(3) })], refetched)
+
+    // A -> B again -> MUST retrigger cleanly!
+    serverSnapshot = { walletBalancesAsOf: { a: minutesAgo(2) }, walletBalancesSats: { a: '200000' } }
+    refetchPortfolioWhenBehind(queryClient, [row('a', { balanceSats: '200000', asOf: minutesAgo(2) })], refetched)
+    await vi.waitFor(() => {
+      expect(read).toHaveBeenCalledTimes(4)
+    })
   })
 })
