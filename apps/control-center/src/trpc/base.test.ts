@@ -40,4 +40,23 @@ describe('changes', () => {
     expect(fetches).toEqual(['accounts'])
     queryClient.clear()
   })
+
+  it('leaves cached queries fresh when a mutation opts out via meta.invalidatesQueries === false', async () => {
+    await queryClient.fetchQuery({
+      queryKey: ['portfolio'],
+      queryFn: async () => ({ currentTotalBalance: '100' }),
+    })
+    expect(queryClient.getQueryState(['portfolio'])?.isInvalidated).toBe(false)
+
+    await queryClient
+      .getMutationCache()
+      .build(queryClient, {
+        mutationFn: async () => undefined,
+        meta: { invalidatesQueries: false },
+      })
+      .execute()
+
+    expect(queryClient.getQueryState(['portfolio'])?.isInvalidated).toBe(false)
+    queryClient.clear()
+  })
 })

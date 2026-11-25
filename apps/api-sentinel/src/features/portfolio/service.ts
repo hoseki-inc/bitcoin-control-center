@@ -54,6 +54,12 @@ export interface ControlCenterData {
    * notice a newer balance.
    */
   walletBalancesAsOf: Record<string, string | null>
+  /**
+   * For each wallet, the balance in sats counted in `currentTotalBalance`, or null for one counted
+   * as empty because it has never been scanned. Lets the frontend distinguish a real balance change
+   * from a routine rescan that only advances `asOf`.
+   */
+  walletBalancesSats: Record<string, string | null>
 }
 
 interface BalanceSnapshotRow {
@@ -148,6 +154,7 @@ export class ControlCenterService {
       const firstScans = await this.walletBalances.getLiveBalances(waitingIds)
       const balancesByAccountId = new Map<string, bigint>()
       const balancesAsOf = new Map<string, string>()
+      const balancesSatsById = new Map<string, string>()
       const balanceTips = new Map<string, Block>()
       for (const view of views) {
         const first = firstScans.get(view.accountId)
@@ -161,6 +168,7 @@ export class ControlCenterService {
         balancesByAccountId.set(view.accountId, counted.balanceSats ?? 0n)
         if (counted.balanceSats !== null && counted.fetchedAt !== null) {
           balancesAsOf.set(view.accountId, counted.fetchedAt.toISOString())
+          balancesSatsById.set(view.accountId, counted.balanceSats.toString())
         }
         if (counted.tip !== null) {
           balanceTips.set(view.accountId, counted.tip)
@@ -402,6 +410,7 @@ export class ControlCenterService {
         historyRefreshingAccountIds: historyStatus.historyRefreshingAccountIds,
         historyFailedAccountIds: historyStatus.historyFailedAccountIds,
         walletBalancesAsOf: Object.fromEntries(accountRows.map(({ id }) => [id, balancesAsOf.get(id) ?? null])),
+        walletBalancesSats: Object.fromEntries(accountRows.map(({ id }) => [id, balancesSatsById.get(id) ?? null])),
       })
     },
   )
@@ -684,9 +693,11 @@ export class ControlCenterService {
       }
     }
 
-    // Never hold the page for long on Electrum: without a tip, history reads as still syncing and the
-    // page asks again shortly.
-    const { tip, failed } = await this.walletBalances.currentTip(HISTORY_STATUS_TIP_WAIT_MS)
+    // Never hold the page for long on Electrum: reuse a tip read in the last 30 seconds without
+    // another RPC, and if none is fresh wait briefly before falling back to a recent one.
+    const { tip, failed } = await this.walletBalances.currentTip(HISTORY_STATUS_TIP_WAIT_MS, {
+      reuseWithinMs: HISTORY_STATUS_TIP_REUSE_MS,
+    })
     if (tip === null) {
       if (failed) {
         this.logger.warn('Failed to inspect chain tip for history completion status')
@@ -761,7 +772,12 @@ export class ControlCenterService {
     if (!(await this.canContinueAccountHistoryBackfill(accountId, generation))) {
       return null
     }
-    const tipResult = await this.onchainProvider.getBlocksTip()
+    // Dashboard reads reuse a recent tip so clicking around doesn't re-hit Electrum for every
+    // wallet; archival (`currentBalance === undefined`) still reads a live tip.
+    const tipResult =
+      currentBalance !== undefined
+        ? await this.walletBalances.recentTip(HISTORY_STATUS_TIP_REUSE_MS)
+        : await this.onchainProvider.getBlocksTip()
     if (tipResult.isErr()) {
       this.logger.warn({ accountId, err: tipResult.unwrapErr() }, 'Failed to inspect chain tip for history backfill')
       return null
@@ -1285,6 +1301,8 @@ function accountDescriptorNetworkKey(descriptor: string, network: string): strin
 const ESTIMATED_BLOCK_INTERVAL_MS = 10 * 60 * 1000
 /** How long the history status waits for Electrum's chain tip before falling back to a recent one. */
 const HISTORY_STATUS_TIP_WAIT_MS = 1_000
+/** How long a recently read chain tip is reused across dashboard clicks without another Electrum RPC. */
+const HISTORY_STATUS_TIP_REUSE_MS = 30_000
 const HISTORY_SYNC_BLOCK_CUSHION = 288
 // Earlier versions could certify a partial Electrum response as complete.
 const CURRENT_ACCOUNT_HISTORY_SYNC_VERSION = 5

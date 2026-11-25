@@ -70,6 +70,7 @@ function fakeDataSource(state: HomeState): HomeDataSource {
     historyRefreshingAccountIds: state.historyRefreshingAccountIds,
     historyFailedAccountIds: [],
     walletBalancesAsOf: {},
+    walletBalancesSats: {},
   }
   return {
     useStatements: () =>
@@ -420,6 +421,7 @@ describe('Home overview refresh', () => {
     historyRefreshingAccountIds: [],
     historyFailedAccountIds: [],
     walletBalancesAsOf: {},
+    walletBalancesSats: {},
     ...overrides,
   })
 

@@ -1,5 +1,5 @@
 import type { UseQueryResult } from '@tanstack/react-query'
-import { useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
+import { type ExchangeRefreshSnapshotAccount, useAutoRefreshExchanges } from '../../hooks/use-auto-refresh-exchanges'
 import { type WalletBalancesQuery, useWalletBalances } from '../../lib/wallet-balances'
 import { type RouterInput, type RouterOutput, trpc } from '../../trpc'
 import { getBrowserTimezone } from '../../utils/timezone'
@@ -37,7 +37,7 @@ export interface DashboardDataSource {
   ) => PortfolioQuery
   /** Each wallet's newest known balance, read without waiting on Electrum. */
   useWalletBalances: (claimIds: string[], options: { enabled: boolean }) => WalletBalancesQuery
-  useAutoRefresh: () => void
+  useAutoRefresh: (accounts: readonly ExchangeRefreshSnapshotAccount[] | undefined) => void
   getTimezone: () => string
 }
 
