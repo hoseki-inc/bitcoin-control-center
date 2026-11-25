@@ -5,6 +5,7 @@ import { ecc } from '@hoseki/packages/bitcoin/lib/ecc'
 import { Xpub } from '@hoseki/packages/bitcoin/xpub'
 import { Wallets } from '@hoseki/packages/testing/wallets'
 import { BIP32Factory } from 'bip32'
+import { EMULATOR_FUNDING_OUTPUTS } from './emulator-seeds'
 
 // Everything here is public test data. The signing key comes from a public 32-byte seed of 0x01 bytes, as in
 // apps/api-sentinel/src/modules/trpc/ownership.fixtures.ts; it controls no real funds.
@@ -94,6 +95,13 @@ const EVENTS: ChainEvent[] = [
     inputs: ['funding'],
     outputs: [{ address: receive('verified', 2), value: 0.1 * SATS }],
   },
+  // Confirmed funding for public emulator test vectors (not added to SEED_ACCOUNTS, so baseline seed stays 3 accounts / 1.79999 BTC).
+  ...EMULATOR_FUNDING_OUTPUTS.map((funding): ChainEvent => ({
+    label: funding.label,
+    date: funding.date,
+    inputs: ['funding'],
+    outputs: [{ address: funding.address, value: funding.valueSats }],
+  })),
 ]
 
 /** One block every ten minutes from this anchor, close to real mainnet heights. */

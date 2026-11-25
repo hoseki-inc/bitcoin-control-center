@@ -1,4 +1,4 @@
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process'
+import { type ChildProcess, execFileSync, spawn, spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 
 // The only module in tools/verify that starts other programs (lint enforces it). Every child gets a ChildEnv, so the
@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os'
 
 /** Variables a child may take from the caller. Everything else is left out. */
 const INHERITED = ['PATH', 'HOME', 'USER', 'LOGNAME', 'SHELL', 'LANG'] as const
+
+/** Extra variables forwarded exclusively to Docker CLI invocations (never to Sentinel, fakes, or app children). */
+const DOCKER_INHERITED = ['DOCKER_HOST', 'DOCKER_CONTEXT', 'DOCKER_CONFIG'] as const
 
 /**
  * A child's whole environment: the allowlisted variables, the parent's temp folder, and what the caller sets on
@@ -34,6 +37,23 @@ export class ChildEnv {
   }
 }
 
+/** Optional cache root override (`BCC_VERIFY_CACHE_DIR`) for emulator artifacts such as compiled Ledger ELFs. */
+export function verifyCacheDirOverride(): string | undefined {
+  const value = process.env['BCC_VERIFY_CACHE_DIR']?.trim()
+  return value !== undefined && value !== '' ? value : undefined
+}
+
+/** Child environment for Docker CLI calls, forwarding DOCKER_HOST, DOCKER_CONTEXT, and DOCKER_CONFIG when set. */
+export function dockerChildEnv(): ChildEnv {
+  const extra = Object.fromEntries(
+    DOCKER_INHERITED.flatMap((name) => {
+      const value = process.env[name]
+      return value === undefined ? [] : [[name, value]]
+    }),
+  )
+  return ChildEnv.with(extra)
+}
+
 interface CommandOptions {
   env: ChildEnv
   cwd?: string
@@ -48,6 +68,30 @@ export function runCommand(command: string, args: string[], { env, cwd }: Comman
     maxBuffer: 256 * 1024 * 1024,
     stdio: ['ignore', 'pipe', 'ignore'],
   })
+}
+
+export interface CommandResult {
+  status: number | null
+  stdout: string
+  stderr: string
+  error: string | null
+}
+
+/** Runs a program to completion without throwing, capturing stdout, stderr, exit status, and spawn errors. */
+export function runCommandResult(command: string, args: string[], { env, cwd }: CommandOptions): CommandResult {
+  const result = spawnSync(command, args, {
+    cwd,
+    env: env.vars,
+    encoding: 'utf8',
+    maxBuffer: 16 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  return {
+    status: result.status,
+    stdout: result.stdout || '',
+    stderr: result.stderr || '',
+    error: result.error?.message ?? null,
+  }
 }
 
 /** Runs a program to completion with all its output in a log file. Throws when it fails. */
