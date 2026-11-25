@@ -16,6 +16,7 @@ import {
   Th,
   Thead,
   Tr,
+  useDisclosure,
 } from '@chakra-ui/react'
 import {
   ETF_CONFIGS,
@@ -32,6 +33,7 @@ import { format } from 'date-fns'
 import { useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { toast } from 'sonner'
+import { RemoveAccountModal } from '../../components/claims/remove-account-modal'
 import { AccountDetailsSkeleton } from '../../components/loading/page-skeletons'
 import { trpc } from '../../trpc'
 
@@ -41,6 +43,7 @@ export function EtfAccountDetailsPage(): JSX.Element {
   const utils = trpc.useUtils()
 
   const [isDeleting, setIsDeleting] = useState(false)
+  const removeConfirm = useDisclosure()
 
   // ─── Add Holding form ────────────────────────────────────────
   const [newTicker, setNewTicker] = useState<EtfTicker>('IBIT')
@@ -141,16 +144,21 @@ export function EtfAccountDetailsPage(): JSX.Element {
         <TopBar.Item as={Link} to="/accounts">
           Back to Accounts
         </TopBar.Item>
-        <TopBar.Item
-          as="button"
-          color="error.600"
-          onClick={() => {
-            void handleDelete()
-          }}
-        >
-          {isDeleting ? 'Removing...' : 'Remove Account'}
+        <TopBar.Item as="button" color="error.600" onClick={removeConfirm.onOpen}>
+          Remove Account
         </TopBar.Item>
       </TopBar>
+
+      <RemoveAccountModal
+        isOpen={removeConfirm.isOpen}
+        onClose={removeConfirm.onClose}
+        accountName={account.displayName}
+        description="This ETF account will be removed from all your charts and totals, and its holdings and balance history will be deleted."
+        isDeleting={isDeleting}
+        onConfirm={() => {
+          void handleDelete()
+        }}
+      />
 
       <Stack spacing={6}>
         {/* Account header */}
