@@ -2,6 +2,7 @@
 import { TestChakraProvider as ChakraProvider } from '@hoseki/packages/testing/chakra-provider'
 import { QueryClient, notifyManager } from '@tanstack/react-query'
 import { type Operation, TRPCClientError } from '@trpc/client'
+import { MotionGlobalConfig } from 'framer-motion'
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router'
@@ -49,6 +50,7 @@ async function mountDetailsPage(args: {
   handle: (operation: Operation) => Promise<object | null>
 }) {
   const dom = browser.acquire()
+  MotionGlobalConfig.skipAnimations = true
   Object.defineProperty(dom.window, 'matchMedia', {
     writable: true,
     value: (query: string) => ({
@@ -85,6 +87,7 @@ async function mountDetailsPage(args: {
       callback()
     })
     useGate.setState(INITIAL_GATE, true)
+    MotionGlobalConfig.skipAnimations = false
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     dom.window.close()
@@ -98,6 +101,7 @@ async function mountDetailsPage(args: {
             <Routes>
               <Route path={args.routePattern} element={args.element} />
               <Route path={args.verifyPath} element={<ReconnectTargetProbe />} />
+              <Route path="/accounts" element={<div data-testid="accounts-list">Accounts</div>} />
             </Routes>
           </MemoryRouter>
         </ChakraProvider>
@@ -113,10 +117,24 @@ async function mountDetailsPage(args: {
     })
   }
 
+  const dialog = (): Element | null => document.body.querySelector('[role="dialog"]')
+
+  const clickDialogButton = async (label: string): Promise<void> => {
+    const activeDialog = dialog()
+    assert(activeDialog !== null, 'Expected confirmation dialog to be open')
+    const button = [...activeDialog.querySelectorAll('button')].find((node) => node.textContent.trim() === label)
+    assert(button !== undefined, `Expected dialog button "${label}"`)
+    await act(async () => {
+      button.click()
+    })
+  }
+
   return {
     container,
     toastErrorSpy,
     clickButton,
+    dialog,
+    clickDialogButton,
     text: () => container.textContent,
   }
 }
@@ -342,4 +360,119 @@ it('Strike: transient Refresh Balance error shows safe copy, preserves balance a
   expect(view.text()).not.toContain('Expired')
   expect(view.container.querySelector('[data-testid="reconnect-target"]')).toBeNull()
   expect(useGate.getState()).toMatchObject({ epoch: 0, phase: 'open' })
+})
+
+it('Coinbase: Remove Account confirms first — Cancel keeps the account, Remove deletes it', async () => {
+  const deleteCalls: unknown[] = []
+
+  const view = await mountDetailsPage({
+    initialPath: '/accounts/coinbase/cb-1',
+    routePattern: '/accounts/coinbase/:accountId',
+    element: <CoinbaseAccountDetailsPage />,
+    verifyPath: '/accounts/verify/coinbase',
+    handle: async (op) => {
+      if (op.path === 'portalProve.exchanges.coinbase.list') {
+        return [
+          {
+            id: 'cb-1',
+            exchange: 'coinbase',
+            displayName: 'Personal BTC Wallet',
+            currency: 'BTC',
+            balance: '50000000',
+            balanceAsOf: '2026-01-01T00:00:00.000Z',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            connectionStatus: 'connected',
+          },
+        ]
+      }
+      if (op.path === 'portalProve.exchanges.delete') {
+        deleteCalls.push(op.input)
+        return null
+      }
+      return null
+    },
+  })
+
+  await vi.waitFor(() => {
+    expect(view.text()).toContain('Personal BTC Wallet')
+  })
+
+  await view.clickButton('Remove Account')
+  expect(deleteCalls).toEqual([])
+  expect(view.dialog()?.textContent).toContain('Remove Personal BTC Wallet?')
+  expect(view.dialog()?.textContent).toContain('Coinbase account')
+
+  await view.clickDialogButton('Cancel')
+  await vi.waitFor(() => {
+    expect(view.dialog()).toBeNull()
+  })
+  expect(deleteCalls).toEqual([])
+  expect(view.text()).toContain('Personal BTC Wallet')
+
+  await view.clickButton('Remove Account')
+  await view.clickDialogButton('Remove')
+
+  await vi.waitFor(() => {
+    expect(view.container.querySelector('[data-testid="accounts-list"]')).not.toBeNull()
+  })
+  expect(deleteCalls).toEqual([{ accountId: 'cb-1' }])
+})
+
+it('Strike: Remove Account warns about imported statements — Cancel keeps it, Remove deletes it', async () => {
+  const deleteCalls: unknown[] = []
+
+  const view = await mountDetailsPage({
+    initialPath: '/accounts/strike/st-1',
+    routePattern: '/accounts/strike/:accountId',
+    element: <StrikeAccountDetailsPage />,
+    verifyPath: '/accounts/verify/strike',
+    handle: async (op) => {
+      if (op.path === 'portalProve.exchanges.strike.list') {
+        return [
+          {
+            id: 'st-1',
+            exchange: 'strike',
+            displayName: 'My Strike',
+            currency: 'BTC',
+            balance: '25000000',
+            balanceAsOf: '2026-01-01T00:00:00.000Z',
+            createdAt: '2026-01-01T00:00:00.000Z',
+            connectionStatus: 'connected',
+          },
+        ]
+      }
+      if (op.path === 'portalProve.exchanges.strike.listStatementMonths') {
+        return ['2026-01']
+      }
+      if (op.path === 'portalProve.exchanges.delete') {
+        deleteCalls.push(op.input)
+        return null
+      }
+      return null
+    },
+  })
+
+  await vi.waitFor(() => {
+    expect(view.text()).toContain('My Strike')
+  })
+
+  await view.clickButton('Remove Account')
+  expect(deleteCalls).toEqual([])
+  expect(view.dialog()?.textContent).toContain('Remove My Strike?')
+  expect(view.dialog()?.textContent).toContain('imported statements')
+
+  await view.clickDialogButton('Cancel')
+  await vi.waitFor(() => {
+    expect(view.dialog()).toBeNull()
+  })
+  expect(deleteCalls).toEqual([])
+  expect(view.text()).toContain('My Strike')
+
+  await view.clickButton('Remove Account')
+  await view.clickDialogButton('Remove')
+
+  await vi.waitFor(() => {
+    expect(view.container.querySelector('[data-testid="accounts-list"]')).not.toBeNull()
+  })
+  expect(deleteCalls).toEqual([{ accountId: 'st-1' }])
 })

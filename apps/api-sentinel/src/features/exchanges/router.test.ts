@@ -690,7 +690,7 @@ it('sanitizes thrown transport errors and invalid header API keys in strike.conn
     {
       code: 'BAD_REQUEST',
       httpStatus: 400,
-      message: 'Invalid Coinbase API credentials. Check your key and permissions, then try again.',
+      message: 'Invalid Coinbase API credentials. Check your API Key ID, Read permission, and IP settings in Coinbase.',
       forbiddenText: coinbaseHeaderCanary,
     },
   )
@@ -700,7 +700,7 @@ it('sanitizes thrown transport errors and invalid header API keys in strike.conn
     {
       code: 'BAD_REQUEST',
       httpStatus: 400,
-      message: 'Invalid Coinbase API credentials. Check your key and permissions, then try again.',
+      message: 'Invalid Coinbase API credentials. Check your API Key ID, Read permission, and IP settings in Coinbase.',
       forbiddenText: coinbaseHeaderCanary,
     },
   )

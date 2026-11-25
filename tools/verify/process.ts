@@ -65,3 +65,78 @@ export function startGroup(
   child.unref()
   return child
 }
+
+export interface AsyncCommandResult {
+  code: number | null
+  signal: NodeJS.Signals | null
+  stdout: string
+  stderr: string
+  timedOut: boolean
+}
+
+/** Runs a program asynchronously with an optional timeout, capturing stdout and stderr without throwing. */
+export async function runAsync(
+  command: string,
+  args: string[],
+  { env, cwd, timeoutMs }: CommandOptions & { timeoutMs?: number },
+): Promise<AsyncCommandResult> {
+  return new Promise((done) => {
+    const child = spawn(command, args, {
+      cwd,
+      env: env.vars,
+      detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    let timedOut = false
+    let settled = false
+    const finish = (code: number | null, signal: NodeJS.Signals | null): void => {
+      if (settled) {
+        return
+      }
+      settled = true
+      if (timer !== null) {
+        clearTimeout(timer)
+      }
+      done({ code, signal, stdout, stderr, timedOut })
+    }
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk: string) => {
+      stdout += chunk
+    })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk: string) => {
+      stderr += chunk
+    })
+    const timer =
+      timeoutMs === undefined
+        ? null
+        : setTimeout(() => {
+            timedOut = true
+            try {
+              if (child.pid !== undefined) {
+                process.kill(-child.pid, 'SIGKILL')
+              } else {
+                child.kill('SIGKILL')
+              }
+            } catch {
+              try {
+                child.kill('SIGKILL')
+              } catch {
+                void child.exitCode
+              }
+            }
+            setTimeout(() => {
+              finish(null, 'SIGKILL')
+            }, 500)
+          }, timeoutMs)
+    child.on('error', (error) => {
+      stderr += `${error.message}\n`
+      finish(1, null)
+    })
+    child.on('close', (code, signal) => {
+      finish(code, signal)
+    })
+  })
+}

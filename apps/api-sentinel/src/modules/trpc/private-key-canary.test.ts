@@ -150,6 +150,13 @@ const cases: Case[] = [
     values: [singlesig, multisig].flatMap(withPrivateKeys).map((account) => `mainnet::${account}`),
     call: async (caller, account) => reply(caller.portalProve.onchain.bitcoinAccountBalances({ accounts: [account] })),
   },
+  {
+    route: 'portalProve.onchain.scanAccountChunk',
+    field: 'account',
+    values: [singlesig, multisig].flatMap(withPrivateKeys).map((account) => `bitcoin_mainnet::${account}`),
+    call: async (caller, account) =>
+      reply(caller.portalProve.onchain.scanAccountChunk({ account, chain: 'receive', startIndex: 0, count: 10 })),
+  },
 ]
 
 const zodSchema = z.custom<z.ZodTypeAny>((value) => value instanceof z.ZodType)

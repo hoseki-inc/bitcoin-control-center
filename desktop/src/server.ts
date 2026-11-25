@@ -8,11 +8,15 @@ interface ServerOptions {
   statementSourceSetting?: boolean
   /** The running release, such as `0.6.0:0`, so Sentinel can check for newer ones. */
   releaseVersion?: string
+  /** Loopback release-check URL override used only by desktop local verify. */
+  releaseCheckUrl?: string
   tor?: Pick<TorManager, 'start' | 'getStatus' | 'getSocksProxy'>
   /** Port to bind; zero lets the operating system choose a free port. */
   listenPort?: number
   /** Turns on Sentinel's PIN, with the desktop app's rules. */
   pin?: 'desktop'
+  /** False when Electron owns process SIGTERM/SIGINT and orchestrates shutdown. */
+  registerSignalHandlers?: boolean
 }
 
 // oxlint-disable-next-line anti-slop/no-unknown-returns -- A dynamically loaded server method can return any runtime value, which is checked by its caller.

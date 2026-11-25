@@ -1,5 +1,5 @@
 import { MultiSigAccount, SingleSigAccount, type SingleSigAccountScriptType } from '@hoseki/packages/bitcoin'
-import { getDefaultEncoding } from '@hoseki/packages/ui/design-system/forms/bitcoin-input-form-fields'
+import { getPrefixScriptType } from '@hoseki/packages/ui/design-system/forms/bitcoin-input-form-fields'
 import { Slip132 } from '@hoseki/packages/wallet'
 import { createMultisigClaimInputFromDescriptor } from '../../../components/multisig/multisig-from-descriptor'
 import type { CreateMultisigKeystoreInput } from '../../../trpc/server-types'
@@ -36,7 +36,10 @@ export function isPlainXpub(raw: string): boolean {
  * the account parsers would read differently, such as a Taproot script path, a single address or another branch, is
  * rejected rather than tracked as a different wallet.
  */
-export function parseTrackedWallet(raw: string, pickedScriptType: SingleSigAccountScriptType): TrackedWallet | null {
+export function parseTrackedWallet(
+  raw: string,
+  pickedScriptType: SingleSigAccountScriptType | null,
+): TrackedWallet | null {
   const text = raw.trim()
   if (text.includes('multi(')) {
     if (asSaved(text) === null) {
@@ -74,6 +77,8 @@ export function parseTrackedWallet(raw: string, pickedScriptType: SingleSigAccou
     return null
   }
   const xpub = Slip132.getXpubFromString(text).unwrapOr(null)
-  const scriptType = isPlainXpub(text) ? pickedScriptType : getDefaultEncoding(text)
-  return xpub === null ? null : { kind: 'singlesig', account: new SingleSigAccount(scriptType, xpub) }
+  const scriptType = isPlainXpub(text) ? pickedScriptType : getPrefixScriptType(text)
+  return xpub === null || scriptType === null
+    ? null
+    : { kind: 'singlesig', account: new SingleSigAccount(scriptType, xpub) }
 }

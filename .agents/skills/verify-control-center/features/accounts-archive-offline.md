@@ -15,7 +15,7 @@ Proves: `balance-unknown`
 Preconditions: the baseline, with no fault on. The key below is a public test key from `packages/testing/wallets.ts`, with no balance on the seeded chain.
 
 - **Down**: `helpers/verify fault electrum down`.
-- **Track a wallet**: open `/accounts/verify/track`, type `Verify Archive Offline` and `xpub6BqN8FZQhMmbuUehywWNTkRjMAYpTNhqvu6fMiYx4dw9Bagf8218mXwD8QGMswfcAAiqxfUoiHiGcV1iE3oDG9rFBoyDBw1a6FJAFVQhc1j`, keep `Legacy (P2PKH)` and click `Track Wallet`. The account page shows Amount `n/a`.
+- **Track a wallet**: open `/accounts/verify/track`, type `Verify Archive Offline` and `xpub6BqN8FZQhMmbuUehywWNTkRjMAYpTNhqvu6fMiYx4dw9Bagf8218mXwD8QGMswfcAAiqxfUoiHiGcV1iE3oDG9rFBoyDBw1a6FJAFVQhc1j`, pick `Legacy (P2PKH)` and click `Track Wallet`. The account page shows Amount `n/a`.
 - **Can't reach Electrum**: Accounts' header reads `Can't reach Electrum`.
 - **Refused**: back on the account's page, click `Archive Account`. The dialog `Archive Account?` reads `We could not determine this account's current balance. Archive is disabled; refresh and try again.`, and its `Archive` button is disabled. Click `Cancel`.
 - **Stored proof, while down**: `helpers/verify query --sql "SELECT a.display_name, a.deleted_at, (SELECT count(*) FROM balance_snapshots b WHERE b.account_id = a.id) AS snapshots FROM accounts a WHERE a.display_name = 'Verify Archive Offline'"` into `stored.json`: not archived, no snapshots.
