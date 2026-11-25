@@ -3,16 +3,19 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readArgs } from './args'
 import { countAccounts, sentinelClient, signIn } from './client'
-import { activeFaults, freshSeedCheck } from './rules'
+import { type EmulatorProbe, type ExtraContainerProbe, activeFaults, checkEmulatorsRule, freshSeedCheck } from './rules'
 import {
   HELPER,
   type RunState,
   buildStamp,
+  inspectContainer,
+  isLoopbackUrlForPort,
   isOurProcess,
   isPathInside,
   listeners,
   portOwnedBy,
   readAppliedFaults,
+  readContainersFile,
   readRunState,
   readSeedMarker,
   runPaths,
@@ -180,6 +183,72 @@ async function checkApp(state: RunState): Promise<void> {
   })
 }
 
+async function checkEmulators(state: RunState | null): Promise<void> {
+  const containersFile = readContainersFile(paths)
+  if (containersFile.status === 'invalid') {
+    const [ok, detail] = checkEmulatorsRule([], [], containersFile.file)
+    check('emulators', ok, detail)
+    return
+  }
+  const recordedContainers = containersFile.status === 'ok' ? containersFile.value : []
+  const emulators = state?.emulators ?? []
+
+  const probes: EmulatorProbe[] = []
+  for (const emulator of emulators) {
+    const containerState = inspectContainer(emulator.containerId)
+    let healthOk = false
+    let healthDetail = 'skipped (container is not running)'
+    if (containerState.state === 'running') {
+      if (!isLoopbackUrlForPort(emulator.healthUrl, emulator.apiPort, ['http:'])) {
+        healthDetail = `healthUrl ${emulator.healthUrl} does not match loopback http port ${emulator.apiPort}`
+      } else {
+        try {
+          const response = await fetch(emulator.healthUrl, {
+            redirect: 'manual',
+            signal: AbortSignal.timeout(3_000),
+          })
+          if (response.status >= 300 && response.status < 400) {
+            healthOk = false
+            healthDetail = `HTTP ${response.status} (redirect rejected)`
+          } else {
+            healthOk = response.ok
+            healthDetail = `HTTP ${response.status}`
+          }
+        } catch (error) {
+          healthDetail = error instanceof Error ? error.message : String(error)
+        }
+      }
+    }
+
+    const bridgeAlive = emulator.bridge !== undefined ? isOurProcess(emulator.bridge) : null
+    const bridgePortHolders = emulator.bridge !== undefined ? listeners(emulator.bridge.port) : []
+    const bridgePortOwned =
+      emulator.bridge !== undefined ? portOwnedBy(emulator.bridge.port, emulator.bridge.pid) : null
+
+    probes.push({
+      emulator,
+      containerState,
+      healthOk,
+      healthDetail,
+      bridgeAlive,
+      bridgePortOwned,
+      bridgePortHolders,
+    })
+  }
+
+  const coveredIds = new Set(emulators.map((emulator) => emulator.containerId))
+  const extraContainers: ExtraContainerProbe[] = recordedContainers
+    .filter((recorded) => !coveredIds.has(recorded.containerId))
+    .map((recorded) => ({
+      name: recorded.name,
+      containerId: recorded.containerId,
+      containerState: inspectContainer(recorded.containerId),
+    }))
+
+  const [ok, detail] = checkEmulatorsRule(probes, extraContainers)
+  check('emulators', ok, detail)
+}
+
 const state = readRunState(paths)
 if (state.status === 'missing') {
   check('run', false, `No run state at ${paths.stateFile}. Run ${HELPER} launch.`)
@@ -197,6 +266,8 @@ if (state.status === 'missing') {
     check('app', false, "skipped: this run doesn't own its processes and ports, so its URL may be another server")
   }
 }
+
+await checkEmulators(state.status === 'ok' ? state.value : null)
 
 const applied = readAppliedFaults(paths)
 const faults = applied.status === 'ok' ? activeFaults(applied.value) : null

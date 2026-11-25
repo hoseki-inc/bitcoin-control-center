@@ -7,6 +7,7 @@ import { loadEnv } from 'vite'
 import { describe, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
+  type EmulatorProbe,
   LiveRun,
   MAP_FILE,
   type Outcome,
@@ -14,6 +15,7 @@ import {
   SLOW_FAULT_MS,
   activeFaults,
   beginProblem,
+  checkEmulatorsRule,
   classifyTorOutcome,
   faultedAnswer,
   freeAttemptNumber,
@@ -22,6 +24,7 @@ import {
   launchDecision,
   newAttempt,
   openAttempt,
+  parseEmulatorCommand,
   readRecipes,
   recordProblem,
   webBuildEnv,
@@ -29,7 +32,7 @@ import {
   withFault,
   withOutcome,
 } from './rules'
-import { REPO_ROOT, type RunState } from './run'
+import { type EmulatorState, REPO_ROOT, type RunState } from './run'
 
 const recipe: Recipe = { id: 'statements', feature: 'statements', proves: ['generate', 'listed'], problem: null }
 const proof = ['01-list.jpg', 'trace.md']
@@ -554,5 +557,231 @@ describe('faults', () => {
     const both = withFault(down, 'mempool', 'slow')
     assert.deepEqual(activeFaults(both), ['electrum down', 'mempool slow'])
     assert.deepEqual(activeFaults(withFault(withFault(both, 'electrum', 'ok'), 'mempool', 'ok')), [])
+  })
+})
+
+describe('checkEmulatorsRule', () => {
+  const CID_LEDGER = 'a'.repeat(64)
+  const CID_EXTRA = 'b'.repeat(64)
+
+  const ledgerEmulator: EmulatorState = {
+    device: 'ledger',
+    model: 'flex',
+    seed: 'primary',
+    containerId: CID_LEDGER,
+    apiPort: 15000,
+    healthUrl: 'http://127.0.0.1:15000/events',
+    bridge: {
+      name: 'emulator:ledger-bridge',
+      pid: 4242,
+      startedAt: 't1',
+      port: 15001,
+      url: 'http://127.0.0.1:15001',
+    },
+  }
+
+  const healthyProbe: EmulatorProbe = {
+    emulator: ledgerEmulator,
+    containerState: { state: 'running' },
+    healthOk: true,
+    healthDetail: 'HTTP 200',
+    bridgeAlive: true,
+    bridgePortOwned: true,
+    bridgePortHolders: [4242],
+  }
+
+  it('passes with none when no emulators or containers exist', () => {
+    assert.deepEqual(checkEmulatorsRule([], []), [true, 'none'])
+  })
+
+  it('fails when containers.json does not parse', () => {
+    const [ok, detail] = checkEmulatorsRule([], [], '/tmp/containers.json')
+    assert.equal(ok, false)
+    assert.match(detail, /containers\.json does not parse/)
+  })
+
+  it('passes when container is running, health answers 2xx, and bridge owns its port (or has no bridge)', () => {
+    const [ok, detail] = checkEmulatorsRule([healthyProbe], [])
+    assert.equal(ok, true)
+    assert.match(detail, new RegExp(`ledger \\(flex\\).*${CID_LEDGER.slice(0, 12)}.*bridge 15001`))
+
+    const noBridgeEmulator: EmulatorState = {
+      device: 'coldcard',
+      seed: 'primary',
+      containerId: CID_EXTRA,
+      apiPort: 16000,
+      healthUrl: 'http://127.0.0.1:16000/health',
+    }
+    const [okNoBridge, detailNoBridge] = checkEmulatorsRule(
+      [
+        {
+          emulator: noBridgeEmulator,
+          containerState: { state: 'running' },
+          healthOk: true,
+          healthDetail: 'HTTP 200',
+          bridgeAlive: null,
+          bridgePortOwned: null,
+          bridgePortHolders: [],
+        },
+      ],
+      [],
+    )
+    assert.equal(okNoBridge, true)
+    assert.doesNotMatch(detailNoBridge, /bridge/)
+  })
+
+  it('flags a stopped container without emitting a health probe failure, and distinguishes Docker-unavailable', () => {
+    const [okStopped, detailStopped] = checkEmulatorsRule(
+      [
+        {
+          ...healthyProbe,
+          containerState: { state: 'stopped' },
+          healthOk: false,
+          healthDetail: 'skipped (container is not running)',
+        },
+      ],
+      [],
+    )
+    assert.equal(okStopped, false)
+    assert.match(detailStopped, new RegExp(`container ${CID_LEDGER} is not running`))
+    assert.doesNotMatch(detailStopped, /health .* failed/)
+
+    const [okUnavailable, detailUnavailable] = checkEmulatorsRule(
+      [
+        {
+          ...healthyProbe,
+          containerState: { state: 'unavailable', detail: 'Cannot connect to the Docker daemon' },
+          healthOk: false,
+          healthDetail: 'skipped (container is not running)',
+        },
+      ],
+      [],
+    )
+    assert.equal(okUnavailable, false)
+    assert.match(detailUnavailable, /Docker unavailable \(Cannot connect to the Docker daemon\)/)
+    assert.doesNotMatch(detailUnavailable, /is not running/)
+    assert.doesNotMatch(detailUnavailable, /health .* failed/)
+  })
+
+  it('never passes an unregistered container recorded only in containers.json', () => {
+    const [okRunningExtra, detailRunningExtra] = checkEmulatorsRule(
+      [],
+      [{ name: 'emulator:ledger', containerId: CID_EXTRA, containerState: { state: 'running' } }],
+    )
+    assert.equal(okRunningExtra, false)
+    assert.match(detailRunningExtra, /without emulator registration\/health check in run\.json/)
+
+    const [okStoppedExtra, detailStoppedExtra] = checkEmulatorsRule(
+      [],
+      [{ name: 'emulator:ledger', containerId: CID_EXTRA, containerState: { state: 'stopped' } }],
+    )
+    assert.equal(okStoppedExtra, false)
+    assert.match(detailStoppedExtra, /not running/)
+
+    const [okUnavailableExtra, detailUnavailableExtra] = checkEmulatorsRule(
+      [],
+      [
+        {
+          name: 'emulator:ledger',
+          containerId: CID_EXTRA,
+          containerState: { state: 'unavailable', detail: 'permission denied' },
+        },
+      ],
+    )
+    assert.equal(okUnavailableExtra, false)
+    assert.match(detailUnavailableExtra, /Docker unavailable \(permission denied\)/)
+  })
+
+  it('flags an unreachable health endpoint or a dead/stolen/unlistened bridge process', () => {
+    const [okHealth, detailHealth] = checkEmulatorsRule(
+      [{ ...healthyProbe, healthOk: false, healthDetail: 'fetch failed' }],
+      [],
+    )
+    assert.equal(okHealth, false)
+    assert.match(detailHealth, /health .* failed \(fetch failed\)/)
+
+    const [okBridge, detailBridge] = checkEmulatorsRule(
+      [{ ...healthyProbe, bridgeAlive: false, bridgePortOwned: false, bridgePortHolders: [9999] }],
+      [],
+    )
+    assert.equal(okBridge, false)
+    assert.match(detailBridge, /bridge PID 4242 is not this run's process/)
+    assert.match(detailBridge, /bridge port 15001 is held by PID 9999/)
+
+    const [okNoListener, detailNoListener] = checkEmulatorsRule(
+      [{ ...healthyProbe, bridgePortOwned: false, bridgePortHolders: [] }],
+      [],
+    )
+    assert.equal(okNoListener, false)
+    assert.match(detailNoListener, /bridge port 15001 has no listener/)
+  })
+})
+
+describe('parseEmulatorCommand', () => {
+  const emptyInput = {
+    action: undefined,
+    device: undefined,
+    seed: undefined,
+    model: undefined,
+    button: undefined,
+    mode: undefined,
+  }
+
+  it('defaults Ledger start to model flex and seed primary, and accepts nanosp', () => {
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger' }), {
+      ok: true,
+      command: { action: 'start', device: 'ledger', seed: 'primary', model: 'flex' },
+    })
+    assert.deepEqual(
+      parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger', seed: 'empty', model: 'nanosp' }),
+      {
+        ok: true,
+        command: { action: 'start', device: 'ledger', seed: 'empty', model: 'nanosp' },
+      },
+    )
+    const badModel = parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger', model: 'unknown' })
+    assert.equal(badModel.ok, false)
+    assert.match(badModel.error, /Unknown Ledger --model/)
+  })
+
+  it('accepts status with or without --device and all skeleton actions with valid flags', () => {
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'status' }), {
+      ok: true,
+      command: { action: 'status', device: undefined },
+    })
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'status', device: 'trezor' }), {
+      ok: true,
+      command: { action: 'status', device: 'trezor' },
+    })
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'stop', device: 'coldcard' }), {
+      ok: true,
+      command: { action: 'stop', device: 'coldcard' },
+    })
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'press', device: 'ledger', button: 'right' }), {
+      ok: true,
+      command: { action: 'press', device: 'ledger', button: 'right' },
+    })
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'reject', device: 'trezor' }), {
+      ok: true,
+      command: { action: 'reject', device: 'trezor' },
+    })
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'disconnect', device: 'ledger' }), {
+      ok: true,
+      command: { action: 'disconnect', device: 'ledger' },
+    })
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'fault', device: 'ledger', mode: 'locked' }), {
+      ok: true,
+      command: { action: 'fault', device: 'ledger', mode: 'locked' },
+    })
+  })
+
+  it('rejects unknown actions, missing required flags, and misplaced flags', () => {
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'restart', device: 'ledger' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'start' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'fault', device: 'ledger' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'stop', device: 'ledger', seed: 'primary' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'reject', device: 'ledger', button: 'both' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger', mode: 'locked' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'trezor', seed: 'bogus' }).ok, false)
   })
 })

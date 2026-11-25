@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import {
   closeSync,
+  cpSync,
   existsSync,
   mkdirSync,
   openSync,
@@ -8,13 +9,22 @@ import {
   readSync,
   readdirSync,
   realpathSync,
+  renameSync,
+  rmSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
-import { ChildEnv, runCommand } from './process'
+import {
+  ChildEnv,
+  type CommandResult,
+  dockerChildEnv,
+  runCommand,
+  runCommandResult,
+  verifyCacheDirOverride,
+} from './process'
 
 export const REPO_ROOT = resolve(import.meta.dirname, '../..')
 /** Scratch state for this checkout's runs. Other worktrees get their own folder, so they never see these runs. */
@@ -23,9 +33,100 @@ const RUNS_ROOT = join(tmpdir(), 'bcc-verify', createHash('sha256').update(REPO_
 export const EVIDENCE_ROOT = join(REPO_ROOT, 'verify-output')
 export const HELPER = '.agents/skills/verify-control-center/helpers/verify'
 
+export const EMULATOR_DEVICES = ['ledger', 'trezor', 'coldcard'] as const
+export type EmulatorDevice = (typeof EMULATOR_DEVICES)[number]
+
+export const EMULATOR_SEED_NAMES = ['primary', 'secondary', 'empty'] as const
+export type EmulatorSeedName = (typeof EMULATOR_SEED_NAMES)[number]
+
+export const LEDGER_MODELS = ['flex', 'nanosp'] as const
+export type LedgerModel = (typeof LEDGER_MODELS)[number]
+export const DEFAULT_LEDGER_MODEL: LedgerModel = 'flex'
+
+const CONTAINER_ID_RE = /^[0-9a-f]{64}$/
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]'])
+
+export const ContainerIdSchema = z
+  .string()
+  .regex(CONTAINER_ID_RE, 'containerId must be a full 64-character lowercase hex Docker container ID')
+
+/** True only for a full 64-character lowercase hex Docker container ID as returned by `docker run -d`. */
+export function isValidContainerId(containerId: string): boolean {
+  return CONTAINER_ID_RE.test(containerId)
+}
+
+/**
+ * True when `rawUrl` uses one of `allowedProtocols`, has no embedded credentials, targets loopback
+ * (`127.0.0.1`, `localhost`, or `[::1]`), and matches `expectedPort`.
+ */
+export function isLoopbackUrlForPort(
+  rawUrl: string,
+  expectedPort: number,
+  allowedProtocols: readonly string[],
+): boolean {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return false
+  }
+  if (!allowedProtocols.includes(parsed.protocol)) {
+    return false
+  }
+  if (parsed.username !== '' || parsed.password !== '') {
+    return false
+  }
+  if (!LOOPBACK_HOSTS.has(parsed.hostname)) {
+    return false
+  }
+  const effectivePort =
+    parsed.port !== '' ? Number(parsed.port) : parsed.protocol === 'http:' || parsed.protocol === 'ws:' ? 80 : 0
+  return Number.isInteger(effectivePort) && effectivePort === expectedPort
+}
+
 const ProcessSchema = z.object({ name: z.string(), pid: z.number().int().positive(), startedAt: z.string() })
 export type RecordedProcess = z.infer<typeof ProcessSchema>
 const ProcessListSchema = z.array(ProcessSchema)
+
+export const ContainerSchema = z.object({
+  name: z.string(),
+  containerId: ContainerIdSchema,
+  image: z.string(),
+  startedAt: z.string(),
+})
+export type RecordedContainer = z.infer<typeof ContainerSchema>
+const ContainerListSchema = z.array(ContainerSchema)
+
+export const EmulatorStateSchema = z
+  .object({
+    device: z.enum(EMULATOR_DEVICES),
+    model: z.string().optional(),
+    seed: z.enum(EMULATOR_SEED_NAMES).default('primary'),
+    containerId: ContainerIdSchema,
+    apiPort: z.number().int().positive(),
+    healthUrl: z.string().url(),
+    bridge: ProcessSchema.extend({
+      port: z.number().int().positive(),
+      url: z.string().url(),
+    }).optional(),
+  })
+  .superRefine((value, ctx) => {
+    if (!isLoopbackUrlForPort(value.healthUrl, value.apiPort, ['http:'])) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['healthUrl'],
+        message: `healthUrl must target http loopback on apiPort ${value.apiPort}`,
+      })
+    }
+    if (value.bridge !== undefined && !isLoopbackUrlForPort(value.bridge.url, value.bridge.port, ['http:', 'ws:'])) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['bridge', 'url'],
+        message: `bridge.url must target http/ws loopback on bridge.port ${value.bridge.port}`,
+      })
+    }
+  })
+export type EmulatorState = z.infer<typeof EmulatorStateSchema>
 
 /**
  * Which packaged app an --electron run launched: built from this checkout at launch, or a prebuilt one passed with
@@ -61,6 +162,7 @@ const RunStateSchema = z.object({
   appBundle: z.string().optional(),
   bundle: BundleProvenanceSchema.optional(),
   releaseTag: z.string().optional(),
+  emulators: z.array(EmulatorStateSchema).optional(),
   sentinel: ProcessSchema.extend({ port: z.number().int().positive() }),
   fakes: ProcessSchema.extend({
     electrumPort: z.number().int().positive(),
@@ -103,6 +205,7 @@ export interface RunPaths {
   logsDir: string
   stateFile: string
   processesFile: string
+  containersFile: string
   fakesFile: string
   seedFile: string
   requestLog: string
@@ -128,12 +231,30 @@ export function runPaths(runId: string): RunPaths {
     logsDir: join(runDir, 'logs'),
     stateFile: join(runDir, 'run.json'),
     processesFile: join(runDir, 'processes.json'),
+    containersFile: join(runDir, 'containers.json'),
     fakesFile: join(runDir, 'fakes.json'),
     seedFile: join(dataDir, 'verify-seed.json'),
     requestLog: join(runDir, 'logs', 'fake-requests.log'),
     faultsFile: join(runDir, 'faults.json'),
     appliedFaultsFile: join(runDir, 'faults-applied.json'),
   }
+}
+
+/**
+ * Shared cache directory for compiled Ledger app-bitcoin ELFs (`<cache-root>/ledger-elfs`).
+ * Defaults to `~/.cache/bitcoin-control-center/ledger-elfs`. `BCC_VERIFY_CACHE_DIR` overrides the cache root
+ * (keeping `ledger-elfs` as a leaf underneath) and must be an absolute path, because `helpers/verify` runs from
+ * the repository root regardless of the caller's cwd. No compiled binaries are committed to git.
+ */
+export function ledgerElfCacheDir(override = verifyCacheDirOverride()): string {
+  const trimmed = override?.trim()
+  if (trimmed === undefined || trimmed === '') {
+    return join(homedir(), '.cache', 'bitcoin-control-center', 'ledger-elfs')
+  }
+  if (!isAbsolute(trimmed)) {
+    throw new Error(`BCC_VERIFY_CACHE_DIR must be an absolute path (got: ${trimmed})`)
+  }
+  return join(resolve(trimmed), 'ledger-elfs')
 }
 
 export function newRunId(): string {
@@ -191,7 +312,11 @@ export function resolveSeedFile(paths: RunPaths, state: RunState | null = null):
 }
 
 export function readRunState(paths: RunPaths): JsonFile<RunState> {
-  return readJsonFile(RunStateSchema, paths.stateFile)
+  const result = readJsonFile(RunStateSchema, paths.stateFile)
+  if (result.status === 'ok' && result.value.runId !== paths.runId) {
+    return { status: 'invalid', file: paths.stateFile }
+  }
+  return result
 }
 
 export function readSeedMarker(paths: RunPaths, state: RunState | null = null): JsonFile<SeedMarker> {
@@ -214,6 +339,54 @@ export function recordProcess(paths: RunPaths, recorded: RecordedProcess): void 
   writeJson(paths.processesFile, [...readProcesses(paths), recorded])
 }
 
+export function readContainersFile(paths: RunPaths): JsonFile<RecordedContainer[]> {
+  return readJsonFile(ContainerListSchema, paths.containersFile)
+}
+
+/** Reads `containers.json`. Returns `[]` only when missing; throws if the file exists but cannot be parsed. */
+export function readContainers(paths: RunPaths): RecordedContainer[] {
+  const result = readContainersFile(paths)
+  if (result.status === 'invalid') {
+    throw new Error(`${result.file} does not parse.`)
+  }
+  return result.status === 'ok' ? result.value : []
+}
+
+/**
+ * Records a started Docker container immediately so cleanup can remove it even if launch dies before it finishes.
+ * Rejects non-64-hex container IDs and refuses to overwrite a corrupt `containers.json`.
+ */
+export function recordContainer(paths: RunPaths, recorded: RecordedContainer): void {
+  const parsed = parseUnknown(ContainerSchema, recorded)
+  if (parsed.isErr()) {
+    throw new Error(
+      `Invalid container record for ${recorded.name}: containerId must be a 64-character lowercase hex Docker ID`,
+    )
+  }
+  writeJson(paths.containersFile, [...readContainers(paths), parsed.unwrap()])
+}
+
+/**
+ * Removes a confirmed-stopped container ID from `containers.json`.
+ * No-ops when `containers.json` is missing; throws without modifying disk if `containers.json` is invalid.
+ */
+export function forgetContainer(paths: RunPaths, containerId: string): void {
+  if (!isValidContainerId(containerId)) {
+    throw new Error(`Invalid container ID: ${containerId}`)
+  }
+  const existing = readContainersFile(paths)
+  if (existing.status === 'missing') {
+    return
+  }
+  if (existing.status === 'invalid') {
+    throw new Error(`${existing.file} does not parse.`)
+  }
+  writeJson(
+    paths.containersFile,
+    existing.value.filter((entry) => entry.containerId !== containerId),
+  )
+}
+
 const PortSchema = z.object({ port: z.number().int().positive() })
 
 /** The port a server bound, from `server.address()`. */
@@ -222,11 +395,19 @@ export function boundPort(address: string | { port: number } | null): number {
   return parsed.isOk() ? parsed.unwrap().port : fail('The server is not listening on a TCP port')
 }
 
-type JsonRecord = RunState | SeedMarker | RecordedProcess[] | Faults | z.infer<typeof FakesRecordSchema>
+type JsonRecord =
+  | RunState
+  | SeedMarker
+  | RecordedProcess[]
+  | RecordedContainer[]
+  | Faults
+  | z.infer<typeof FakesRecordSchema>
 
 export function writeJson(file: string, value: JsonRecord): void {
   mkdirSync(resolve(file, '..'), { recursive: true })
-  writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`)
+  const tempFile = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
+  writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`)
+  renameSync(tempFile, file)
 }
 
 function git(root: string, args: string[]): string {
@@ -505,6 +686,228 @@ export async function stopProcess(recorded: RecordedProcess): Promise<void> {
     signalGroup(recorded.pid, 'SIGKILL')
   }
   console.log(`${recorded.name}: stopped PID ${recorded.pid}`)
+}
+
+export type DockerCommandRunner = (args: string[]) => CommandResult
+
+const runDocker: DockerCommandRunner = (args) => runCommandResult('docker', args, { env: dockerChildEnv() })
+
+export type ContainerInspectResult =
+  | { state: 'running' }
+  | { state: 'stopped' }
+  | { state: 'unavailable'; detail: string }
+
+function dockerFailureDetail(result: CommandResult): string {
+  const stderr = result.stderr.trim()
+  if (stderr !== '') {
+    return stderr
+  }
+  if (result.error !== null && result.error !== '') {
+    return result.error
+  }
+  return result.status === null
+    ? 'docker process terminated without an exit status'
+    : `docker exited with status ${result.status}`
+}
+
+const NO_SUCH_CONTAINER_RE = /no such container/i
+const NO_SUCH_OBJECT_RE = /no such (?:container|object)/i
+
+/**
+ * Inspects a single recorded Docker container by its full 64-hex ID, distinguishing stopped/absent containers
+ * from Docker daemon or CLI unavailability.
+ */
+export function inspectContainer(containerId: string, docker: DockerCommandRunner = runDocker): ContainerInspectResult {
+  if (!isValidContainerId(containerId)) {
+    return { state: 'unavailable', detail: `invalid container ID: ${containerId}` }
+  }
+  const result = docker(['inspect', '--type', 'container', '-f', '{{.State.Running}}', '--', containerId])
+  if (result.error === null && result.status === 0) {
+    const out = result.stdout.trim()
+    if (out === 'true') {
+      return { state: 'running' }
+    }
+    if (out === 'false') {
+      return { state: 'stopped' }
+    }
+    return { state: 'unavailable', detail: `unexpected docker inspect output: ${JSON.stringify(out)}` }
+  }
+  if (result.error === null && NO_SUCH_OBJECT_RE.test(result.stderr)) {
+    return { state: 'stopped' }
+  }
+  return { state: 'unavailable', detail: dockerFailureDetail(result) }
+}
+
+/** True only when Docker confirms this container ID is currently running. */
+export function isContainerRunning(containerId: string, docker: DockerCommandRunner = runDocker): boolean {
+  return inspectContainer(containerId, docker).state === 'running'
+}
+
+export interface ContainerRemoveResult {
+  containerId: string
+  removed: boolean
+  detail: string
+}
+
+/**
+ * Force-removes a single recorded Docker container (`docker rm -f -- <containerId>`).
+ * Only exit 0 or Docker's "No such container" stderr counts as confirmed removal; real Docker errors return
+ * `removed: false` with stderr/error detail so callers keep the record and exit nonzero.
+ */
+export function removeContainer(containerId: string, docker: DockerCommandRunner = runDocker): ContainerRemoveResult {
+  if (!isValidContainerId(containerId)) {
+    return { containerId, removed: false, detail: `refusing invalid container ID: ${containerId}` }
+  }
+  const result = docker(['rm', '-f', '--', containerId])
+  if (result.error === null && result.status === 0) {
+    return { containerId, removed: true, detail: `removed container ${containerId}` }
+  }
+  if (result.error === null && NO_SUCH_CONTAINER_RE.test(result.stderr)) {
+    return { containerId, removed: true, detail: `container ${containerId} already absent` }
+  }
+  return {
+    containerId,
+    removed: false,
+    detail: `could not remove container ${containerId}: ${dockerFailureDetail(result)}`,
+  }
+}
+
+export interface CleanupDeps {
+  stopProcess?: (recorded: RecordedProcess) => Promise<void>
+  removeContainer?: (containerId: string) => ContainerRemoveResult
+  evidenceRoot?: string
+  log?: (line: string) => void
+}
+
+export interface CleanupSummary {
+  ok: boolean
+  errors: string[]
+  stoppedProcesses: RecordedProcess[]
+  removedContainers: ContainerRemoveResult[]
+  keptLogsDir: string | null
+  removedRunDir: boolean
+}
+
+/**
+ * Stops every process group recorded for this run (including emulator bridge processes), runs
+ * `docker rm -f -- <containerId>` for every recorded container, keeps logs under `verify-output/<run-id>/logs/`,
+ * and deletes the run's scratch folder only after every recorded container is confirmed removed and no tracking file
+ * failed to parse.
+ */
+export async function cleanupRunResources(paths: RunPaths, deps: CleanupDeps = {}): Promise<CleanupSummary> {
+  const stop = deps.stopProcess ?? stopProcess
+  const remove = deps.removeContainer ?? removeContainer
+  const evidenceRoot = deps.evidenceRoot ?? EVIDENCE_ROOT
+  const log = deps.log ?? console.log
+
+  const stateResult = readRunState(paths)
+  const containersFile = readContainersFile(paths)
+  const errors: string[] = []
+  if (stateResult.status === 'invalid') {
+    errors.push(`${stateResult.file} does not parse; keeping ${paths.runDir}`)
+  }
+  if (containersFile.status === 'invalid') {
+    errors.push(`${containersFile.file} does not parse; keeping ${paths.runDir}`)
+  }
+  const state = stateResult.status === 'ok' ? stateResult.value : null
+  const recordedContainers = containersFile.status === 'ok' ? containersFile.value : []
+
+  const processes: RecordedProcess[] = []
+  const seenProcesses = new Set<string>()
+  const addProcess = (recorded: RecordedProcess): void => {
+    const key = `${recorded.pid}:${recorded.startedAt}`
+    if (!seenProcesses.has(key)) {
+      seenProcesses.add(key)
+      processes.push(recorded)
+    }
+  }
+  for (const recorded of readProcesses(paths)) {
+    addProcess(recorded)
+  }
+  for (const emulator of state?.emulators ?? []) {
+    if (emulator.bridge !== undefined) {
+      addProcess({
+        name: emulator.bridge.name,
+        pid: emulator.bridge.pid,
+        startedAt: emulator.bridge.startedAt,
+      })
+    }
+  }
+  for (const recorded of processes) {
+    await stop(recorded)
+  }
+
+  const containers: Array<{ name: string; containerId: string }> = []
+  const seenContainers = new Set<string>()
+  const addContainer = (name: string, containerId: string): void => {
+    if (!seenContainers.has(containerId)) {
+      seenContainers.add(containerId)
+      containers.push({ name, containerId })
+    }
+  }
+  for (const recorded of recordedContainers) {
+    addContainer(recorded.name, recorded.containerId)
+  }
+  for (const emulator of state?.emulators ?? []) {
+    addContainer(`emulator:${emulator.device}`, emulator.containerId)
+  }
+  const removedContainers: ContainerRemoveResult[] = []
+  const confirmedRemovedIds = new Set<string>()
+  for (const { name, containerId } of containers) {
+    const result = remove(containerId)
+    removedContainers.push(result)
+    log(`${name}: ${result.detail}`)
+    if (result.removed) {
+      confirmedRemovedIds.add(containerId)
+    } else {
+      errors.push(`${name}: ${result.detail}`)
+    }
+  }
+
+  let keptLogsDir: string | null = null
+  if (existsSync(paths.logsDir)) {
+    keptLogsDir = join(evidenceRoot, paths.runId, 'logs')
+    cpSync(paths.logsDir, keptLogsDir, { recursive: true })
+    log(`Logs kept in ${keptLogsDir}`)
+  }
+
+  if (errors.length > 0) {
+    if (confirmedRemovedIds.size > 0) {
+      if (containersFile.status === 'ok') {
+        writeJson(
+          paths.containersFile,
+          containersFile.value.filter((entry) => !confirmedRemovedIds.has(entry.containerId)),
+        )
+      }
+      if (state?.emulators !== undefined) {
+        writeJson(paths.stateFile, {
+          ...state,
+          emulators: state.emulators.filter((entry) => !confirmedRemovedIds.has(entry.containerId)),
+        })
+      }
+    }
+    log(`Kept ${paths.runDir} because cleanup had errors`)
+    return {
+      ok: false,
+      errors,
+      stoppedProcesses: processes,
+      removedContainers,
+      keptLogsDir,
+      removedRunDir: false,
+    }
+  }
+
+  rmSync(paths.runDir, { recursive: true, force: true })
+  log(`Removed ${paths.runDir}`)
+
+  return {
+    ok: true,
+    errors: [],
+    stoppedProcesses: processes,
+    removedContainers,
+    keptLogsDir,
+    removedRunDir: true,
+  }
 }
 
 /** True when the run's own Sentinel is alive and holds its port, so its URL reaches this run and no other. */

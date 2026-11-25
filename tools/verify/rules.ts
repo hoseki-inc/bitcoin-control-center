@@ -2,7 +2,23 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { ChildEnv } from './process'
-import { type FaultMode, type FaultTarget, type Faults, REPO_ROOT, type RunState, readJsonFile } from './run'
+import {
+  type ContainerInspectResult,
+  DEFAULT_LEDGER_MODEL,
+  EMULATOR_DEVICES,
+  EMULATOR_SEED_NAMES,
+  type EmulatorDevice,
+  type EmulatorSeedName,
+  type EmulatorState,
+  type FaultMode,
+  type FaultTarget,
+  type Faults,
+  LEDGER_MODELS,
+  type LedgerModel,
+  REPO_ROOT,
+  type RunState,
+  readJsonFile,
+} from './run'
 
 // Pure rules the scripts share, kept apart so tests can check them without starting anything.
 
@@ -422,4 +438,197 @@ export function activeFaults(faults: Faults): string[] {
   return (['electrum', 'mempool'] as const)
     .filter((target) => faults[target] !== 'ok')
     .map((target) => `${target} ${faults[target]}`)
+}
+
+export interface EmulatorProbe {
+  emulator: EmulatorState
+  containerState: ContainerInspectResult
+  healthOk: boolean
+  healthDetail: string
+  bridgeAlive: boolean | null
+  bridgePortOwned: boolean | null
+  bridgePortHolders: number[]
+}
+
+export interface ExtraContainerProbe {
+  name: string
+  containerId: string
+  containerState: ContainerInspectResult
+}
+
+/**
+ * Doctor's `emulators` check: every recorded emulator must have its Docker container running, its health endpoint
+ * answering, and any recorded bridge process alive and owning its port. Any extra container present only in
+ * `containers.json` without a `run.json` emulator registration and health check always fails.
+ */
+export function checkEmulatorsRule(
+  probes: readonly EmulatorProbe[],
+  extraContainers: readonly ExtraContainerProbe[],
+  containersInvalidFile: string | null = null,
+): [boolean, string] {
+  if (containersInvalidFile !== null) {
+    return [false, `${containersInvalidFile} does not parse`]
+  }
+  if (probes.length === 0 && extraContainers.length === 0) {
+    return [true, 'none']
+  }
+
+  const issues: string[] = []
+  const okSummaries: string[] = []
+
+  for (const probe of probes) {
+    const { emulator } = probe
+    const label = `${emulator.device}${emulator.model !== undefined ? ` (${emulator.model})` : ''}`
+    const localIssues: string[] = []
+
+    if (probe.containerState.state === 'unavailable') {
+      localIssues.push(`Docker unavailable (${probe.containerState.detail})`)
+    } else if (probe.containerState.state === 'stopped') {
+      localIssues.push(`container ${emulator.containerId} is not running`)
+    } else if (!probe.healthOk) {
+      localIssues.push(`health ${emulator.healthUrl} failed (${probe.healthDetail})`)
+    }
+    if (emulator.bridge !== undefined) {
+      if (probe.bridgeAlive !== true) {
+        localIssues.push(`bridge PID ${emulator.bridge.pid} is not this run's process`)
+      }
+      if (probe.bridgePortOwned !== true) {
+        const holderDetail =
+          probe.bridgePortHolders.length === 0
+            ? 'has no listener'
+            : `is held by PID ${probe.bridgePortHolders.join(', ')}`
+        localIssues.push(`bridge port ${emulator.bridge.port} ${holderDetail}`)
+      }
+    }
+
+    if (localIssues.length > 0) {
+      issues.push(`${label}: ${localIssues.join(', ')}`)
+    } else {
+      const bridgeSummary = emulator.bridge !== undefined ? `, bridge ${emulator.bridge.port}` : ''
+      okSummaries.push(`${label} container ${emulator.containerId.slice(0, 12)} ok${bridgeSummary}`)
+    }
+  }
+
+  for (const extra of extraContainers) {
+    if (extra.containerState.state === 'unavailable') {
+      issues.push(`${extra.name} (${extra.containerId}): Docker unavailable (${extra.containerState.detail})`)
+    } else if (extra.containerState.state === 'stopped') {
+      issues.push(`${extra.name} (${extra.containerId}): container is not running (not registered in run.json)`)
+    } else {
+      issues.push(
+        `${extra.name} (${extra.containerId}): container is running without emulator registration/health check in run.json`,
+      )
+    }
+  }
+
+  return issues.length === 0 ? [true, okSummaries.join('; ')] : [false, issues.join('; ')]
+}
+
+export const EMULATOR_ACTIONS = ['start', 'stop', 'status', 'press', 'reject', 'disconnect', 'fault'] as const
+export type EmulatorAction = (typeof EMULATOR_ACTIONS)[number]
+
+export interface EmulatorCommandInput {
+  action: string | undefined
+  device: string | undefined
+  seed: string | undefined
+  model: string | undefined
+  button: string | undefined
+  mode: string | undefined
+}
+
+export type EmulatorCommand =
+  | { action: 'start'; device: EmulatorDevice; seed: EmulatorSeedName; model: string | undefined }
+  | { action: 'stop'; device: EmulatorDevice }
+  | { action: 'status'; device: EmulatorDevice | undefined }
+  | { action: 'press'; device: EmulatorDevice; button: string | undefined }
+  | { action: 'reject'; device: EmulatorDevice }
+  | { action: 'disconnect'; device: EmulatorDevice }
+  | { action: 'fault'; device: EmulatorDevice; mode: string }
+
+export type ParsedEmulatorCommand = { ok: true; command: EmulatorCommand } | { ok: false; error: string }
+
+const isEmulatorAction = (value: string | undefined): value is EmulatorAction =>
+  EMULATOR_ACTIONS.some((action) => action === value)
+
+const isEmulatorDevice = (value: string | undefined): value is EmulatorDevice =>
+  EMULATOR_DEVICES.some((device) => device === value)
+
+const isEmulatorSeedName = (value: string | undefined): value is EmulatorSeedName =>
+  EMULATOR_SEED_NAMES.some((seed) => seed === value)
+
+const isLedgerModel = (value: string | undefined): value is LedgerModel =>
+  LEDGER_MODELS.some((model) => model === value)
+
+/** Validates `helpers/verify emulator <action> [flags]` arguments and applies locked defaults (Ledger model: flex). */
+export function parseEmulatorCommand(input: EmulatorCommandInput): ParsedEmulatorCommand {
+  if (!isEmulatorAction(input.action)) {
+    return {
+      ok: false,
+      error: `Expected emulator action: ${EMULATOR_ACTIONS.join('|')}`,
+    }
+  }
+
+  if (input.seed !== undefined && input.action !== 'start') {
+    return { ok: false, error: '--seed is only valid with emulator start' }
+  }
+  if (input.model !== undefined && input.action !== 'start') {
+    return { ok: false, error: '--model is only valid with emulator start' }
+  }
+  if (input.button !== undefined && input.action !== 'press') {
+    return { ok: false, error: '--button is only valid with emulator press' }
+  }
+  if (input.mode !== undefined && input.action !== 'fault') {
+    return { ok: false, error: '--mode is only valid with emulator fault' }
+  }
+
+  if (input.action === 'status') {
+    if (input.device !== undefined && !isEmulatorDevice(input.device)) {
+      return { ok: false, error: `Unknown --device ${input.device}. Expected: ${EMULATOR_DEVICES.join('|')}` }
+    }
+    return {
+      ok: true,
+      command: {
+        action: 'status',
+        device: input.device !== undefined && isEmulatorDevice(input.device) ? input.device : undefined,
+      },
+    }
+  }
+
+  if (!isEmulatorDevice(input.device)) {
+    return {
+      ok: false,
+      error: `--device is required for emulator ${input.action}. Expected: ${EMULATOR_DEVICES.join('|')}`,
+    }
+  }
+
+  switch (input.action) {
+    case 'start': {
+      const seed = input.seed ?? 'primary'
+      if (!isEmulatorSeedName(seed)) {
+        return { ok: false, error: `Unknown --seed ${seed}. Expected: ${EMULATOR_SEED_NAMES.join('|')}` }
+      }
+      if (input.device === 'ledger') {
+        const model = input.model ?? DEFAULT_LEDGER_MODEL
+        if (!isLedgerModel(model)) {
+          return { ok: false, error: `Unknown Ledger --model ${model}. Expected: ${LEDGER_MODELS.join('|')}` }
+        }
+        return { ok: true, command: { action: 'start', device: 'ledger', seed, model } }
+      }
+      return { ok: true, command: { action: 'start', device: input.device, seed, model: input.model } }
+    }
+    case 'stop':
+      return { ok: true, command: { action: 'stop', device: input.device } }
+    case 'press':
+      return { ok: true, command: { action: 'press', device: input.device, button: input.button } }
+    case 'reject':
+      return { ok: true, command: { action: 'reject', device: input.device } }
+    case 'disconnect':
+      return { ok: true, command: { action: 'disconnect', device: input.device } }
+    case 'fault': {
+      if (input.mode === undefined || input.mode.trim() === '') {
+        return { ok: false, error: '--mode is required for emulator fault' }
+      }
+      return { ok: true, command: { action: 'fault', device: input.device, mode: input.mode } }
+    }
+  }
 }

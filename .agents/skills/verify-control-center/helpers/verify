@@ -4,18 +4,21 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/../../../.." && pwd)"
 command="${1:-}"
 case "$command" in
-  launch | seed | doctor | query | fault | evidence | cleanup | smoke) shift ;;
+  launch | seed | doctor | query | fault | evidence | cleanup | smoke | emulator) shift ;;
   *)
-    echo "Usage: helpers/verify launch|seed|doctor|query|fault|evidence|cleanup|smoke [args]" >&2
+    echo "Usage: helpers/verify launch|seed|doctor|query|fault|evidence|cleanup|smoke|emulator [args]" >&2
     exit 2
     ;;
 esac
 cd "$root"
-# Start from an empty environment plus the same allowlist ChildEnv uses (tools/verify/process.ts), so the caller's
-# proxy, NODE_OPTIONS or GIT_* settings can't steer the scripts themselves.
+# Start from an empty environment plus ChildEnv's base allowlist (tools/verify/process.ts), so the caller's proxy,
+# NODE_OPTIONS or GIT_* settings can't steer the scripts. The extra variables below are forwarded only to the
+# TypeScript verify helper (not inherited by Sentinel/fakes/app children via ChildEnv):
+# - TMP and TEMP: Node falls back to them for its temp folder when TMPDIR isn't set.
+# - BCC_VERIFY_CACHE_DIR: overrides the shared emulator cache root (absolute path).
+# - DOCKER_HOST, DOCKER_CONTEXT, DOCKER_CONFIG: forwarded explicitly to Docker CLI invocations.
 keep=(NODE_NO_WARNINGS=1)
-# TMP and TEMP too: Node falls back to them for its temp folder when TMPDIR isn't set.
-for name in PATH HOME USER LOGNAME SHELL LANG TMPDIR TMP TEMP; do
+for name in PATH HOME USER LOGNAME SHELL LANG TMPDIR TMP TEMP BCC_VERIFY_CACHE_DIR DOCKER_HOST DOCKER_CONTEXT DOCKER_CONFIG; do
   if [ -n "${!name:-}" ]; then keep+=("$name=${!name}"); fi
 done
 # tsx waits on an open stdin, so give it none.
