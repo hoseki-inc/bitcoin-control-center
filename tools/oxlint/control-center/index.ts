@@ -324,6 +324,114 @@ const exchangeProviderErrorsRule = defineRule({
   },
 })
 
+const rawAmountFunctions = new Set(['Decimal', 'BigInt', 'Number', 'parseFloat', 'parseInt'])
+const globalFetchOwners = new Set(['globalThis', 'window'])
+
+interface AstParentNode {
+  type: string
+  block?: unknown
+  parent?: AstParentNode | null
+}
+
+function isInsideTryBlockInSameFunction(node: AstParentNode): boolean {
+  let current: AstParentNode = node
+  let parent = node.parent
+  while (parent != null && parent.type !== 'Program') {
+    if (parent.type === 'TryStatement' && parent.block === current) {
+      return true
+    }
+    if (
+      parent.type === 'FunctionDeclaration' ||
+      parent.type === 'FunctionExpression' ||
+      parent.type === 'ArrowFunctionExpression'
+    ) {
+      return false
+    }
+    current = parent
+    parent = parent.parent
+  }
+  return false
+}
+
+const exchangeProviderInputRule = defineRule({
+  meta: {
+    type: 'problem',
+    docs: {
+      description:
+        'Require apps/api-sentinel/src/features/exchanges/amounts.ts for amount parsing and try-guarded fetch/.json calls.',
+    },
+    messages: {
+      useAmountsHelper:
+        'Parse provider amounts with apps/api-sentinel/src/features/exchanges/amounts.ts instead of calling `{{name}}` directly.',
+      unguardedFetchOrJson:
+        'Wrap `{{name}}` inside a try/catch block in the same function so provider transport and body failures cannot throw uncaught.',
+    },
+  },
+  createOnce(context) {
+    function isTargetFile(): boolean {
+      const normalized = context.filename.replaceAll('\\', '/')
+      if (exchangeTestPath.test(normalized)) {
+        return false
+      }
+      const stem = exchangeSourcePath.exec(normalized)?.[1]
+      return stem !== undefined && stem !== 'amounts'
+    }
+
+    return {
+      NewExpression(node) {
+        if (!isTargetFile()) {
+          return
+        }
+        if (node.callee.type === 'Identifier' && node.callee.name === 'Decimal') {
+          context.report({ node, messageId: 'useAmountsHelper', data: { name: 'new Decimal' } })
+        }
+      },
+      CallExpression(node) {
+        if (!isTargetFile()) {
+          return
+        }
+        const { callee } = node
+        if (callee.type === 'Identifier') {
+          if (rawAmountFunctions.has(callee.name)) {
+            context.report({ node, messageId: 'useAmountsHelper', data: { name: callee.name } })
+            return
+          }
+          if (callee.name === 'fetch' && !isInsideTryBlockInSameFunction(node)) {
+            context.report({ node, messageId: 'unguardedFetchOrJson', data: { name: 'fetch' } })
+          }
+          return
+        }
+        if (callee.type === 'MemberExpression' && !callee.computed && callee.property.type === 'Identifier') {
+          if (
+            callee.object.type === 'Identifier' &&
+            callee.object.name === 'Math' &&
+            callee.property.name === 'round'
+          ) {
+            context.report({ node, messageId: 'useAmountsHelper', data: { name: 'Math.round' } })
+            return
+          }
+          if (
+            callee.object.type === 'Identifier' &&
+            globalFetchOwners.has(callee.object.name) &&
+            callee.property.name === 'fetch' &&
+            !isInsideTryBlockInSameFunction(node)
+          ) {
+            context.report({
+              node,
+              messageId: 'unguardedFetchOrJson',
+              data: { name: `${callee.object.name}.fetch` },
+            })
+            return
+          }
+          if (callee.property.name === 'json' && !isInsideTryBlockInSameFunction(node)) {
+            context.report({ node, messageId: 'unguardedFetchOrJson', data: { name: '.json()' } })
+          }
+        }
+      },
+    }
+  },
+})
+
 const signingSourcePath =
   /(?:apps\/control-center\/src\/components\/claims\/(?:.*\/)?[^/]*signing[^/]*\.tsx|apps\/control-center\/src\/pages\/multisig\/\[id\]\/signing\.tsx)$/
 const signingTestPath = /\.(?:test|spec|fixtures)\.tsx?$/
@@ -496,6 +604,7 @@ export default eslintCompatPlugin({
   meta: { name: 'control-center' },
   rules: {
     'exchange-provider-errors': exchangeProviderErrorsRule,
+    'exchange-provider-input': exchangeProviderInputRule,
     'feature-boundary': featureBoundaryRule,
     'format-usd-rounds': formatUsdRoundsRule,
     'no-swallowed-signing-error': noSwallowedSigningErrorRule,

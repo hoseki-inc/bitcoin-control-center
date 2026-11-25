@@ -3,7 +3,6 @@ import type { Account as CoinbaseAdvancedTradeAccount } from '@hoseki/packages/c
 import { Kraken } from '@hoseki/packages/clients/kraken'
 import { RobinhoodClient, type RobinhoodHolding } from '@hoseki/packages/clients/robinhood'
 import { Err, Ok, Result, asyncFn, parseUnknown } from '@hoseki/packages/result'
-import Decimal from 'decimal.js'
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm'
 import { nanoid } from 'nanoid'
 import type { Logger } from 'pino'
@@ -13,10 +12,27 @@ import { exchangeAccounts, exchangeBalanceSnapshots, exchangeStatementTxs } from
 import { normalizeDbTimestamp } from '../../db/timestamp'
 import { Encrypted } from '../../lib/encrypted'
 import {
+  type InvalidProviderAmountError,
+  type ValidatedSats,
+  ZERO_VALIDATED_SATS,
+  isHeaderSafeApiKey,
+  parseBtcBalanceSats,
+  parseSignedBtcAmountToSats,
+  parseSignedBtcNetToSats,
+  parseStoredBalanceSats,
+} from './amounts'
+import {
+  ExchangeHistoryCache,
+  type ExchangeHistoryEntry,
+  type ExchangeHistoryFetchOutput,
+  type ExchangeHistoryKey,
+} from './history-cache'
+import {
   EXCHANGE_DISPLAY_NAMES,
   ExchangeAccountMismatchError,
   ExchangeAccountUnverifiableError,
   ExchangeCredentialsRevokedError,
+  ExchangeHistoryIncompleteError,
   ExchangeRefreshTimeoutError,
   ExchangeUserError,
   ExchangeVerificationRetryableError,
@@ -24,6 +40,7 @@ import {
   type SupportedExchange,
   classifyProviderFailure,
   describeSafeProviderFailure,
+  isRetryableProviderFailure,
 } from './provider-errors'
 import {
   type CredentialMetadataChange,
@@ -40,6 +57,7 @@ export {
   ExchangeAccountMismatchError,
   ExchangeAccountUnverifiableError,
   ExchangeCredentialsRevokedError,
+  ExchangeHistoryIncompleteError,
   ExchangeRefreshTimeoutError,
   ExchangeUserError,
   ExchangeVerificationRetryableError,
@@ -58,6 +76,7 @@ const DEFAULT_EXCHANGE_REFRESH_TIMEOUT_MS = 60_000
 
 export interface RefreshBalanceOptions {
   signal?: AbortSignal
+  reuseUnchangedHistory?: boolean
 }
 
 export interface ExchangeAccountDto {
@@ -97,6 +116,12 @@ interface ReconnectTarget {
 interface CredentialGenerationSnapshot {
   credentialsConnectedAt: string | null
   encryptedCredentials: string
+}
+
+interface ResolvedOldIdentity {
+  externalAccountId?: string
+  portfolioUuid?: string
+  expectedGeneration: CredentialGenerationSnapshot
 }
 
 type ExchangeTransaction = Parameters<Parameters<SentinelDb['transaction']>[0]>[0]
@@ -300,12 +325,14 @@ async function fetchCoinbasePortfolioUuid(client: ReturnType<typeof Coinbase.Cli
   return nonEmpty(permissionsRes.unwrap().data.portfolio_uuid)
 }
 
-function computeRobinhoodBtcBalanceSats(holdings: RobinhoodHolding[]): string {
+function computeRobinhoodBtcBalanceSats(
+  holdings: RobinhoodHolding[],
+): Result<ValidatedSats, InvalidProviderAmountError> {
   const btcHolding = holdings.find((h) => h.asset_code === 'BTC')
   if (!btcHolding) {
-    return '0'
+    return Ok(ZERO_VALIDATED_SATS)
   }
-  return new Decimal(btcHolding.total_quantity).mul(1e8).toFixed(0)
+  return parseBtcBalanceSats(btcHolding.total_quantity)
 }
 
 function findRobinhoodAccountNumberInHoldings(holdings: RobinhoodHolding[]): string | undefined {
@@ -391,14 +418,13 @@ export class ExchangeService {
   private readonly refreshTimeLimitMs: number
   private readonly batchRefreshes = new Map<string, BatchRefreshEntry>()
   private refreshAllInFlight: Promise<Result<void, Error>> | null = null
+  private readonly historyCache = new ExchangeHistoryCache()
 
   public constructor(deps: { db: SentinelDb; logger: Logger; refreshTimeLimitMs?: number }) {
     this.db = deps.db
     this.logger = deps.logger.child({ module: 'exchange-service' })
     this.refreshTimeLimitMs = deps.refreshTimeLimitMs ?? DEFAULT_EXCHANGE_REFRESH_TIMEOUT_MS
   }
-
-  // ─── List ──────────────────────────────────────────────────────────────
 
   public async listAccounts(exchange?: SupportedExchange): Promise<ExchangeAccountDto[]> {
     const rows = await this.db
@@ -410,19 +436,18 @@ export class ExchangeService {
     return rows.map((row) => {
       const connectionStatus = this.getAccountConnectionStatus(row)
       const isConnected = connectionStatus === 'connected'
+      const balanceSats = isConnected ? parseStoredBalanceSats(row.balanceSats) : null
       return {
         id: row.id,
         exchange: row.provider,
         displayName: row.displayName,
-        balanceSats: isConnected ? row.balanceSats : null,
-        balanceAsOf: isConnected ? row.balanceAsOf : null,
+        balanceSats,
+        balanceAsOf: balanceSats !== null ? row.balanceAsOf : null,
         createdAt: normalizeDbTimestamp(row.createdAt),
         connectionStatus,
       }
     })
   }
-
-  // ─── Connect Coinbase ──────────────────────────────────────────────────
 
   public connectCoinbase = asyncFn(
     async (args: {
@@ -438,6 +463,10 @@ export class ExchangeService {
         return Err(this.toSafeConnectError('coinbase', clientRes.unwrapErr()))
       }
       const { client, credentials } = clientRes.unwrap()
+      const normalizedApiKey = credentials.variant === 'CdpKey' ? credentials.name : credentials.key
+      if (!isHeaderSafeApiKey(normalizedApiKey)) {
+        return Err(this.invalidCredentialsError('coinbase'))
+      }
 
       const accountsResult = await listAllCoinbaseAccounts(client)
       if (accountsResult.isErr()) {
@@ -454,6 +483,8 @@ export class ExchangeService {
 
       let btcAccount: CoinbaseAdvancedTradeAccount | undefined
       let effectiveNewPortfolioUuid = keyPermissionsPortfolioUuid
+      let expectedGeneration: CredentialGenerationSnapshot | undefined
+      let resolvedOldIdentity: ResolvedOldIdentity | undefined
 
       if (args.replaceAccountId != null && args.replaceAccountId !== '') {
         const targetRes = await this.getReconnectTarget(args.replaceAccountId, 'coinbase')
@@ -461,21 +492,33 @@ export class ExchangeService {
           return Err(targetRes.unwrapErr())
         }
         const existing = targetRes.unwrap()
+        expectedGeneration = {
+          credentialsConnectedAt: existing.credentialsConnectedAt,
+          encryptedCredentials: existing.encryptedCredentials,
+        }
 
         let storedAccountUuid = nonEmpty(existing.externalAccountId)
         let storedPortfolioUuid = readStoredPortfolioUuid(existing.encryptedCredentials)
 
         if (storedAccountUuid === undefined || storedPortfolioUuid === undefined) {
-          const backfilledRes = await this.backfillCoinbaseIdentityFromOldKey(existing, {
+          const resolvedRes = await this.resolveCoinbaseIdentityFromOldKey(existing, {
             needAccountUuid: storedAccountUuid === undefined,
             needPortfolioUuid: storedPortfolioUuid === undefined,
           })
-          if (backfilledRes.isErr()) {
-            return Err(backfilledRes.unwrapErr())
+          if (resolvedRes.isErr()) {
+            return Err(
+              await this.resolveEarlyReconnectError({
+                provider: 'coinbase',
+                accountId: args.replaceAccountId,
+                expectedGeneration,
+                error: resolvedRes.unwrapErr(),
+              }),
+            )
           }
-          const backfilled = backfilledRes.unwrap()
-          storedAccountUuid ??= backfilled.accountUuid
-          storedPortfolioUuid ??= backfilled.portfolioUuid
+          const resolved = resolvedRes.unwrap()
+          resolvedOldIdentity = resolved
+          storedAccountUuid ??= resolved.externalAccountId
+          storedPortfolioUuid ??= resolved.portfolioUuid
         }
 
         if (
@@ -483,28 +526,43 @@ export class ExchangeService {
           keyPermissionsPortfolioUuid !== undefined &&
           storedPortfolioUuid !== keyPermissionsPortfolioUuid
         ) {
-          this.logger.warn(
-            { accountId: args.replaceAccountId, provider: 'coinbase' },
-            'Rejected exchange reconnect: API key belongs to a different account',
+          return Err(
+            await this.resolveEarlyReconnectError({
+              provider: 'coinbase',
+              accountId: args.replaceAccountId,
+              expectedGeneration,
+              resolvedOldIdentity,
+              error: new ExchangeAccountMismatchError('coinbase'),
+            }),
           )
-          return Err(new ExchangeAccountMismatchError('coinbase'))
         }
 
         let matchedAccountUuid = false
         if (storedAccountUuid !== undefined) {
           btcAccount = accounts.find((a) => a.uuid === storedAccountUuid)
           if (!btcAccount) {
-            this.logger.warn(
-              { accountId: args.replaceAccountId, provider: 'coinbase' },
-              'Rejected exchange reconnect: API key belongs to a different account',
+            return Err(
+              await this.resolveEarlyReconnectError({
+                provider: 'coinbase',
+                accountId: args.replaceAccountId,
+                expectedGeneration,
+                resolvedOldIdentity,
+                error: new ExchangeAccountMismatchError('coinbase'),
+              }),
             )
-            return Err(new ExchangeAccountMismatchError('coinbase'))
           }
           matchedAccountUuid = true
         } else {
           btcAccount = pickPrimaryCoinbaseBtcAccount(accounts)
           if (!btcAccount) {
-            return Err(new ExchangeUserError('No BTC account found in Coinbase.', 'BAD_REQUEST'))
+            return Err(
+              await this.resolveEarlyReconnectError({
+                provider: 'coinbase',
+                accountId: args.replaceAccountId,
+                expectedGeneration,
+                error: new ExchangeUserError('No BTC account found in Coinbase.', 'BAD_REQUEST'),
+              }),
+            )
           }
         }
 
@@ -513,26 +571,43 @@ export class ExchangeService {
         if (storedPortfolioUuid !== undefined) {
           if (effectiveNewPortfolioUuid !== undefined) {
             if (storedPortfolioUuid !== effectiveNewPortfolioUuid) {
-              this.logger.warn(
-                { accountId: args.replaceAccountId, provider: 'coinbase' },
-                'Rejected exchange reconnect: API key belongs to a different account',
+              return Err(
+                await this.resolveEarlyReconnectError({
+                  provider: 'coinbase',
+                  accountId: args.replaceAccountId,
+                  expectedGeneration,
+                  resolvedOldIdentity,
+                  error: new ExchangeAccountMismatchError('coinbase'),
+                }),
               )
-              return Err(new ExchangeAccountMismatchError('coinbase'))
             }
             matchedPortfolioUuid = true
           } else if (!matchedAccountUuid) {
-            if (
+            const error =
               keyPermissionsResult.isErr() &&
               classifyProviderFailure('coinbase', keyPermissionsResult.unwrapErr()) === 'transient'
-            ) {
-              return Err(new ExchangeVerificationRetryableError('coinbase'))
-            }
-            return Err(new ExchangeAccountUnverifiableError('coinbase'))
+                ? new ExchangeVerificationRetryableError('coinbase')
+                : new ExchangeAccountUnverifiableError('coinbase')
+            return Err(
+              await this.resolveEarlyReconnectError({
+                provider: 'coinbase',
+                accountId: args.replaceAccountId,
+                expectedGeneration,
+                error,
+              }),
+            )
           }
         }
 
         if (!matchedAccountUuid && !matchedPortfolioUuid) {
-          return Err(new ExchangeAccountUnverifiableError('coinbase'))
+          return Err(
+            await this.resolveEarlyReconnectError({
+              provider: 'coinbase',
+              accountId: args.replaceAccountId,
+              expectedGeneration,
+              error: new ExchangeAccountUnverifiableError('coinbase'),
+            }),
+          )
         }
       } else {
         btcAccount = pickPrimaryCoinbaseBtcAccount(accounts)
@@ -551,7 +626,11 @@ export class ExchangeService {
         return Err(this.toSafeConnectError('coinbase', balanceAccountRes.unwrapErr()))
       }
       const btcValue = balanceAccountRes.unwrap().available_balance.value
-      const balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
+      const balanceSatsRes = parseBtcBalanceSats(btcValue)
+      if (balanceSatsRes.isErr()) {
+        return Err(this.toSafeConnectError('coinbase', balanceSatsRes.unwrapErr()))
+      }
+      const balanceSats = balanceSatsRes.unwrap()
 
       const storedApiKey = credentials.variant === 'CdpKey' ? credentials.name : credentials.key
       const storedSecretKey = credentials.secret
@@ -590,6 +669,8 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
         externalAccountId: btcAccount.uuid,
+        expectedGeneration,
+        resolvedOldIdentity,
       })
       if (saved.isErr()) {
         return Err(saved.unwrapErr())
@@ -609,8 +690,6 @@ export class ExchangeService {
     },
   )
 
-  // ─── Connect Strike ────────────────────────────────────────────────────
-
   public connectStrike = asyncFn(
     async (args: {
       apiKey: string
@@ -620,13 +699,21 @@ export class ExchangeService {
       const { apiKey, displayName: inputName } = args
       this.logger.info('Connecting Strike account via API key')
 
+      if (!isHeaderSafeApiKey(apiKey)) {
+        return Err(this.invalidCredentialsError('strike'))
+      }
+
       const balancesRes = await validateStrikeApiKey(apiKey, this.logger)
       if (balancesRes.isErr()) {
         return Err(this.toSafeConnectError('strike', balancesRes.unwrapErr()))
       }
 
       const btcBalance = balancesRes.unwrap().find((b) => b.currency === 'BTC')
-      const balanceSats = btcBalance ? new Decimal(btcBalance.total).mul(1e8).toFixed(0) : '0'
+      const balanceSatsRes = btcBalance ? parseBtcBalanceSats(btcBalance.total) : Ok(ZERO_VALIDATED_SATS)
+      if (balanceSatsRes.isErr()) {
+        return Err(this.toSafeConnectError('strike', balanceSatsRes.unwrapErr()))
+      }
+      const balanceSats = balanceSatsRes.unwrap()
 
       const encApiKey = Encrypted.encrypt(apiKey)
       if (encApiKey.isErr()) {
@@ -667,8 +754,6 @@ export class ExchangeService {
     },
   )
 
-  // ─── Connect Robinhood ─────────────────────────────────────────────────
-
   public connectRobinhood = asyncFn(
     async (args: {
       apiKey: string
@@ -679,6 +764,10 @@ export class ExchangeService {
       const { apiKey, privateKeyBase64, displayName: inputName } = args
       this.logger.info('Connecting Robinhood account via API key')
 
+      if (!isHeaderSafeApiKey(apiKey)) {
+        return Err(this.invalidCredentialsError('robinhood'))
+      }
+
       const client = new RobinhoodClient({ apiKey, privateKeyBase64 })
 
       const holdingsResult = await client.getHoldings()
@@ -686,7 +775,11 @@ export class ExchangeService {
         return Err(this.toSafeConnectError('robinhood', holdingsResult.unwrapErr()))
       }
       const holdings = holdingsResult.unwrap()
-      const balanceSats = computeRobinhoodBtcBalanceSats(holdings)
+      const balanceSatsRes = computeRobinhoodBtcBalanceSats(holdings)
+      if (balanceSatsRes.isErr()) {
+        return Err(this.toSafeConnectError('robinhood', balanceSatsRes.unwrapErr()))
+      }
+      const balanceSats = balanceSatsRes.unwrap()
 
       const isReconnect = args.replaceAccountId != null && args.replaceAccountId !== ''
       const accountIdResult = await resolveRobinhoodAccountId(client, holdings)
@@ -700,12 +793,19 @@ export class ExchangeService {
         newAccountNumber = findRobinhoodAccountNumberInHoldings(holdings) ?? null
       }
 
+      let expectedGeneration: CredentialGenerationSnapshot | undefined
+      let resolvedOldIdentity: ResolvedOldIdentity | undefined
+
       if (isReconnect && args.replaceAccountId !== undefined) {
         const targetRes = await this.getReconnectTarget(args.replaceAccountId, 'robinhood')
         if (targetRes.isErr()) {
           return Err(targetRes.unwrapErr())
         }
         const existing = targetRes.unwrap()
+        expectedGeneration = {
+          credentialsConnectedAt: existing.credentialsConnectedAt,
+          encryptedCredentials: existing.encryptedCredentials,
+        }
 
         if (newAccountNumber === null) {
           this.logger.warn(
@@ -717,19 +817,32 @@ export class ExchangeService {
 
         let storedAccountNumber = nonEmpty(existing.externalAccountId)
         if (storedAccountNumber === undefined) {
-          const backfilledRes = await this.backfillRobinhoodIdentityFromOldKey(existing)
-          if (backfilledRes.isErr()) {
-            return Err(backfilledRes.unwrapErr())
+          const resolvedRes = await this.resolveRobinhoodIdentityFromOldKey(existing)
+          if (resolvedRes.isErr()) {
+            return Err(
+              await this.resolveEarlyReconnectError({
+                provider: 'robinhood',
+                accountId: args.replaceAccountId,
+                expectedGeneration,
+                error: resolvedRes.unwrapErr(),
+              }),
+            )
           }
-          storedAccountNumber = backfilledRes.unwrap()
+          const resolved = resolvedRes.unwrap()
+          resolvedOldIdentity = resolved
+          storedAccountNumber = resolved.externalAccountId
         }
 
         if (storedAccountNumber !== newAccountNumber) {
-          this.logger.warn(
-            { accountId: args.replaceAccountId, provider: 'robinhood' },
-            'Rejected exchange reconnect: API key belongs to a different account',
+          return Err(
+            await this.resolveEarlyReconnectError({
+              provider: 'robinhood',
+              accountId: args.replaceAccountId,
+              expectedGeneration,
+              resolvedOldIdentity,
+              error: new ExchangeAccountMismatchError('robinhood'),
+            }),
           )
-          return Err(new ExchangeAccountMismatchError('robinhood'))
         }
       }
 
@@ -761,6 +874,8 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
         externalAccountId: newAccountNumber ?? undefined,
+        expectedGeneration,
+        resolvedOldIdentity,
       })
       if (saved.isErr()) {
         return Err(saved.unwrapErr())
@@ -780,8 +895,6 @@ export class ExchangeService {
     },
   )
 
-  // ─── Connect Kraken ──────────────────────────────────────────────────
-
   public connectKraken = asyncFn(
     async (args: {
       apiKey: string
@@ -791,6 +904,10 @@ export class ExchangeService {
       const { apiKey, secretKey } = args
       this.logger.info('Connecting Kraken account via API key')
 
+      if (!isHeaderSafeApiKey(apiKey)) {
+        return Err(this.invalidCredentialsError('kraken'))
+      }
+
       const client = new Kraken.Client({ apiKey, secretKey })
 
       const balanceResult = await client.getBalance()
@@ -799,9 +916,12 @@ export class ExchangeService {
       }
 
       const balances = balanceResult.unwrap().data
-      // Kraken uses XXBT or XBT for Bitcoin
-      const btcValue = balances['XXBT'] ?? balances['XBT'] ?? '0'
-      const balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
+      const btcValue = balances['XXBT'] ?? balances['XBT']
+      const balanceSatsRes = btcValue !== undefined ? parseBtcBalanceSats(btcValue) : Ok(ZERO_VALIDATED_SATS)
+      if (balanceSatsRes.isErr()) {
+        return Err(this.toSafeConnectError('kraken', balanceSatsRes.unwrapErr()))
+      }
+      const balanceSats = balanceSatsRes.unwrap()
 
       const isReconnect = args.replaceAccountId != null && args.replaceAccountId !== ''
       const keyInfoResult = await client.getApiKeyInfo()
@@ -814,6 +934,9 @@ export class ExchangeService {
         this.logProviderFailure('kraken', 'backfill', keyInfoResult.unwrapErr())
       }
 
+      let expectedGeneration: CredentialGenerationSnapshot | undefined
+      let resolvedOldIdentity: ResolvedOldIdentity | undefined
+
       if (isReconnect && args.replaceAccountId !== undefined) {
         if (newAccountId === undefined) {
           return Err(new ExchangeVerificationRetryableError('kraken'))
@@ -824,22 +947,39 @@ export class ExchangeService {
           return Err(targetRes.unwrapErr())
         }
         const existing = targetRes.unwrap()
+        expectedGeneration = {
+          credentialsConnectedAt: existing.credentialsConnectedAt,
+          encryptedCredentials: existing.encryptedCredentials,
+        }
 
         let storedAccountId = normalizeKrakenAccountId(existing.externalAccountId)
         if (storedAccountId === undefined) {
-          const backfilledRes = await this.backfillKrakenIdentityFromOldKey(existing)
-          if (backfilledRes.isErr()) {
-            return Err(backfilledRes.unwrapErr())
+          const resolvedRes = await this.resolveKrakenIdentityFromOldKey(existing)
+          if (resolvedRes.isErr()) {
+            return Err(
+              await this.resolveEarlyReconnectError({
+                provider: 'kraken',
+                accountId: args.replaceAccountId,
+                expectedGeneration,
+                error: resolvedRes.unwrapErr(),
+              }),
+            )
           }
-          storedAccountId = backfilledRes.unwrap()
+          const resolved = resolvedRes.unwrap()
+          resolvedOldIdentity = resolved
+          storedAccountId = resolved.externalAccountId
         }
 
         if (storedAccountId !== newAccountId) {
-          this.logger.warn(
-            { accountId: args.replaceAccountId, provider: 'kraken' },
-            'Rejected exchange reconnect: API key belongs to a different account',
+          return Err(
+            await this.resolveEarlyReconnectError({
+              provider: 'kraken',
+              accountId: args.replaceAccountId,
+              expectedGeneration,
+              resolvedOldIdentity,
+              error: new ExchangeAccountMismatchError('kraken'),
+            }),
           )
-          return Err(new ExchangeAccountMismatchError('kraken'))
         }
       }
 
@@ -871,6 +1011,8 @@ export class ExchangeService {
         balanceAsOf: now,
         credentialsConnectedAt: now,
         externalAccountId: newAccountId,
+        expectedGeneration,
+        resolvedOldIdentity,
       })
       if (saved.isErr()) {
         return Err(saved.unwrapErr())
@@ -931,7 +1073,7 @@ export class ExchangeService {
         return Err(apiKeyEnc.unwrapErr())
       }
 
-      let balanceSats: string
+      let balanceSats: ValidatedSats
 
       if (provider === 'strike') {
         const apiKey = apiKeyEnc.unwrap().decrypt()
@@ -955,7 +1097,7 @@ export class ExchangeService {
           }
           return Err(this.toSafeRefreshError('strike', err))
         }
-        balanceSats = result.unwrap().toString()
+        balanceSats = result.unwrap()
       } else if (provider === 'robinhood') {
         const apiKey = apiKeyEnc.unwrap().decrypt()
         if (apiKey.isErr()) {
@@ -989,7 +1131,11 @@ export class ExchangeService {
           return Err(this.toSafeRefreshError('robinhood', err))
         }
         const holdings = holdingsRes.unwrap()
-        balanceSats = computeRobinhoodBtcBalanceSats(holdings)
+        const balanceSatsRes = computeRobinhoodBtcBalanceSats(holdings)
+        if (balanceSatsRes.isErr()) {
+          return Err(this.toSafeRefreshError('robinhood', balanceSatsRes.unwrapErr()))
+        }
+        balanceSats = balanceSatsRes.unwrap()
 
         if (nonEmpty(row.externalAccountId) === undefined) {
           let backfilledId = findRobinhoodAccountNumberInHoldings(holdings)
@@ -1045,8 +1191,12 @@ export class ExchangeService {
         }
 
         const balances = result.unwrap().data
-        const btcValue = balances['XXBT'] ?? balances['XBT'] ?? '0'
-        balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
+        const btcValue = balances['XXBT'] ?? balances['XBT']
+        const balanceSatsRes = btcValue !== undefined ? parseBtcBalanceSats(btcValue) : Ok(ZERO_VALIDATED_SATS)
+        if (balanceSatsRes.isErr()) {
+          return Err(this.toSafeRefreshError('kraken', balanceSatsRes.unwrapErr()))
+        }
+        balanceSats = balanceSatsRes.unwrap()
 
         if (normalizeKrakenAccountId(row.externalAccountId) === undefined) {
           const keyInfoRes = await client.getApiKeyInfo()
@@ -1138,7 +1288,11 @@ export class ExchangeService {
         }
         const balanceAccount = balanceAccountRes.unwrap()
         const btcValue = balanceAccount.available_balance.value
-        balanceSats = new Decimal(btcValue).mul(1e8).toFixed(0)
+        const balanceSatsRes = parseBtcBalanceSats(btcValue)
+        if (balanceSatsRes.isErr()) {
+          return Err(this.toSafeRefreshError('coinbase', balanceSatsRes.unwrapErr()))
+        }
+        balanceSats = balanceSatsRes.unwrap()
 
         if (nonEmpty(credData.portfolioUuid) === undefined) {
           const discoveredPortfolioUuid =
@@ -1212,6 +1366,10 @@ export class ExchangeService {
         )
       }
 
+      if (options?.reuseUnchangedHistory !== true || balanceSats !== row.balanceSats) {
+        this.historyCache.invalidate(accountId)
+      }
+
       this.logger.info({ accountId, balanceSats }, 'Exchange balance refreshed')
       return Ok({
         id: row.id,
@@ -1268,7 +1426,7 @@ export class ExchangeService {
     }, this.refreshTimeLimitMs)
 
     const underlying = (async (): Promise<Result<ExchangeAccountDto, Error>> =>
-      this.refreshBalance(account.id, { signal: controller.signal }))()
+      this.refreshBalance(account.id, { signal: controller.signal, reuseUnchangedHistory: true }))()
 
     void (async (): Promise<void> => {
       try {
@@ -1299,8 +1457,6 @@ export class ExchangeService {
     return bounded
   }
 
-  // ─── Refresh All Balances ─────────────────────────────────────────────
-
   public refreshAllBalances = asyncFn(async (): Promise<Result<void, Error>> => {
     if (this.refreshAllInFlight !== null) {
       return this.refreshAllInFlight
@@ -1316,27 +1472,29 @@ export class ExchangeService {
 
   private async runRefreshAllBalances(): Promise<Result<void, Error>> {
     const accounts = (await this.listAccounts()).filter((account) => account.connectionStatus === 'connected')
-    const errors: string[] = []
+    let failedCount = 0
 
     for (const account of accounts) {
       try {
         const result = await this.refreshBalanceForBatch(account)
         if (result.isErr()) {
+          failedCount++
           const err = result.unwrapErr()
           if (!(err instanceof ExchangeRefreshTimeoutError)) {
             this.logProviderWarning(account.exchange, 'refresh', account.id, err, 'Failed to refresh balance')
           }
-          errors.push(`${account.displayName}: ${err instanceof ExchangeUserError ? err.message : 'Refresh failed'}`)
         }
-      } catch (thrown) {
-        const err = thrown instanceof Error ? thrown : new Error('Refresh failed')
+      } catch (thrown: unknown) {
+        failedCount++
+        const err = thrown instanceof Error ? thrown : new Error('Unexpected refresh failure')
         this.logProviderWarning(account.exchange, 'refresh', account.id, err, 'Failed to refresh balance')
-        errors.push(`${account.displayName}: Refresh failed`)
       }
     }
 
-    if (errors.length > 0 && errors.length === accounts.length) {
-      return Err(new Error(`All refreshes failed: ${errors.join('; ')}`))
+    if (failedCount > 0 && failedCount === accounts.length) {
+      return Err(
+        new ExchangeUserError('Failed to refresh exchange balances. Please try again.', 'INTERNAL_SERVER_ERROR'),
+      )
     }
 
     return Ok(undefined)
@@ -1350,6 +1508,7 @@ export class ExchangeService {
       return Err(new Error('Exchange account not found'))
     }
     this.evictBatchRefresh(accountId)
+    this.historyCache.invalidate(accountId)
     this.logger.info({ accountId }, 'Exchange account removed')
     return Ok(undefined)
   }
@@ -1362,7 +1521,11 @@ export class ExchangeService {
    * Strike does not have a transactions API — only Coinbase accounts are included.
    */
   public getCoinbaseTransactionEntries = asyncFn(
-    async (filterAccountIds?: string[]): Promise<Result<{ timestamp: Date; value: bigint }[], Error>> => {
+    async (filterAccountIds?: string[]): Promise<Result<ExchangeHistoryEntry[], Error>> => {
+      if (filterAccountIds?.length === 0) {
+        return Ok([])
+      }
+
       const rows = await this.db
         .select({
           id: exchangeAccounts.id,
@@ -1374,9 +1537,7 @@ export class ExchangeService {
         .where(
           and(
             eq(exchangeAccounts.provider, 'coinbase'),
-            filterAccountIds !== undefined && filterAccountIds.length > 0
-              ? inArray(exchangeAccounts.id, filterAccountIds)
-              : undefined,
+            filterAccountIds !== undefined ? inArray(exchangeAccounts.id, filterAccountIds) : undefined,
           ),
         )
 
@@ -1385,140 +1546,40 @@ export class ExchangeService {
         'getCoinbaseTransactionEntries: queried exchange_accounts',
       )
 
-      const allEntries: { timestamp: Date; value: bigint }[] = []
+      const results = await Promise.all(
+        rows.map(async (row) => {
+          const key: ExchangeHistoryKey = {
+            encryptedCredentials: row.encryptedCredentials,
+            externalAccountId: row.externalAccountId,
+            credentialsConnectedAt: row.credentialsConnectedAt,
+          }
+          const result = await this.historyCache.get(row.id, key, async () => this.fetchCoinbaseAccountHistory(row))
+          return { accountId: row.id, result }
+        }),
+      )
 
-      for (const row of rows) {
-        const parsedCredentials = parseCredentials(row.encryptedCredentials)
-        if (parsedCredentials.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
-          continue
-        }
-        const credData = parsedCredentials.unwrap()
-
-        // Decrypt credentials — skip account on failure
-        const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-        if (apiKeyEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
-          continue
-        }
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
-          continue
-        }
-
-        const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-        if (secretEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
-          continue
-        }
-        const secret = secretEnc.unwrap().decrypt()
-        if (secret.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
-          continue
-        }
-
-        const clientRes = buildStoredCoinbaseClient(apiKey.unwrap(), secret.unwrap(), credData.coinbaseAuth)
-        if (clientRes.isErr()) {
+      const allEntries: ExchangeHistoryEntry[] = []
+      let firstErr: Error | null = null
+      let succeededCount = 0
+      for (const { accountId, result } of results) {
+        if (result.isErr()) {
+          const err = result.unwrapErr()
+          firstErr ??= err
           this.logProviderWarning(
             'coinbase',
-            'client_init',
-            row.id,
-            clientRes.unwrapErr(),
-            'getCoinbaseTransactionEntries: failed to create Coinbase client — skipping',
+            'transactions',
+            accountId,
+            err,
+            'Skipping Coinbase account with incomplete transaction history',
           )
           continue
         }
-        const client = clientRes.unwrap()
+        succeededCount += 1
+        allEntries.push(...result.unwrap())
+      }
 
-        // Discover and backfill external_account_id if missing (pre-migration accounts)
-        let accountUuid = nonEmpty(row.externalAccountId)
-        if (accountUuid === undefined) {
-          this.logger.info({ accountId: row.id }, 'Discovering Coinbase BTC account UUID')
-          const accountsRes = await listAllCoinbaseAccounts(client)
-          if (accountsRes.isErr()) {
-            this.logProviderWarning(
-              'coinbase',
-              'backfill',
-              row.id,
-              accountsRes.unwrapErr(),
-              'Failed to list Coinbase accounts — skipping',
-            )
-            continue
-          }
-          const btcAccount = pickPrimaryCoinbaseBtcAccount(accountsRes.unwrap())
-          if (!btcAccount) {
-            this.logger.warn({ accountId: row.id }, 'No BTC account found in Coinbase — skipping')
-            continue
-          }
-          accountUuid = btcAccount.uuid
-          await this.backfillExternalAccountId(row.id, accountUuid, {
-            credentialsConnectedAt: row.credentialsConnectedAt,
-            encryptedCredentials: row.encryptedCredentials,
-          })
-          this.logger.info({ accountId: row.id, accountUuid }, 'Backfilled external_account_id')
-        }
-
-        this.logger.info(
-          { accountId: row.id, accountUuid },
-          'getCoinbaseTransactionEntries: fetching transactions from Coinbase API',
-        )
-
-        // Paginate through all transactions in ascending order
-        let startingAfter: string | undefined = undefined
-        let hasMore = true
-
-        while (hasMore) {
-          const txResult = await client.app.transactions.listTransactions({
-            accountId: accountUuid,
-            limit: 100,
-            order: 'asc',
-            startingAfter,
-          })
-
-          if (txResult.isErr()) {
-            this.logProviderWarning(
-              'coinbase',
-              'transactions',
-              row.id,
-              txResult.unwrapErr(),
-              'Failed to fetch Coinbase transactions — stopping pagination',
-            )
-            break
-          }
-
-          const { pagination, data: transactions } = txResult.unwrap().data
-
-          this.logger.info(
-            {
-              accountId: row.id,
-              transactionCount: transactions.length,
-              hasNextUri: pagination.next_uri != null && pagination.next_uri !== '',
-              startingAfter,
-            },
-            'getCoinbaseTransactionEntries: page fetched',
-          )
-
-          for (const tx of transactions) {
-            // Include all completed BTC transactions regardless of type.
-            // The amount.amount field is already signed: positive for inflows, negative for outflows.
-            if (tx.status !== 'completed' || tx.amount.currency !== 'BTC') {
-              continue
-            }
-
-            const amountSats = new Decimal(tx.amount.amount).mul(1e8).toFixed(0)
-            allEntries.push({
-              timestamp: tx.created_at,
-              value: BigInt(amountSats),
-            })
-          }
-
-          if (pagination.next_uri != null && pagination.next_uri !== '' && transactions.length > 0) {
-            startingAfter = transactions[transactions.length - 1]?.id
-          } else {
-            hasMore = false
-          }
-        }
+      if (firstErr !== null && succeededCount === 0) {
+        return Err(firstErr)
       }
 
       this.logger.info({ totalEntries: allEntries.length }, 'getCoinbaseTransactionEntries: complete')
@@ -1527,6 +1588,158 @@ export class ExchangeService {
     },
   )
 
+  private async fetchCoinbaseAccountHistory(row: {
+    id: string
+    encryptedCredentials: string
+    externalAccountId: string | null
+    credentialsConnectedAt: string | null
+  }): Promise<Result<ExchangeHistoryFetchOutput, Error>> {
+    const parsedCredentials = parseCredentials(row.encryptedCredentials)
+    if (parsedCredentials.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
+      return Ok({ entries: [] })
+    }
+    const credData = parsedCredentials.unwrap()
+
+    // Decrypt credentials — skip account on failure
+    const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
+    if (apiKeyEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const apiKey = apiKeyEnc.unwrap().decrypt()
+    if (apiKey.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
+    if (secretEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const secret = secretEnc.unwrap().decrypt()
+    if (secret.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const clientRes = buildStoredCoinbaseClient(apiKey.unwrap(), secret.unwrap(), credData.coinbaseAuth)
+    if (clientRes.isErr()) {
+      this.logProviderWarning(
+        'coinbase',
+        'client_init',
+        row.id,
+        clientRes.unwrapErr(),
+        'getCoinbaseTransactionEntries: failed to create Coinbase client — skipping',
+      )
+      return Ok({ entries: [] })
+    }
+    const client = clientRes.unwrap()
+
+    // Discover and backfill external_account_id if missing (pre-migration accounts)
+    let accountUuid = nonEmpty(row.externalAccountId)
+    let resolvedExternalAccountId: string | undefined
+    if (accountUuid === undefined) {
+      this.logger.info({ accountId: row.id }, 'Discovering Coinbase BTC account UUID')
+      const accountsRes = await listAllCoinbaseAccounts(client)
+      if (accountsRes.isErr()) {
+        this.logProviderWarning(
+          'coinbase',
+          'backfill',
+          row.id,
+          accountsRes.unwrapErr(),
+          'Failed to list Coinbase accounts — skipping',
+        )
+        return Err(new ExchangeHistoryIncompleteError('coinbase'))
+      }
+      const btcAccount = pickPrimaryCoinbaseBtcAccount(accountsRes.unwrap())
+      if (!btcAccount) {
+        this.logger.warn({ accountId: row.id }, 'No BTC account found in Coinbase — skipping')
+        return Ok({ entries: [] })
+      }
+      accountUuid = btcAccount.uuid
+      resolvedExternalAccountId = accountUuid
+      await this.backfillExternalAccountId(row.id, accountUuid, {
+        credentialsConnectedAt: row.credentialsConnectedAt,
+        encryptedCredentials: row.encryptedCredentials,
+      })
+      this.logger.info({ accountId: row.id, accountUuid }, 'Backfilled external_account_id')
+    }
+
+    this.logger.info(
+      { accountId: row.id, accountUuid },
+      'getCoinbaseTransactionEntries: fetching transactions from Coinbase API',
+    )
+
+    // Paginate through all transactions in ascending order
+    const entries: ExchangeHistoryEntry[] = []
+    let startingAfter: string | undefined = undefined
+    let hasMore = true
+
+    while (hasMore) {
+      const txResult = await client.app.transactions.listTransactions({
+        accountId: accountUuid,
+        limit: 100,
+        order: 'asc',
+        startingAfter,
+      })
+
+      if (txResult.isErr()) {
+        this.logProviderWarning(
+          'coinbase',
+          'transactions',
+          row.id,
+          txResult.unwrapErr(),
+          'Failed to fetch Coinbase transactions — stopping pagination',
+        )
+        return Err(new ExchangeHistoryIncompleteError('coinbase'))
+      }
+
+      const { pagination, data: transactions } = txResult.unwrap().data
+
+      this.logger.info(
+        {
+          accountId: row.id,
+          transactionCount: transactions.length,
+          hasNextUri: pagination.next_uri != null && pagination.next_uri !== '',
+          startingAfter,
+        },
+        'getCoinbaseTransactionEntries: page fetched',
+      )
+
+      for (const tx of transactions) {
+        if (tx.status !== 'completed' || tx.amount.currency !== 'BTC') {
+          continue
+        }
+
+        const amountSatsRes = parseSignedBtcAmountToSats(tx.amount.amount)
+        if (amountSatsRes.isErr()) {
+          this.logProviderWarning(
+            'coinbase',
+            'transactions',
+            row.id,
+            amountSatsRes.unwrapErr(),
+            'Skipped Coinbase transaction with invalid amount',
+          )
+          continue
+        }
+        entries.push({
+          timestamp: tx.created_at,
+          value: amountSatsRes.unwrap(),
+        })
+      }
+
+      if (pagination.next_uri != null && pagination.next_uri !== '' && transactions.length > 0) {
+        startingAfter = transactions[transactions.length - 1]?.id
+      } else {
+        hasMore = false
+      }
+    }
+
+    return Ok({ entries, resolvedExternalAccountId })
+  }
+
   // ─── Kraken Transaction History ───────────────────────────────────────
 
   /**
@@ -1534,16 +1747,23 @@ export class ExchangeService {
    * Returns entries as { timestamp, value } where value is signed satoshis.
    */
   public getKrakenTransactionEntries = asyncFn(
-    async (filterAccountIds?: string[]): Promise<Result<{ timestamp: Date; value: bigint }[], Error>> => {
+    async (filterAccountIds?: string[]): Promise<Result<ExchangeHistoryEntry[], Error>> => {
+      if (filterAccountIds?.length === 0) {
+        return Ok([])
+      }
+
       const rows = await this.db
-        .select({ id: exchangeAccounts.id, encryptedCredentials: exchangeAccounts.encryptedCredentials })
+        .select({
+          id: exchangeAccounts.id,
+          encryptedCredentials: exchangeAccounts.encryptedCredentials,
+          externalAccountId: exchangeAccounts.externalAccountId,
+          credentialsConnectedAt: exchangeAccounts.credentialsConnectedAt,
+        })
         .from(exchangeAccounts)
         .where(
           and(
             eq(exchangeAccounts.provider, 'kraken'),
-            filterAccountIds !== undefined && filterAccountIds.length > 0
-              ? inArray(exchangeAccounts.id, filterAccountIds)
-              : undefined,
+            filterAccountIds !== undefined ? inArray(exchangeAccounts.id, filterAccountIds) : undefined,
           ),
         )
 
@@ -1552,83 +1772,40 @@ export class ExchangeService {
         'getKrakenTransactionEntries: queried exchange_accounts',
       )
 
-      const allEntries: { timestamp: Date; value: bigint }[] = []
-
-      for (const row of rows) {
-        const parsedCredentials = parseCredentials(row.encryptedCredentials)
-        if (parsedCredentials.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
-          continue
-        }
-        const credData = parsedCredentials.unwrap()
-
-        // Decrypt credentials — skip account on failure
-        const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
-        if (apiKeyEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
-          continue
-        }
-        const apiKey = apiKeyEnc.unwrap().decrypt()
-        if (apiKey.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
-          continue
-        }
-
-        const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
-        if (secretEnc.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
-          continue
-        }
-        const secret = secretEnc.unwrap().decrypt()
-        if (secret.isErr()) {
-          this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
-          continue
-        }
-
-        const client = new Kraken.Client({ apiKey: apiKey.unwrap(), secretKey: secret.unwrap() })
-
-        // Paginate through all BTC ledger entries using offset
-        let offset = 0
-        let hasMore = true
-
-        while (hasMore) {
-          const ledgersResult = await client.getLedgers({ asset: 'XBT', ofs: offset })
-
-          if (ledgersResult.isErr()) {
-            this.logProviderWarning(
-              'kraken',
-              'transactions',
-              row.id,
-              ledgersResult.unwrapErr(),
-              'Failed to fetch Kraken ledgers — stopping pagination',
-            )
-            break
+      const results = await Promise.all(
+        rows.map(async (row) => {
+          const key: ExchangeHistoryKey = {
+            encryptedCredentials: row.encryptedCredentials,
+            externalAccountId: row.externalAccountId,
+            credentialsConnectedAt: row.credentialsConnectedAt,
           }
+          const result = await this.historyCache.get(row.id, key, async () => this.fetchKrakenAccountHistory(row))
+          return { accountId: row.id, result }
+        }),
+      )
 
-          const { data } = ledgersResult.unwrap()
-          const ledgerEntries = data.ledger ? Object.values(data.ledger) : []
-
-          this.logger.info(
-            { accountId: row.id, entryCount: ledgerEntries.length, offset },
-            'getKrakenTransactionEntries: page fetched',
+      const allEntries: ExchangeHistoryEntry[] = []
+      let firstErr: Error | null = null
+      let succeededCount = 0
+      for (const { accountId, result } of results) {
+        if (result.isErr()) {
+          const err = result.unwrapErr()
+          firstErr ??= err
+          this.logProviderWarning(
+            'kraken',
+            'transactions',
+            accountId,
+            err,
+            'Skipping Kraken account with incomplete transaction history',
           )
-
-          for (const entry of ledgerEntries) {
-            const amountSats = new Decimal(entry.amount).sub(entry.fee).mul(1e8).toFixed(0)
-            if (amountSats !== '0') {
-              allEntries.push({
-                timestamp: new Date(entry.time * 1000),
-                value: BigInt(amountSats),
-              })
-            }
-          }
-
-          const totalCount = data.count ?? 0
-          offset += ledgerEntries.length
-          if (ledgerEntries.length === 0 || offset >= totalCount) {
-            hasMore = false
-          }
+          continue
         }
+        succeededCount += 1
+        allEntries.push(...result.unwrap())
+      }
+
+      if (firstErr !== null && succeededCount === 0) {
+        return Err(firstErr)
       }
 
       this.logger.info({ totalEntries: allEntries.length }, 'getKrakenTransactionEntries: complete')
@@ -1636,6 +1813,102 @@ export class ExchangeService {
       return Ok(allEntries)
     },
   )
+
+  private async fetchKrakenAccountHistory(row: {
+    id: string
+    encryptedCredentials: string
+    externalAccountId: string | null
+    credentialsConnectedAt: string | null
+  }): Promise<Result<ExchangeHistoryFetchOutput, Error>> {
+    const parsedCredentials = parseCredentials(row.encryptedCredentials)
+    if (parsedCredentials.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Invalid stored credentials — skipping')
+      return Ok({ entries: [] })
+    }
+    const credData = parsedCredentials.unwrap()
+
+    // Decrypt credentials — skip account on failure
+    const apiKeyEnc = Encrypted.fromString(credData.data['apiKey']?.blob ?? '')
+    if (apiKeyEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse apiKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const apiKey = apiKeyEnc.unwrap().decrypt()
+    if (apiKey.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt apiKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const secretEnc = Encrypted.fromString(credData.data['secretKey']?.blob ?? '')
+    if (secretEnc.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to parse secretKey blob — skipping')
+      return Ok({ entries: [] })
+    }
+    const secret = secretEnc.unwrap().decrypt()
+    if (secret.isErr()) {
+      this.logger.warn({ accountId: row.id }, 'Failed to decrypt secretKey — skipping')
+      return Ok({ entries: [] })
+    }
+
+    const client = new Kraken.Client({ apiKey: apiKey.unwrap(), secretKey: secret.unwrap() })
+
+    // Paginate through all BTC ledger entries using offset
+    const entries: ExchangeHistoryEntry[] = []
+    let offset = 0
+    let hasMore = true
+
+    while (hasMore) {
+      const ledgersResult = await client.getLedgers({ asset: 'XBT', ofs: offset })
+
+      if (ledgersResult.isErr()) {
+        this.logProviderWarning(
+          'kraken',
+          'transactions',
+          row.id,
+          ledgersResult.unwrapErr(),
+          'Failed to fetch Kraken ledgers — stopping pagination',
+        )
+        return Err(new ExchangeHistoryIncompleteError('kraken'))
+      }
+
+      const { data } = ledgersResult.unwrap()
+      const ledgerEntries = data.ledger ? Object.values(data.ledger) : []
+
+      this.logger.info(
+        { accountId: row.id, entryCount: ledgerEntries.length, offset },
+        'getKrakenTransactionEntries: page fetched',
+      )
+
+      for (const entry of ledgerEntries) {
+        const amountSatsRes = parseSignedBtcNetToSats(entry.amount, entry.fee)
+        if (amountSatsRes.isErr()) {
+          this.logProviderWarning(
+            'kraken',
+            'transactions',
+            row.id,
+            amountSatsRes.unwrapErr(),
+            'Skipped Kraken ledger entry with invalid amount',
+          )
+          continue
+        }
+        const amountSats = amountSatsRes.unwrap()
+        if (amountSats !== 0n) {
+          entries.push({
+            timestamp: new Date(entry.time * 1000),
+            value: amountSats,
+          })
+        }
+      }
+
+      const totalCount = data.count ?? 0
+      offset += ledgerEntries.length
+      if (ledgerEntries.length === 0 || offset >= totalCount) {
+        hasMore = false
+      }
+    }
+
+    return Ok({ entries })
+  }
 
   // ─── Statement Transactions ──────────────────────────────────────────
 
@@ -1784,6 +2057,19 @@ export class ExchangeService {
     this.logger.warn({ accountId, ...describeSafeProviderFailure(provider, err), operation }, message)
   }
 
+  private invalidCredentialsError(provider: SupportedExchange): ExchangeUserError {
+    if (provider === 'coinbase') {
+      return new ExchangeUserError(
+        'Invalid Coinbase API credentials. Check your API Key ID, Read permission, and IP settings in Coinbase.',
+        'BAD_REQUEST',
+      )
+    }
+    return new ExchangeUserError(
+      `Invalid ${EXCHANGE_DISPLAY_NAMES[provider]} API credentials. Check your key and permissions, then try again.`,
+      'BAD_REQUEST',
+    )
+  }
+
   private toSafeConnectError(provider: SupportedExchange, err: Error): ExchangeUserError {
     if (provider === 'coinbase' && err instanceof Coinbase.CoinbaseKeyFormatError) {
       this.logger.warn({ provider, errorKind: err.name }, 'Rejected malformed Coinbase API key secret')
@@ -1794,17 +2080,14 @@ export class ExchangeService {
     }
     this.logProviderFailure(provider, 'connect', err)
     const displayName = EXCHANGE_DISPLAY_NAMES[provider]
-    if (classifyProviderFailure(provider, err) !== 'transient') {
-      if (provider === 'coinbase') {
-        return new ExchangeUserError(
-          'Invalid Coinbase API credentials. Check your API Key ID, Read permission, and IP settings in Coinbase.',
-          'BAD_REQUEST',
-        )
-      }
+    if (isRetryableProviderFailure(provider, err)) {
       return new ExchangeUserError(
-        `Invalid ${displayName} API credentials. Check your key and permissions, then try again.`,
-        'BAD_REQUEST',
+        `Couldn't connect to ${displayName} right now. Please try again.`,
+        'INTERNAL_SERVER_ERROR',
       )
+    }
+    if (classifyProviderFailure(provider, err) !== 'transient') {
+      return this.invalidCredentialsError(provider)
     }
     return new ExchangeUserError(
       `Couldn't connect to ${displayName} right now. Please check your credentials and try again.`,
@@ -1838,9 +2121,9 @@ export class ExchangeService {
       if (isSignalAborted(signal)) {
         return
       }
-      const done = await this.db.transaction(async (tx) => {
+      const outcome = await this.db.transaction(async (tx): Promise<'updated' | 'skip' | 'retry'> => {
         if (isSignalAborted(signal)) {
-          return true
+          return 'skip'
         }
         const [current] = await tx
           .select({
@@ -1851,12 +2134,12 @@ export class ExchangeService {
           .where(eq(exchangeAccounts.id, accountId))
 
         if (isSignalAborted(signal) || !current || !isSameCredentialGeneration(current, expectedGeneration)) {
-          return true
+          return 'skip'
         }
 
         const parsed = parseCredentials(current.encryptedCredentials)
         if (parsed.isErr()) {
-          return true
+          return 'skip'
         }
         const credData = parsed.unwrap()
         if (
@@ -1864,7 +2147,7 @@ export class ExchangeService {
             ? nonEmpty(credData.portfolioUuid) !== undefined
             : credData.credentialsRevoked === true
         ) {
-          return true
+          return 'skip'
         }
 
         const rowsAffected = await writeCredentials(
@@ -1875,9 +2158,12 @@ export class ExchangeService {
             change,
           }),
         )
-        return rowsAffected === 1
+        return rowsAffected === 1 ? 'updated' : 'retry'
       })
-      if (done) {
+      if (outcome !== 'retry') {
+        if (outcome === 'updated' && 'credentialsRevoked' in change) {
+          this.historyCache.invalidate(accountId)
+        }
         return
       }
     }
@@ -1952,10 +2238,88 @@ export class ExchangeService {
     })
   }
 
-  private async backfillCoinbaseIdentityFromOldKey(
+  private staleReconnectError(): ExchangeUserError {
+    return new ExchangeUserError(
+      'Exchange account credentials changed during reconnect. Please try again.',
+      'INTERNAL_SERVER_ERROR',
+    )
+  }
+
+  private async resolveEarlyReconnectError(args: {
+    provider: SupportedExchange
+    accountId: string
+    expectedGeneration: CredentialGenerationSnapshot
+    resolvedOldIdentity?: ResolvedOldIdentity
+    error: Error
+  }): Promise<Error> {
+    const status = await this.db.transaction(async (tx) => {
+      const [current] = await tx
+        .select({
+          credentialsConnectedAt: exchangeAccounts.credentialsConnectedAt,
+          encryptedCredentials: exchangeAccounts.encryptedCredentials,
+        })
+        .from(exchangeAccounts)
+        .where(eq(exchangeAccounts.id, args.accountId))
+
+      if (!current) {
+        return 'not_found' as const
+      }
+      if (!isSameCredentialGeneration(current, args.expectedGeneration)) {
+        return 'stale' as const
+      }
+
+      const resolved = args.resolvedOldIdentity
+      if (resolved !== undefined && isSameCredentialGeneration(current, resolved.expectedGeneration)) {
+        if (resolved.externalAccountId !== undefined) {
+          await tx
+            .update(exchangeAccounts)
+            .set({ externalAccountId: resolved.externalAccountId })
+            .where(
+              and(
+                eq(exchangeAccounts.id, args.accountId),
+                eq(exchangeAccounts.encryptedCredentials, current.encryptedCredentials),
+                or(isNull(exchangeAccounts.externalAccountId), eq(exchangeAccounts.externalAccountId, '')),
+              ),
+            )
+        }
+        if (resolved.portfolioUuid !== undefined) {
+          const parsed = parseCredentials(current.encryptedCredentials)
+          if (parsed.isOk() && nonEmpty(parsed.unwrap().portfolioUuid) === undefined) {
+            await writeCredentials(
+              tx,
+              createCredentialMetadataChange({
+                accountId: args.accountId,
+                previousCredentials: current.encryptedCredentials,
+                change: { portfolioUuid: resolved.portfolioUuid },
+              }),
+            )
+          }
+        }
+      }
+
+      return 'matched' as const
+    })
+
+    if (status === 'not_found') {
+      return new ExchangeUserError('Exchange account not found', 'NOT_FOUND')
+    }
+    if (status === 'stale') {
+      return this.staleReconnectError()
+    }
+
+    if (args.error instanceof ExchangeAccountMismatchError) {
+      this.logger.warn(
+        { accountId: args.accountId, provider: args.provider },
+        'Rejected exchange reconnect: API key belongs to a different account',
+      )
+    }
+    return args.error
+  }
+
+  private async resolveCoinbaseIdentityFromOldKey(
     existing: ReconnectTarget,
     needs: { needAccountUuid: boolean; needPortfolioUuid: boolean },
-  ): Promise<Result<{ accountUuid?: string; portfolioUuid?: string }, Error>> {
+  ): Promise<Result<ResolvedOldIdentity, Error>> {
     const hasAnyStoredId = !needs.needAccountUuid || !needs.needPortfolioUuid
     const expectedGeneration: CredentialGenerationSnapshot = {
       credentialsConnectedAt: existing.credentialsConnectedAt,
@@ -1964,18 +2328,18 @@ export class ExchangeService {
 
     const parsed = parseCredentials(existing.encryptedCredentials)
     if (parsed.isErr()) {
-      return hasAnyStoredId ? Ok({}) : Err(new ExchangeAccountUnverifiableError('coinbase'))
+      return hasAnyStoredId ? Ok({ expectedGeneration }) : Err(new ExchangeAccountUnverifiableError('coinbase'))
     }
     const credData = parsed.unwrap()
     const apiKeyRes = decryptCredentialField(credData, 'apiKey')
     const secretRes = decryptCredentialField(credData, 'secretKey')
     if (apiKeyRes.isErr() || secretRes.isErr()) {
-      return hasAnyStoredId ? Ok({}) : Err(new ExchangeAccountUnverifiableError('coinbase'))
+      return hasAnyStoredId ? Ok({ expectedGeneration }) : Err(new ExchangeAccountUnverifiableError('coinbase'))
     }
 
     const clientRes = buildStoredCoinbaseClient(apiKeyRes.unwrap(), secretRes.unwrap(), credData.coinbaseAuth)
     if (clientRes.isErr()) {
-      return hasAnyStoredId ? Ok({}) : Err(new ExchangeAccountUnverifiableError('coinbase'))
+      return hasAnyStoredId ? Ok({ expectedGeneration }) : Err(new ExchangeAccountUnverifiableError('coinbase'))
     }
     const oldClient = clientRes.unwrap()
 
@@ -1991,7 +2355,7 @@ export class ExchangeService {
           return Err(new ExchangeVerificationRetryableError('coinbase'))
         }
         if (failureKind === 'revoked') {
-          return hasAnyStoredId ? Ok({}) : Err(new ExchangeAccountUnverifiableError('coinbase'))
+          return hasAnyStoredId ? Ok({ expectedGeneration }) : Err(new ExchangeAccountUnverifiableError('coinbase'))
         }
       } else {
         const btcAccount = pickPrimaryCoinbaseBtcAccount(accountsRes.unwrap())
@@ -2033,17 +2397,12 @@ export class ExchangeService {
       return Err(new ExchangeAccountUnverifiableError('coinbase'))
     }
 
-    if (accountUuid !== undefined) {
-      await this.backfillExternalAccountId(existing.id, accountUuid, expectedGeneration)
-    }
-    if (portfolioUuid !== undefined) {
-      await this.updateCredentialMetadata(existing.id, expectedGeneration, { portfolioUuid })
-    }
-
-    return Ok({ accountUuid, portfolioUuid })
+    return Ok({ externalAccountId: accountUuid, portfolioUuid, expectedGeneration })
   }
 
-  private async backfillKrakenIdentityFromOldKey(existing: ReconnectTarget): Promise<Result<string, Error>> {
+  private async resolveKrakenIdentityFromOldKey(
+    existing: ReconnectTarget,
+  ): Promise<Result<ResolvedOldIdentity & { externalAccountId: string }, Error>> {
     const expectedGeneration: CredentialGenerationSnapshot = {
       credentialsConnectedAt: existing.credentialsConnectedAt,
       encryptedCredentials: existing.encryptedCredentials,
@@ -2073,11 +2432,12 @@ export class ExchangeService {
     if (normalizedId === undefined) {
       return Err(new ExchangeAccountUnverifiableError('kraken'))
     }
-    await this.backfillExternalAccountId(existing.id, normalizedId, expectedGeneration)
-    return Ok(normalizedId)
+    return Ok({ externalAccountId: normalizedId, expectedGeneration })
   }
 
-  private async backfillRobinhoodIdentityFromOldKey(existing: ReconnectTarget): Promise<Result<string, Error>> {
+  private async resolveRobinhoodIdentityFromOldKey(
+    existing: ReconnectTarget,
+  ): Promise<Result<ResolvedOldIdentity & { externalAccountId: string }, Error>> {
     const expectedGeneration: CredentialGenerationSnapshot = {
       credentialsConnectedAt: existing.credentialsConnectedAt,
       encryptedCredentials: existing.encryptedCredentials,
@@ -2107,8 +2467,7 @@ export class ExchangeService {
     if (oldId === undefined) {
       return Err(new ExchangeAccountUnverifiableError('robinhood'))
     }
-    await this.backfillExternalAccountId(existing.id, oldId, expectedGeneration)
-    return Ok(oldId)
+    return Ok({ externalAccountId: oldId, expectedGeneration })
   }
 
   private async saveConnectedAccount(args: {
@@ -2116,23 +2475,23 @@ export class ExchangeService {
     replaceAccountId?: string
     displayName: string
     credentialData: CredentialData
-    balanceSats: string
+    balanceSats: ValidatedSats
     balanceAsOf: string
     credentialsConnectedAt: string
     externalAccountId?: string
+    expectedGeneration?: CredentialGenerationSnapshot
+    resolvedOldIdentity?: ResolvedOldIdentity
   }): Promise<Result<{ id: string; createdAt: string }, Error>> {
     const saved = await this.db.transaction(async (tx) => {
       if (args.replaceAccountId != null && args.replaceAccountId !== '') {
         const replaceAccountId = args.replaceAccountId
-        // Reconnect must preserve the internal account id. Balance snapshots,
-        // imported statements, and generated statement references are keyed to
-        // this id, so never delete/reinsert during a credential replacement.
         const [existing] = await tx
           .select({
             provider: exchangeAccounts.provider,
             createdAt: exchangeAccounts.createdAt,
             externalAccountId: exchangeAccounts.externalAccountId,
             encryptedCredentials: exchangeAccounts.encryptedCredentials,
+            credentialsConnectedAt: exchangeAccounts.credentialsConnectedAt,
           })
           .from(exchangeAccounts)
           .where(eq(exchangeAccounts.id, replaceAccountId))
@@ -2149,11 +2508,26 @@ export class ExchangeService {
           )
         }
 
+        if (args.expectedGeneration !== undefined && !isSameCredentialGeneration(existing, args.expectedGeneration)) {
+          return Err(this.staleReconnectError())
+        }
+
+        const resolvedMatchesGeneration =
+          args.resolvedOldIdentity !== undefined &&
+          isSameCredentialGeneration(existing, args.resolvedOldIdentity.expectedGeneration)
+        const effectiveExternalAccountId =
+          nonEmpty(existing.externalAccountId) ??
+          (resolvedMatchesGeneration ? args.resolvedOldIdentity?.externalAccountId : undefined)
+        const effectivePortfolioUuid =
+          readStoredPortfolioUuid(existing.encryptedCredentials) ??
+          (resolvedMatchesGeneration ? args.resolvedOldIdentity?.portfolioUuid : undefined)
+
         const verifiedResult = verifyReconnectIdentity({
           accountId: replaceAccountId,
           provider: args.provider,
-          existingExternalAccountId: existing.externalAccountId,
-          existingPortfolioUuid: readStoredPortfolioUuid(existing.encryptedCredentials),
+          existingExternalAccountId: effectiveExternalAccountId ?? null,
+          dbExternalAccountId: existing.externalAccountId,
+          existingPortfolioUuid: effectivePortfolioUuid,
           incomingExternalAccountId: args.externalAccountId,
           incomingPortfolioUuid: args.credentialData.portfolioUuid,
         })
@@ -2200,9 +2574,12 @@ export class ExchangeService {
 
       return Ok({ id, createdAt: args.balanceAsOf })
     })
-
-    if (saved.isOk() && args.replaceAccountId != null && args.replaceAccountId !== '') {
-      this.evictBatchRefresh(saved.unwrap().id)
+    if (saved.isOk()) {
+      const savedId = saved.unwrap().id
+      if (args.replaceAccountId != null && args.replaceAccountId !== '') {
+        this.evictBatchRefresh(savedId)
+      }
+      this.historyCache.invalidate(savedId)
     }
 
     return saved
@@ -2215,7 +2592,7 @@ export class ExchangeService {
       existingCreatedAt: string
       displayName: string
       credentialData: CredentialData
-      balanceSats: string
+      balanceSats: ValidatedSats
       balanceAsOf: string
       credentialsConnectedAt: string
     },

@@ -49,6 +49,11 @@ function failure(error: Error, message: string): LookupFailure {
   }
 }
 
+export interface ElectrumSourceOptions {
+  /** Parents read only for their outputs need no block time, saving one header RPC per block. */
+  readonly blockTimes: 'read' | 'skip'
+}
+
 /**
  * Transaction details from the connected Electrum server: the raw transaction and its block's
  * header. Spent amounts aren't fetched; they're read from the wallet's own transactions.
@@ -61,12 +66,14 @@ export class ElectrumSource implements TxSource {
   public readonly retryDelaysMs = RETRY_DELAYS_MS
   private readonly onchainProvider: ElectrumProvider
   private readonly network: bitcoin.Network
+  private readonly blockTimeMode: 'read' | 'skip'
   /** Block times by height, so transactions in the same block share one header request. */
   private readonly blockTimes = new Map<number, Promise<Result<number, Error>>>()
 
-  public constructor(onchainProvider: ElectrumProvider) {
+  public constructor(onchainProvider: ElectrumProvider, options: ElectrumSourceOptions = { blockTimes: 'read' }) {
     this.onchainProvider = onchainProvider
     this.network = toBitcoinjsNetwork(onchainProvider.network)
+    this.blockTimeMode = options.blockTimes
   }
 
   public async lookup(txid: string, height: number, signal: AbortSignal): Promise<Result<LookedUpTx, LookupFailure>> {
@@ -87,19 +94,23 @@ export class ElectrumSource implements TxSource {
       return Err({ error: new TransactionLoadError('invalid', `Transaction data does not match ${txid}`), retry: null })
     }
 
-    // Another lookup has failed; don't send a header request for a statement that has stopped.
-    if (signal.aborted) {
-      return Err({ error: new TransactionLoadError('unreachable', 'Lookups stopped'), retry: null })
-    }
-    const blockTime = await this.blockTime(height)
-    if (blockTime.isErr()) {
-      return Err(failure(blockTime.unwrapErr(), `Failed to fetch the block header at ${height}`))
+    let blockTime: number | null = null
+    if (this.blockTimeMode === 'read') {
+      // Another lookup has failed; don't send a header request for a statement that has stopped.
+      if (signal.aborted) {
+        return Err({ error: new TransactionLoadError('unreachable', 'Lookups stopped'), retry: null })
+      }
+      const blockTimeResult = await this.blockTime(height)
+      if (blockTimeResult.isErr()) {
+        return Err(failure(blockTimeResult.unwrapErr(), `Failed to fetch the block header at ${height}`))
+      }
+      blockTime = blockTimeResult.unwrap()
     }
 
     return Ok({
       txid,
       blockHeight: height,
-      blockTime: blockTime.unwrap(),
+      blockTime,
       inputs: tx.ins.map((input) => ({
         spends: isCoinbaseInput(input)
           ? null

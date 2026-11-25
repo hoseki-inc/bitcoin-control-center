@@ -142,6 +142,23 @@ function parseErrorData(response: SafeResponse): AsyncResult<ParsedData<ErrorRes
     })
 }
 
+function unwrapKrakenEnvelope<T>(
+  parsed: ParsedData<{ error: string[]; result?: T }>,
+  endpointName: string,
+): Result<ParsedData<T>, ApiError> {
+  const { data, response } = parsed
+  if (data.error.length > 0) {
+    return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, response), data.error.join(', ')))
+  }
+  if (data.result === undefined) {
+    return Err(new ApiError(ApiErrorKind.UnexpectedFailure({ response }), `Missing result in ${endpointName} response`))
+  }
+  return Ok({
+    data: data.result,
+    response,
+  })
+}
+
 export class Client {
   private readonly credentials: KrakenCredentials
   private lastNonce = 0
@@ -226,27 +243,8 @@ export class Client {
         const postData = `nonce=${nonce}`
 
         const response = yield* this.makeRequest('/0/private/Balance', nonce, postData).try()
-
-        const { data, response: originalResponse } = yield* parseBalanceResponse(response).try()
-
-        // Check for Kraken API errors in the response
-        if (data.error.length > 0) {
-          return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
-        }
-
-        if (data.result === undefined) {
-          return Err(
-            new ApiError(
-              ApiErrorKind.UnexpectedFailure({ response: originalResponse }),
-              'Missing result in Balance response',
-            ),
-          )
-        }
-
-        return Ok({
-          data: data.result,
-          response: originalResponse,
-        })
+        const parsed = yield* parseBalanceResponse(response).try()
+        return unwrapKrakenEnvelope(parsed, 'Balance')
       }.bind(this),
     )
   }
@@ -265,25 +263,8 @@ export class Client {
         const postData = `nonce=${nonce}`
 
         const response = yield* this.makeRequest('/0/private/GetApiKeyInfo', nonce, postData).try()
-        const { data, response: originalResponse } = yield* parseApiKeyInfoResponse(response).try()
-
-        if (data.error.length > 0) {
-          return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
-        }
-
-        if (data.result === undefined) {
-          return Err(
-            new ApiError(
-              ApiErrorKind.UnexpectedFailure({ response: originalResponse }),
-              'Missing result in GetApiKeyInfo response',
-            ),
-          )
-        }
-
-        return Ok({
-          data: data.result,
-          response: originalResponse,
-        })
+        const parsed = yield* parseApiKeyInfoResponse(response).try()
+        return unwrapKrakenEnvelope(parsed, 'GetApiKeyInfo')
       }.bind(this),
     )
   }
@@ -300,14 +281,12 @@ export class Client {
   public getLedgers(payload: LedgersPayload = {}): AsyncResult<ParsedData<LedgersResult>, ApiError> {
     return tryBlockAsync(
       async function* (this: Client) {
-        // Validate payload
         const ledgersPayload = yield* parseUnknown(LedgersPayloadSchema, payload)
           .mapErr((err) => {
             return new ApiError(ApiErrorKind.ValidationError(err), `Invalid payload: ${err.message}`)
           })
           .try()
 
-        // Generate nonce and serialize payload
         const nonce = this.nextNonce()
         const payloadString = serializeKrakenLedgersPayload(ledgersPayload)
 
@@ -325,17 +304,8 @@ export class Client {
         }
 
         const response = yield* this.makeRequest('/0/private/Ledgers', nonce, postData).try()
-        const { data, response: originalResponse } = yield* parseLedgersResponse(response).try()
-
-        // Check for Kraken API errors in the response
-        if (data.error.length > 0) {
-          return Err(new ApiError(ApiErrorKind.ErrorResponse(data.error, originalResponse), data.error.join(', ')))
-        }
-
-        return Ok({
-          data: data.result,
-          response: originalResponse,
-        })
+        const parsed = yield* parseLedgersResponse(response).try()
+        return unwrapKrakenEnvelope(parsed, 'Ledgers')
       }.bind(this),
     )
   }

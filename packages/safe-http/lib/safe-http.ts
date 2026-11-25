@@ -1,4 +1,4 @@
-import { type AsyncResult, Err, Ok, Result } from '../../result/index.ts'
+import { AsyncResult, Err, Ok, Result } from '../../result/index.ts'
 import { SafeHttpError, SafeHttpErrorKind } from './errors.ts'
 import { SafeResponse } from './response.ts'
 import type { Input, Options } from './types.ts'
@@ -18,13 +18,36 @@ export class SafeHttp {
 
   public request(input: Input, options?: Options): AsyncResult<SafeResponse, SafeHttpError> {
     const init: Options = { ...this.defaults, ...options }
-    if (init.signal === undefined) {
-      init.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+    let responsePromise: Promise<Response>
+    try {
+      if (!(input instanceof Request) && !(input instanceof URL)) {
+        void new URL(input)
+      }
+      if (init.headers !== undefined) {
+        void new Headers(init.headers)
+      }
+      if (init.signal === undefined) {
+        init.signal = AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      }
+      // Pass input and init directly to fetch rather than wrapping in an intermediate Request:
+      // in Node/undici, an unreferenced Request can be GC'd with its dependent AbortSignal,
+      // breaking timeout and caller abort propagation.
+      responsePromise = fetch(input, init)
+    } catch (thrown) {
+      const cause = thrown instanceof Error ? thrown : new Error('Invalid request')
+      return new AsyncResult(
+        Promise.resolve(
+          Err(
+            new SafeHttpError({
+              value: SafeHttpErrorKind.NetworkUnreachable,
+              cause,
+              message: 'Fetch failed',
+            }),
+          ),
+        ),
+      )
     }
-    // Pass input and init directly to fetch rather than wrapping in an intermediate Request:
-    // in Node/undici, an unreferenced Request can be GC'd with its dependent AbortSignal,
-    // breaking timeout and caller abort propagation.
-    return Result.fromPromise(fetch(input, init))
+    return Result.fromPromise(responsePromise)
       .mapErr(
         (error) =>
           new SafeHttpError({

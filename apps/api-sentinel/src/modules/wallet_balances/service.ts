@@ -196,9 +196,18 @@ export class WalletBalanceService {
 
   /**
    * The chain tip from Electrum if it answers within `waitMs`, or else the newest tip read in the last
-   * ten minutes. Callers asking at the same time share one read, which carries on in the background.
+   * ten minutes. When `reuseWithinMs` is set and a recent tip falls within that window, returns it
+   * immediately without querying Electrum. Callers asking at the same time share one read, which
+   * carries on in the background.
    */
-  public async currentTip(waitMs: number): Promise<CurrentTip> {
+  public async currentTip(waitMs: number, options: { reuseWithinMs?: number } = {}): Promise<CurrentTip> {
+    if (
+      options.reuseWithinMs !== undefined &&
+      this.latestTip !== null &&
+      Date.now() - this.latestTip.readAt <= options.reuseWithinMs
+    ) {
+      return { tip: this.latestTip.tip, failed: false }
+    }
     let timer: ReturnType<typeof setTimeout> | undefined
     const answered = await Promise.race([
       this.readTip(),
@@ -217,6 +226,17 @@ export class WalletBalanceService {
       tip: recent !== null && Date.now() - recent.readAt <= RECENT_TIP_MAX_AGE_MS ? recent.tip : null,
       failed: false,
     }
+  }
+
+  /**
+   * Returns the latest cached chain tip if read within `maxAgeMs`, otherwise coalesces a live
+   * Electrum tip read via `readTip()`.
+   */
+  public async recentTip(maxAgeMs: number): Promise<Result<Block, Error>> {
+    if (this.latestTip !== null && Date.now() - this.latestTip.readAt <= maxAgeMs) {
+      return Ok(this.latestTip.tip)
+    }
+    return this.readTip()
   }
 
   /** Runs `balanceOf` for each wallet in parallel, leaving out wallets archived or deleted meanwhile. */

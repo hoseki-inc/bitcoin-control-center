@@ -1,6 +1,9 @@
+import { parseUnknown } from '@hoseki/packages/result'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
+import { z } from 'zod'
 import { Client } from './client'
 import { setupKrakenRequest } from './client.fixtures'
+import * as krakenTypes from './types'
 
 const credentials = {
   apiKey: 'synthetic-api-key',
@@ -29,6 +32,94 @@ describe.each([
     expect(result.isOk()).toBe(true)
     const signature = await outgoingSignature()
     expect(signature.actual).toBe(signature.expected)
+  })
+})
+
+describe.each([
+  {
+    endpoint: 'getBalance',
+    call: (client: Client) => client.getBalance(),
+    validResult: { XXBT: '1.25' },
+  },
+  {
+    endpoint: 'getLedgers',
+    call: (client: Client) => client.getLedgers({ asset: 'XBT', ofs: 0 }),
+    validResult: { ledger: {}, count: 0 },
+  },
+  {
+    endpoint: 'getApiKeyInfo',
+    call: (client: Client) => client.getApiKeyInfo(),
+    validResult: { iban: 'AA88 N84G WOAK NMOI' },
+  },
+])('Kraken $endpoint envelope handling', ({ call, validResult }) => {
+  it('returns ErrorResponse when HTTP 200 has errors and omits result', async () => {
+    onTestFinished(() => {
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () => Response.json({ error: ['EAPI:Invalid key'] })),
+    )
+
+    const result = await call(new Client(credentials))
+
+    expect(result.isErr()).toBe(true)
+    const err = result.unwrapErr()
+    expect(err.kind.name).toBe('ErrorResponse')
+    if (err.kind.name === 'ErrorResponse') {
+      expect(err.kind.errors).toEqual(['EAPI:Invalid key'])
+    }
+    expect(err.message).toBe('EAPI:Invalid key')
+  })
+
+  it('returns UnexpectedFailure when HTTP 200 has empty error array and missing result', async () => {
+    onTestFinished(() => {
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () => Response.json({ error: [] })),
+    )
+
+    const result = await call(new Client(credentials))
+
+    expect(result.isErr()).toBe(true)
+    expect(result.unwrapErr().kind.name).toBe('UnexpectedFailure')
+  })
+
+  it('returns Ok on a valid response envelope', async () => {
+    onTestFinished(() => {
+      vi.restoreAllMocks()
+      vi.unstubAllGlobals()
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(async () => Response.json({ error: [], result: validResult })),
+    )
+
+    const result = await call(new Client(credentials))
+
+    expect(result.isOk()).toBe(true)
+    expect(result.unwrap().data).toEqual(validResult)
+  })
+})
+
+describe('Kraken response schema registry', () => {
+  it('accepts an error-only body for every exported *ResponseSchema with an error field', () => {
+    let checked = 0
+    for (const [name, value] of Object.entries(krakenTypes)) {
+      if (!name.endsWith('ResponseSchema') || !(value instanceof z.ZodObject)) {
+        continue
+      }
+      if ('error' in value.shape) {
+        checked += 1
+        const parsed = parseUnknown(value, { error: ['EAPI:Invalid key'] })
+        expect(parsed.isOk(), `${name} should accept an error-only Kraken response`).toBe(true)
+      }
+    }
+    expect(checked).toBeGreaterThanOrEqual(4)
   })
 })
 

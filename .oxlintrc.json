@@ -301,6 +301,7 @@
     "anti-slop/no-widen-then-assert": "error",
     "anti-slop/require-safety-comment-for-type-assertion": "error",
     "control-center/exchange-provider-errors": "error",
+    "control-center/exchange-provider-input": "error",
     "control-center/feature-boundary": "error",
     "control-center/format-usd-rounds": "error",
     "control-center/no-swallowed-signing-error": "error",
