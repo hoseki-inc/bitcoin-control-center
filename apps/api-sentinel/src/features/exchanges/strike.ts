@@ -5,6 +5,8 @@ import type { Logger } from 'pino'
 import { z } from 'zod'
 import { type ValidatedSats, parseBtcBalanceSats } from './amounts'
 
+const REQUEST_TIMEOUT_MS = 30_000
+
 const StrikeBalanceSchema = z.array(
   z.object({
     currency: z.string(),
@@ -52,6 +54,7 @@ async function fetchStrikeBalances(apiKey: string): Promise<Result<StrikeBalance
   try {
     response = await fetch('https://api.strike.me/v1/balances', {
       method: 'GET',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: 'application/json',
