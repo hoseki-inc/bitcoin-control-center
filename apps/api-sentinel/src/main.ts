@@ -116,8 +116,28 @@ export async function main(
   logger.info({ listenHost: host, port: boundPort }, 'api-sentinel is running')
 
   // Record initial balance snapshots, then every 15 minutes
-  void appCtx.controlCenterService.recordAllSnapshots()
-  snapshotTimer = setInterval(() => void appCtx.controlCenterService.recordAllSnapshots(), 15 * 60 * 1000)
+  let snapshotInFlight = false
+  let shuttingDown = false
+  const runSnapshotPass = (): void => {
+    if (snapshotInFlight || shuttingDown) {
+      return
+    }
+    snapshotInFlight = true
+    void (async (): Promise<void> => {
+      try {
+        const result = await appCtx.controlCenterService.recordAllSnapshots()
+        if (result.isErr()) {
+          logger.warn('Balance snapshot pass failed')
+        }
+      } catch {
+        logger.warn('Balance snapshot pass failed')
+      } finally {
+        snapshotInFlight = false
+      }
+    })()
+  }
+  runSnapshotPass()
+  snapshotTimer = setInterval(runSnapshotPass, 15 * 60 * 1000)
   appCtx.releaseCheckService.start()
 
   let shutdownPromise: Promise<void> | null = null
@@ -125,6 +145,7 @@ export async function main(
     void shutdown()
   }
   const runShutdown = async (): Promise<void> => {
+    shuttingDown = true
     process.off('SIGTERM', onSignal)
     process.off('SIGINT', onSignal)
     logger.info('Starting graceful shutdown')
