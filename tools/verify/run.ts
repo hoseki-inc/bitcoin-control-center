@@ -15,20 +15,32 @@ import {
 } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { Err, Ok, type Result } from '@hoseki/packages/result'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
+import { type ProcessIdentity, withLock } from './lock'
 import {
   ChildEnv,
   type CommandResult,
+  type DockerSelection,
+  type DockerTarget,
+  callerDockerSelection,
   dockerChildEnv,
+  dockerChildEnvFor,
   runCommand,
   runCommandResult,
   verifyCacheDirOverride,
 } from './process'
 
 export const REPO_ROOT = resolve(import.meta.dirname, '../..')
+const CHECKOUT_KEY = createHash('sha256').update(REPO_ROOT).digest('hex').slice(0, 8)
 /** Scratch state for this checkout's runs. Other worktrees get their own folder, so they never see these runs. */
-const RUNS_ROOT = join(tmpdir(), 'bcc-verify', createHash('sha256').update(REPO_ROOT).digest('hex').slice(0, 8))
+const RUNS_ROOT = join(tmpdir(), 'bcc-verify', CHECKOUT_KEY)
+/**
+ * Each run's tracking lock. It sits beside RUNS_ROOT, never inside it, so no run listing shows it and cleanup removing
+ * a run folder never removes the lock it holds while doing so.
+ */
+const LOCKS_ROOT = join(tmpdir(), 'bcc-verify-locks', CHECKOUT_KEY)
 /** Evidence survives cleanup here, one folder per run. Git ignores it. */
 export const EVIDENCE_ROOT = join(REPO_ROOT, 'verify-output')
 export const HELPER = '.agents/skills/verify-control-center/helpers/verify'
@@ -88,14 +100,38 @@ const ProcessSchema = z.object({ name: z.string(), pid: z.number().int().positiv
 export type RecordedProcess = z.infer<typeof ProcessSchema>
 const ProcessListSchema = z.array(ProcessSchema)
 
+/**
+ * The Docker daemon a container was started on: its engine ID (`docker info --format {{.ID}}`) and how it was reached.
+ * Holds no credentials: `endpoint` is a local socket or loopback address and `dockerConfig` a folder path.
+ */
+export const DockerDaemonSchema = z.object({
+  daemonId: z.string().min(1),
+  context: z.string().min(1).optional(),
+  endpoint: z
+    .string()
+    .min(1)
+    .refine((endpoint) => dockerEndpointProblem(endpoint) === null, {
+      message:
+        'endpoint must be a local Docker socket, named pipe or loopback TCP address, with no user, query or fragment',
+    })
+    .optional(),
+  dockerConfig: z.string().min(1).optional(),
+})
+export type DockerDaemon = z.infer<typeof DockerDaemonSchema>
+
 export const ContainerSchema = z.object({
   name: z.string(),
   containerId: ContainerIdSchema,
   image: z.string(),
   startedAt: z.string(),
+  /** Optional only so older records still parse. Without it, cleanup can't tell an absent container from one elsewhere. */
+  daemon: DockerDaemonSchema.optional(),
 })
 export type RecordedContainer = z.infer<typeof ContainerSchema>
 const ContainerListSchema = z.array(ContainerSchema)
+const PinnedContainerSchema = ContainerSchema.extend({ daemon: DockerDaemonSchema })
+/** A container record naming its daemon, as `recordContainer` requires. */
+export type PinnedContainer = z.infer<typeof PinnedContainerSchema>
 
 export const EmulatorStateSchema = z
   .object({
@@ -103,6 +139,8 @@ export const EmulatorStateSchema = z
     model: z.string().optional(),
     seed: z.enum(EMULATOR_SEED_NAMES).default('primary'),
     containerId: ContainerIdSchema,
+    /** The daemon running `containerId`; containers.json holds the same record. */
+    daemon: DockerDaemonSchema.optional(),
     apiPort: z.number().int().positive(),
     healthUrl: z.string().url(),
     bridge: ProcessSchema.extend({
@@ -111,6 +149,13 @@ export const EmulatorStateSchema = z
     }).optional(),
   })
   .superRefine((value, ctx) => {
+    if (value.device === 'ledger' && !LEDGER_MODELS.some((model) => model === value.model)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['model'],
+        message: `A Ledger emulator's model must be one of ${LEDGER_MODELS.join(', ')}`,
+      })
+    }
     if (!isLoopbackUrlForPort(value.healthUrl, value.apiPort, ['http:'])) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -213,6 +258,8 @@ export interface RunPaths {
   faultsFile: string
   /** Written by the fakes once they act on faultsFile. */
   appliedFaultsFile: string
+  /** Held while run.json, processes.json or containers.json is updated; outside runDir, so cleanup never removes it. */
+  lockDir: string
 }
 
 /** IDs become folder names, so they are letters, digits, - and _ only. */
@@ -237,6 +284,7 @@ export function runPaths(runId: string): RunPaths {
     requestLog: join(runDir, 'logs', 'fake-requests.log'),
     faultsFile: join(runDir, 'faults.json'),
     appliedFaultsFile: join(runDir, 'faults-applied.json'),
+    lockDir: join(LOCKS_ROOT, `${runId}.lock`),
   }
 }
 
@@ -278,7 +326,17 @@ export function selectRunId(named: string | undefined): string {
   )
 }
 
-export type JsonFile<T> = { status: 'missing' } | { status: 'invalid'; file: string } | { status: 'ok'; value: T }
+/** A file that is unreadable or the wrong shape (`parse`), or a run.json naming another run (`mismatch`). */
+export type InvalidJsonFile =
+  | { status: 'invalid'; file: string; reason: 'parse' }
+  | { status: 'invalid'; file: string; reason: 'mismatch'; detail: string }
+
+export type JsonFile<T> = { status: 'missing' } | InvalidJsonFile | { status: 'ok'; value: T }
+
+/** What is wrong with an invalid file, for error messages. */
+export function invalidMessage(result: InvalidJsonFile): string {
+  return result.reason === 'mismatch' ? `${result.file}: ${result.detail}` : `${result.file} does not parse`
+}
 
 /** A JSON file checked against its schema. A file that is missing, unreadable or the wrong shape is reported, not thrown. */
 export function readJsonFile<S extends z.ZodType>(schema: S, file: string): JsonFile<z.infer<S>> {
@@ -289,16 +347,16 @@ export function readJsonFile<S extends z.ZodType>(schema: S, file: string): Json
   try {
     raw = JSON.parse(readFileSync(file, 'utf8'))
   } catch {
-    return { status: 'invalid', file }
+    return { status: 'invalid', file, reason: 'parse' }
   }
   const parsed = parseUnknown(schema, raw)
-  return parsed.isOk() ? { status: 'ok', value: parsed.unwrap() } : { status: 'invalid', file }
+  return parsed.isOk() ? { status: 'ok', value: parsed.unwrap() } : { status: 'invalid', file, reason: 'parse' }
 }
 
-/** The value, or null when missing; an unreadable file stops the script. */
+/** The value, or null when missing; an invalid file stops the script. */
 export function requireJsonFile<T>(result: JsonFile<T>): T | null {
   if (result.status === 'invalid') {
-    fail(`${result.file} does not parse. Clean up this run and launch a new one.`)
+    fail(`${invalidMessage(result)}. Clean up this run and launch a new one.`)
   }
   return result.status === 'ok' ? result.value : null
 }
@@ -314,7 +372,12 @@ export function resolveSeedFile(paths: RunPaths, state: RunState | null = null):
 export function readRunState(paths: RunPaths): JsonFile<RunState> {
   const result = readJsonFile(RunStateSchema, paths.stateFile)
   if (result.status === 'ok' && result.value.runId !== paths.runId) {
-    return { status: 'invalid', file: paths.stateFile }
+    return {
+      status: 'invalid',
+      file: paths.stateFile,
+      reason: 'mismatch',
+      detail: `run ID ${JSON.stringify(result.value.runId)} does not match directory ${JSON.stringify(paths.runId)}`,
+    }
   }
   return result
 }
@@ -329,14 +392,17 @@ export function readAppliedFaults(paths: RunPaths): JsonFile<Faults> {
   return result.status === 'missing' ? { status: 'ok', value: NO_FAULTS } : result
 }
 
-export function readProcesses(paths: RunPaths): RecordedProcess[] {
-  const result = readJsonFile(ProcessListSchema, paths.processesFile)
-  return result.status === 'ok' ? result.value : []
+export function readProcessesFile(paths: RunPaths): JsonFile<RecordedProcess[]> {
+  return readJsonFile(ProcessListSchema, paths.processesFile)
 }
 
-/** Launch calls this as each process starts, so cleanup can stop them even if launch dies before it finishes. */
-export function recordProcess(paths: RunPaths, recorded: RecordedProcess): void {
-  writeJson(paths.processesFile, [...readProcesses(paths), recorded])
+/** Reads `processes.json`. Returns `[]` only when missing; throws if the file exists but cannot be parsed. */
+export function readProcesses(paths: RunPaths): RecordedProcess[] {
+  const result = readProcessesFile(paths)
+  if (result.status === 'invalid') {
+    throw new Error(`${invalidMessage(result)}.`)
+  }
+  return result.status === 'ok' ? result.value : []
 }
 
 export function readContainersFile(paths: RunPaths): JsonFile<RecordedContainer[]> {
@@ -347,44 +413,136 @@ export function readContainersFile(paths: RunPaths): JsonFile<RecordedContainer[
 export function readContainers(paths: RunPaths): RecordedContainer[] {
   const result = readContainersFile(paths)
   if (result.status === 'invalid') {
-    throw new Error(`${result.file} does not parse.`)
+    throw new Error(`${invalidMessage(result)}.`)
   }
   return result.status === 'ok' ? result.value : []
 }
 
 /**
- * Records a started Docker container immediately so cleanup can remove it even if launch dies before it finishes.
- * Rejects non-64-hex container IDs and refuses to overwrite a corrupt `containers.json`.
+ * Read-modify-write access to a run's tracking files, handed out only inside `withRunLock`. Every write refuses once
+ * the lock is released or cleanup has removed the run folder, so a late writer can never recreate a removed run.
  */
-export function recordContainer(paths: RunPaths, recorded: RecordedContainer): void {
-  const parsed = parseUnknown(ContainerSchema, recorded)
-  if (parsed.isErr()) {
-    throw new Error(
-      `Invalid container record for ${recorded.name}: containerId must be a 64-character lowercase hex Docker ID`,
-    )
+export interface RunTracking {
+  recordProcess: (recorded: RecordedProcess) => void
+  /** Refuses an ID that is not 64 lowercase hex characters, a record without its daemon, and a corrupt file. */
+  recordContainer: (recorded: PinnedContainer) => void
+  /** Drops these IDs from containers.json. Does nothing when it is missing; refuses a corrupt one. */
+  forgetContainers: (containerIds: ReadonlySet<string>) => void
+  writeRunState: (state: RunState) => void
+  /** Writes the seed marker, which lives in the run's data folder. */
+  writeSeedMarker: (file: string, marker: SeedMarker) => void
+  /** Writes the faults the fakes should apply. */
+  writeFaults: (faults: Faults) => void
+}
+
+interface TrackingHandle {
+  tracking: RunTracking
+  /** Ends the handle's writes when the lock is released. */
+  close: () => void
+}
+
+function trackingFor(paths: RunPaths): TrackingHandle {
+  let open = true
+  const write = (file: string, value: JsonRecord): void => {
+    if (!open) {
+      throw new Error(`Refusing to write ${file} without holding ${paths.lockDir}`)
+    }
+    if (!existsSync(paths.runDir)) {
+      throw new Error(
+        `Run ${paths.runId} was cleaned up (${paths.runDir} is gone); refusing to write ${basename(file)}`,
+      )
+    }
+    writeJson(file, value)
   }
-  writeJson(paths.containersFile, [...readContainers(paths), parsed.unwrap()])
+  const tracking: RunTracking = {
+    recordProcess: (recorded) => {
+      write(paths.processesFile, [...readProcesses(paths), recorded])
+    },
+    recordContainer: (recorded) => {
+      const parsed = parseUnknown(PinnedContainerSchema, recorded)
+      if (parsed.isErr()) {
+        throw new Error(
+          `Invalid container record for ${recorded.name}: it needs a 64-character lowercase hex Docker ID and its daemon`,
+        )
+      }
+      write(paths.containersFile, [...readContainers(paths), parsed.unwrap()])
+    },
+    forgetContainers: (containerIds) => {
+      for (const containerId of containerIds) {
+        if (!isValidContainerId(containerId)) {
+          throw new Error(`Invalid container ID: ${containerId}`)
+        }
+      }
+      const existing = readContainersFile(paths)
+      if (existing.status === 'invalid') {
+        throw new Error(`${invalidMessage(existing)}.`)
+      }
+      if (existing.status === 'ok') {
+        write(
+          paths.containersFile,
+          existing.value.filter((entry) => !containerIds.has(entry.containerId)),
+        )
+      }
+    },
+    writeRunState: (state) => {
+      write(paths.stateFile, state)
+    },
+    writeSeedMarker: (file, marker) => {
+      write(file, marker)
+    },
+    writeFaults: (faults) => {
+      write(paths.faultsFile, faults)
+    },
+  }
+  return {
+    tracking,
+    close: () => {
+      open = false
+    },
+  }
 }
 
 /**
- * Removes a confirmed-stopped container ID from `containers.json`.
- * No-ops when `containers.json` is missing; throws without modifying disk if `containers.json` is invalid.
+ * Runs `fn` holding the run's tracking lock, which every process updating run.json, processes.json or containers.json
+ * takes, so concurrent helpers never lose each other's writes. Waits for another holder; not re-entrant.
  */
-export function forgetContainer(paths: RunPaths, containerId: string): void {
-  if (!isValidContainerId(containerId)) {
-    throw new Error(`Invalid container ID: ${containerId}`)
-  }
-  const existing = readContainersFile(paths)
-  if (existing.status === 'missing') {
-    return
-  }
-  if (existing.status === 'invalid') {
-    throw new Error(`${existing.file} does not parse.`)
-  }
-  writeJson(
-    paths.containersFile,
-    existing.value.filter((entry) => entry.containerId !== containerId),
-  )
+export async function withRunLock<T>(paths: RunPaths, fn: (tracking: RunTracking) => T | Promise<T>): Promise<T> {
+  return withLock(paths.lockDir, { identify: processIdentity }, async () => {
+    const { tracking, close } = trackingFor(paths)
+    try {
+      return await fn(tracking)
+    } finally {
+      close()
+    }
+  })
+}
+
+/** Launch calls this as each process starts, so cleanup can stop them even if launch dies before it finishes. */
+export async function recordProcess(paths: RunPaths, recorded: RecordedProcess): Promise<void> {
+  await withRunLock(paths, (tracking) => {
+    tracking.recordProcess(recorded)
+  })
+}
+
+/** Records a started Docker container and its daemon at once, so cleanup can remove it even if its starter dies. */
+export async function recordContainer(paths: RunPaths, recorded: PinnedContainer): Promise<void> {
+  await withRunLock(paths, (tracking) => {
+    tracking.recordContainer(recorded)
+  })
+}
+
+/** Removes a confirmed-removed container ID from `containers.json`. */
+export async function forgetContainer(paths: RunPaths, containerId: string): Promise<void> {
+  await withRunLock(paths, (tracking) => {
+    tracking.forgetContainers(new Set([containerId]))
+  })
+}
+
+/** Writes run.json under the run's lock, refusing once cleanup has removed the run. */
+export async function writeRunState(paths: RunPaths, state: RunState): Promise<void> {
+  await withRunLock(paths, (tracking) => {
+    tracking.writeRunState(state)
+  })
 }
 
 const PortSchema = z.object({ port: z.number().int().positive() })
@@ -403,11 +561,21 @@ type JsonRecord =
   | Faults
   | z.infer<typeof FakesRecordSchema>
 
+/** Writes through a sibling temp file and a rename, so readers see the old file or the new one, never half of one. */
 export function writeJson(file: string, value: JsonRecord): void {
-  mkdirSync(resolve(file, '..'), { recursive: true })
+  mkdirSync(dirname(file), { recursive: true })
   const tempFile = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`
-  writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`)
-  renameSync(tempFile, file)
+  try {
+    writeFileSync(tempFile, `${JSON.stringify(value, null, 2)}\n`)
+    renameSync(tempFile, file)
+  } catch (error) {
+    try {
+      rmSync(tempFile, { force: true })
+    } catch {
+      // Report the write's own error, not this one.
+    }
+    throw error
+  }
 }
 
 function git(root: string, args: string[]): string {
@@ -446,6 +614,34 @@ export function processStartTime(pid: number): string | null {
   } catch {
     return null
   }
+}
+
+const NoSuchProcessSchema = z.object({ code: z.literal('ESRCH') })
+const NotPermittedSchema = z.object({ code: z.literal('EPERM') })
+
+/**
+ * What a PID is now, for deciding whether a lock's holder is gone. Only the kernel saying no such process gives
+ * `exited`; a failed or empty `ps` for a PID that exists gives `unknown`, which never counts as gone.
+ */
+export function processIdentity(pid: number): ProcessIdentity {
+  try {
+    process.kill(pid, 0)
+  } catch (error) {
+    if (parseUnknown(NoSuchProcessSchema, error).isOk()) {
+      return { state: 'exited' }
+    }
+    if (parseUnknown(NotPermittedSchema, error).isErr()) {
+      return { state: 'unknown', detail: error instanceof Error ? error.message : String(error) }
+    }
+  }
+  const result = runCommandResult('ps', ['-o', 'lstart=', '-p', String(pid)], {
+    env: ChildEnv.with({ TZ: 'UTC', LC_ALL: 'C' }),
+  })
+  const started = result.stdout.trim()
+  if (result.error === null && result.status === 0 && started !== '') {
+    return { state: 'running', startedAt: started }
+  }
+  return { state: 'unknown', detail: `ps -p ${pid} gave no start time: ${dockerFailureDetail(result)}` }
 }
 
 /** True only for the exact process this run started, never another that reused its PID. */
@@ -688,9 +884,11 @@ export async function stopProcess(recorded: RecordedProcess): Promise<void> {
   console.log(`${recorded.name}: stopped PID ${recorded.pid}`)
 }
 
-export type DockerCommandRunner = (args: string[]) => CommandResult
+/** Runs one Docker CLI command: against `target` when given, else with the caller's own Docker settings. */
+export type DockerCommandRunner = (args: string[], target?: DockerTarget) => CommandResult
 
-const runDocker: DockerCommandRunner = (args) => runCommandResult('docker', args, { env: dockerChildEnv() })
+const runDocker: DockerCommandRunner = (args, target) =>
+  runCommandResult('docker', args, { env: target === undefined ? dockerChildEnv() : dockerChildEnvFor(target) })
 
 export type ContainerInspectResult =
   | { state: 'running' }
@@ -710,19 +908,176 @@ function dockerFailureDetail(result: CommandResult): string {
     : `docker exited with status ${result.status}`
 }
 
-const NO_SUCH_CONTAINER_RE = /no such container/i
-const NO_SUCH_OBJECT_RE = /no such (?:container|object)/i
+const succeeded = (result: CommandResult): boolean => result.error === null && result.status === 0
+
+const DOCKER_CONTEXT_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_.+-]*$/
+const DAEMON_ID_RE = /^[\w.:-]+$/
+const DockerContextInspectSchema = z
+  .array(
+    z.object({
+      Endpoints: z.object({ docker: z.object({ Host: z.string().min(1), SkipTLSVerify: z.boolean().optional() }) }),
+      TLSMaterial: z.record(z.string(), z.unknown()).nullish(),
+    }),
+  )
+  .length(1)
 
 /**
- * Inspects a single recorded Docker container by its full 64-hex ID, distinguishing stopped/absent containers
- * from Docker daemon or CLI unavailability.
+ * Why emulators can't use this Docker endpoint, or null when they can. Their ports are published on 127.0.0.1, which
+ * only a daemon on this machine can do, so only a unix socket, a named pipe or plain TCP on loopback qualifies. An
+ * endpoint with a user, query or fragment is refused for every protocol, and the message never repeats those parts,
+ * so they can't reach an error or a tracking file.
  */
-export function inspectContainer(containerId: string, docker: DockerCommandRunner = runDocker): ContainerInspectResult {
+export function dockerEndpointProblem(endpoint: string): string | null {
+  let url: URL
+  try {
+    url = new URL(endpoint)
+  } catch {
+    return 'The Docker endpoint is not a URL'
+  }
+  if (url.username !== '' || url.password !== '' || url.search !== '' || url.hash !== '') {
+    return `The ${url.protocol}// Docker endpoint carries a user, query or fragment; use a plain local socket or loopback address`
+  }
+  if (url.protocol === 'unix:' || url.protocol === 'npipe:') {
+    return null
+  }
+  if (url.protocol === 'tcp:' && LOOPBACK_HOSTS.has(url.hostname)) {
+    return null
+  }
+  return `Docker endpoint ${url.protocol}//${url.host} is not local; emulators need a daemon on this machine that can publish 127.0.0.1 ports`
+}
+
+type Checked<T> = { ok: true; value: T } | { ok: false; detail: string }
+
+function readDaemonId(result: CommandResult): Checked<string> {
+  if (!succeeded(result)) {
+    return { ok: false, detail: dockerFailureDetail(result) }
+  }
+  const id = result.stdout.trim()
+  return DAEMON_ID_RE.test(id)
+    ? { ok: true, value: id }
+    : { ok: false, detail: `unexpected docker info output: ${JSON.stringify(id)}` }
+}
+
+const INFO_ID = ['info', '--format', '{{.ID}}']
+
+/**
+ * The local Docker daemon the caller's shell selects now, resolved in the Docker CLI's order (DOCKER_HOST, then
+ * DOCKER_CONTEXT, then `docker context show`), with its engine ID. Refuses remote and TLS endpoints. Runners call
+ * this before creating a container and record the result with it; doctor and cleanup never do.
+ */
+export function captureDockerDaemon(
+  docker: DockerCommandRunner = runDocker,
+  selection: DockerSelection = callerDockerSelection(),
+): Result<DockerDaemon, string> {
+  let endpoint = selection.host
+  let context: string | undefined
+  if (endpoint === undefined) {
+    if (selection.context !== undefined) {
+      context = selection.context
+    } else {
+      const shown = docker(['context', 'show'])
+      if (!succeeded(shown)) {
+        return Err(`Could not read the current Docker context: ${dockerFailureDetail(shown)}`)
+      }
+      context = shown.stdout.trim()
+    }
+    if (!DOCKER_CONTEXT_NAME_RE.test(context)) {
+      return Err(`Docker context name ${JSON.stringify(context)} is not valid`)
+    }
+    const inspected = docker(['context', 'inspect', '--', context])
+    if (!succeeded(inspected)) {
+      return Err(`Could not inspect Docker context ${context}: ${dockerFailureDetail(inspected)}`)
+    }
+    let raw: unknown
+    try {
+      raw = JSON.parse(inspected.stdout)
+    } catch {
+      return Err(`docker context inspect ${context} did not print JSON`)
+    }
+    const parsed = parseUnknown(DockerContextInspectSchema, raw)
+    const entry = parsed.isOk() ? parsed.unwrap()[0] : undefined
+    if (entry === undefined) {
+      return Err(`docker context inspect ${context} printed an unexpected shape`)
+    }
+    if (Object.keys(entry.TLSMaterial ?? {}).length > 0 || entry.Endpoints.docker.SkipTLSVerify === true) {
+      return Err(
+        `Docker context ${context} uses TLS, so its daemon is not local; emulators need a daemon on this machine`,
+      )
+    }
+    endpoint = entry.Endpoints.docker.Host
+  }
+  const problem = dockerEndpointProblem(endpoint)
+  if (problem !== null) {
+    return Err(problem)
+  }
+  const target: DockerTarget = { endpoint }
+  if (context !== undefined) {
+    target.context = context
+  }
+  if (selection.config !== undefined) {
+    target.dockerConfig = selection.config
+  }
+  const id = readDaemonId(docker(INFO_ID, target))
+  if (!id.ok) {
+    return Err(`Could not read the Docker daemon's ID at ${endpoint}: ${id.detail}`)
+  }
+  return Ok({ daemonId: id.value, ...target })
+}
+
+function describeDaemon(daemon: DockerDaemon): string {
+  const where = [daemon.context !== undefined ? `context ${daemon.context}` : '', daemon.endpoint ?? ''].filter(Boolean)
+  return where.length > 0 ? where.join(' at ') : "the caller's Docker settings"
+}
+
+/** Null when the recorded daemon is the one answering at its endpoint now; otherwise why that can't be confirmed. */
+export function dockerDaemonProblem(daemon: DockerDaemon, docker: DockerCommandRunner = runDocker): string | null {
+  const id = readDaemonId(docker(INFO_ID, daemon))
+  if (!id.ok) {
+    return `cannot confirm Docker daemon ${daemon.daemonId} (${describeDaemon(daemon)}): ${id.detail}`
+  }
+  return id.value === daemon.daemonId
+    ? null
+    : `${describeDaemon(daemon)} now reaches Docker daemon ${id.value}, not ${daemon.daemonId}, which runs the container`
+}
+
+/**
+ * Asks the recorded endpoint for its daemon again after Docker reported a container absent, since the identity check
+ * and the command were separate connections. Null when the owner still answers; otherwise why absence proves nothing.
+ */
+function daemonChangedDuring(daemon: DockerDaemon, docker: DockerCommandRunner): string | null {
+  const problem = dockerDaemonProblem(daemon, docker)
+  return problem === null ? null : `Docker reported it absent, but then ${problem}`
+}
+
+/**
+ * True only when stderr is Docker's absence diagnostic for exactly this ID and nothing else, so a second error or
+ * another container's diagnostic never reads as "already gone".
+ */
+export function reportsOnlyAbsence(stderr: string, containerId: string): boolean {
+  const match = /^(?:Error response from daemon: |Error: )?No such (?:container|object): ([0-9a-f]{64})$/.exec(
+    stderr.trim(),
+  )
+  return match?.[1] === containerId
+}
+
+/**
+ * Inspects one recorded container by its full ID on the daemon its record names, after confirming that daemon is the
+ * one answering. Absence counts as stopped only on a confirmed daemon; a record without a daemon can't confirm it.
+ */
+export function inspectContainer(
+  containerId: string,
+  daemon: DockerDaemon | undefined,
+  docker: DockerCommandRunner = runDocker,
+): ContainerInspectResult {
   if (!isValidContainerId(containerId)) {
     return { state: 'unavailable', detail: `invalid container ID: ${containerId}` }
   }
-  const result = docker(['inspect', '--type', 'container', '-f', '{{.State.Running}}', '--', containerId])
-  if (result.error === null && result.status === 0) {
+  const problem = daemon === undefined ? null : dockerDaemonProblem(daemon, docker)
+  if (problem !== null) {
+    return { state: 'unavailable', detail: problem }
+  }
+  const result = docker(['inspect', '--type', 'container', '-f', '{{.State.Running}}', '--', containerId], daemon)
+  if (succeeded(result)) {
     const out = result.stdout.trim()
     if (out === 'true') {
       return { state: 'running' }
@@ -732,15 +1087,17 @@ export function inspectContainer(containerId: string, docker: DockerCommandRunne
     }
     return { state: 'unavailable', detail: `unexpected docker inspect output: ${JSON.stringify(out)}` }
   }
-  if (result.error === null && NO_SUCH_OBJECT_RE.test(result.stderr)) {
-    return { state: 'stopped' }
+  if (result.error === null && reportsOnlyAbsence(result.stderr, containerId)) {
+    if (daemon === undefined) {
+      return {
+        state: 'unavailable',
+        detail: `no daemon recorded for ${containerId}; it may be running on another daemon`,
+      }
+    }
+    const changed = daemonChangedDuring(daemon, docker)
+    return changed === null ? { state: 'stopped' } : { state: 'unavailable', detail: changed }
   }
   return { state: 'unavailable', detail: dockerFailureDetail(result) }
-}
-
-/** True only when Docker confirms this container ID is currently running. */
-export function isContainerRunning(containerId: string, docker: DockerCommandRunner = runDocker): boolean {
-  return inspectContainer(containerId, docker).state === 'running'
 }
 
 export interface ContainerRemoveResult {
@@ -750,31 +1107,91 @@ export interface ContainerRemoveResult {
 }
 
 /**
- * Force-removes a single recorded Docker container (`docker rm -f -- <containerId>`).
- * Only exit 0 or Docker's "No such container" stderr counts as confirmed removal; real Docker errors return
- * `removed: false` with stderr/error detail so callers keep the record and exit nonzero.
+ * Force-removes one recorded container (`docker rm -f -- <containerId>`) on the daemon its record names, after
+ * confirming that daemon is the one answering. Counts as removed only when Docker echoes the ID, or reports exactly
+ * this ID absent on the confirmed daemon. Anything else, including a different daemon now behind the same socket,
+ * returns `removed: false`, so callers keep the record and exit nonzero.
  */
-export function removeContainer(containerId: string, docker: DockerCommandRunner = runDocker): ContainerRemoveResult {
+export function removeContainer(
+  containerId: string,
+  daemon: DockerDaemon | undefined,
+  docker: DockerCommandRunner = runDocker,
+): ContainerRemoveResult {
   if (!isValidContainerId(containerId)) {
     return { containerId, removed: false, detail: `refusing invalid container ID: ${containerId}` }
   }
-  const result = docker(['rm', '-f', '--', containerId])
-  if (result.error === null && result.status === 0) {
+  const problem = daemon === undefined ? null : dockerDaemonProblem(daemon, docker)
+  if (problem !== null) {
+    return { containerId, removed: false, detail: `kept container ${containerId}: ${problem}` }
+  }
+  const result = docker(['rm', '-f', '--', containerId], daemon)
+  const stdout = result.stdout.trim()
+  if (succeeded(result) && stdout === containerId) {
     return { containerId, removed: true, detail: `removed container ${containerId}` }
   }
-  if (result.error === null && NO_SUCH_CONTAINER_RE.test(result.stderr)) {
-    return { containerId, removed: true, detail: `container ${containerId} already absent` }
+  // `rm -f` exits 0 for a missing ID, silently on current CLIs and with the diagnostic on older ones.
+  const absent =
+    result.error === null &&
+    stdout === '' &&
+    (result.stderr.trim() === '' ? result.status === 0 : reportsOnlyAbsence(result.stderr, containerId))
+  if (absent && daemon !== undefined) {
+    const changed = daemonChangedDuring(daemon, docker)
+    return changed === null
+      ? { containerId, removed: true, detail: `container ${containerId} already absent from ${daemon.daemonId}` }
+      : { containerId, removed: false, detail: `kept container ${containerId}: ${changed}` }
+  }
+  if (absent) {
+    return {
+      containerId,
+      removed: false,
+      detail: `kept container ${containerId}: the current Docker daemon has no such container, but its record names no daemon, so it may still run on another one`,
+    }
   }
   return {
     containerId,
     removed: false,
-    detail: `could not remove container ${containerId}: ${dockerFailureDetail(result)}`,
+    detail: `could not remove container ${containerId}: ${succeeded(result) ? `unexpected docker rm output: ${JSON.stringify(stdout)}` : dockerFailureDetail(result)}`,
   }
+}
+
+export interface TrackedContainer {
+  name: string
+  containerId: string
+  daemon: DockerDaemon | undefined
+}
+
+/**
+ * Every recorded container once, keyed by ID: containers.json first, then run.json emulators missing from it. A
+ * record's daemon comes from containers.json, or from the emulator registration when containers.json lacks one.
+ */
+export function trackContainers(
+  recorded: readonly RecordedContainer[],
+  emulators: readonly EmulatorState[],
+): Map<string, TrackedContainer> {
+  const tracked = new Map<string, TrackedContainer>()
+  for (const entry of recorded) {
+    if (!tracked.has(entry.containerId)) {
+      tracked.set(entry.containerId, { name: entry.name, containerId: entry.containerId, daemon: entry.daemon })
+    }
+  }
+  for (const emulator of emulators) {
+    const existing = tracked.get(emulator.containerId)
+    if (existing === undefined) {
+      tracked.set(emulator.containerId, {
+        name: `emulator:${emulator.device}`,
+        containerId: emulator.containerId,
+        daemon: emulator.daemon,
+      })
+    } else {
+      existing.daemon ??= emulator.daemon
+    }
+  }
+  return tracked
 }
 
 export interface CleanupDeps {
   stopProcess?: (recorded: RecordedProcess) => Promise<void>
-  removeContainer?: (containerId: string) => ContainerRemoveResult
+  removeContainer?: (containerId: string, daemon: DockerDaemon | undefined) => ContainerRemoveResult
   evidenceRoot?: string
   log?: (line: string) => void
 }
@@ -789,12 +1206,16 @@ export interface CleanupSummary {
 }
 
 /**
- * Stops every process group recorded for this run (including emulator bridge processes), runs
- * `docker rm -f -- <containerId>` for every recorded container, keeps logs under `verify-output/<run-id>/logs/`,
- * and deletes the run's scratch folder only after every recorded container is confirmed removed and no tracking file
- * failed to parse.
+ * Holding the run's lock, stops every process group recorded for this run (including emulator bridges), removes
+ * every recorded container on its own daemon, keeps logs under `verify-output/<run-id>/logs/`, and deletes the run's
+ * scratch folder. An invalid run.json doesn't block that: containers.json and processes.json, written first, are the
+ * journal. The folder stays, and the summary fails, while a container isn't confirmed removed or a journal is invalid.
  */
 export async function cleanupRunResources(paths: RunPaths, deps: CleanupDeps = {}): Promise<CleanupSummary> {
+  return withRunLock(paths, async (tracking) => cleanupLocked(paths, tracking, deps))
+}
+
+async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: CleanupDeps): Promise<CleanupSummary> {
   const stop = deps.stopProcess ?? stopProcess
   const remove = deps.removeContainer ?? removeContainer
   const evidenceRoot = deps.evidenceRoot ?? EVIDENCE_ROOT
@@ -802,59 +1223,50 @@ export async function cleanupRunResources(paths: RunPaths, deps: CleanupDeps = {
 
   const stateResult = readRunState(paths)
   const containersFile = readContainersFile(paths)
+  const processesFile = readProcessesFile(paths)
   const errors: string[] = []
   if (stateResult.status === 'invalid') {
-    errors.push(`${stateResult.file} does not parse; keeping ${paths.runDir}`)
+    log(`${invalidMessage(stateResult)}; cleaning up from containers.json and processes.json`)
   }
-  if (containersFile.status === 'invalid') {
-    errors.push(`${containersFile.file} does not parse; keeping ${paths.runDir}`)
+  for (const journal of [containersFile, processesFile]) {
+    if (journal.status === 'invalid') {
+      errors.push(`${invalidMessage(journal)}; keeping ${paths.runDir}`)
+    }
   }
   const state = stateResult.status === 'ok' ? stateResult.value : null
-  const recordedContainers = containersFile.status === 'ok' ? containersFile.value : []
+  const emulators = state?.emulators ?? []
 
   const processes: RecordedProcess[] = []
   const seenProcesses = new Set<string>()
-  const addProcess = (recorded: RecordedProcess): void => {
-    const key = `${recorded.pid}:${recorded.startedAt}`
+  const addProcess = ({ name, pid, startedAt }: RecordedProcess): void => {
+    const key = `${pid}:${startedAt}`
     if (!seenProcesses.has(key)) {
       seenProcesses.add(key)
-      processes.push(recorded)
+      processes.push({ name, pid, startedAt })
     }
   }
-  for (const recorded of readProcesses(paths)) {
+  for (const recorded of processesFile.status === 'ok' ? processesFile.value : []) {
     addProcess(recorded)
   }
-  for (const emulator of state?.emulators ?? []) {
+  // Also in processes.json, unless it is corrupt: then these are the processes cleanup can still find.
+  if (state !== null) {
+    addProcess(state.fakes)
+    addProcess(state.sentinel)
+  }
+  for (const emulator of emulators) {
     if (emulator.bridge !== undefined) {
-      addProcess({
-        name: emulator.bridge.name,
-        pid: emulator.bridge.pid,
-        startedAt: emulator.bridge.startedAt,
-      })
+      addProcess(emulator.bridge)
     }
   }
   for (const recorded of processes) {
     await stop(recorded)
   }
 
-  const containers: Array<{ name: string; containerId: string }> = []
-  const seenContainers = new Set<string>()
-  const addContainer = (name: string, containerId: string): void => {
-    if (!seenContainers.has(containerId)) {
-      seenContainers.add(containerId)
-      containers.push({ name, containerId })
-    }
-  }
-  for (const recorded of recordedContainers) {
-    addContainer(recorded.name, recorded.containerId)
-  }
-  for (const emulator of state?.emulators ?? []) {
-    addContainer(`emulator:${emulator.device}`, emulator.containerId)
-  }
+  const tracked = trackContainers(containersFile.status === 'ok' ? containersFile.value : [], emulators)
   const removedContainers: ContainerRemoveResult[] = []
   const confirmedRemovedIds = new Set<string>()
-  for (const { name, containerId } of containers) {
-    const result = remove(containerId)
+  for (const { name, containerId, daemon } of tracked.values()) {
+    const result = remove(containerId, daemon)
     removedContainers.push(result)
     log(`${name}: ${result.detail}`)
     if (result.removed) {
@@ -874,40 +1286,22 @@ export async function cleanupRunResources(paths: RunPaths, deps: CleanupDeps = {
   if (errors.length > 0) {
     if (confirmedRemovedIds.size > 0) {
       if (containersFile.status === 'ok') {
-        writeJson(
-          paths.containersFile,
-          containersFile.value.filter((entry) => !confirmedRemovedIds.has(entry.containerId)),
-        )
+        tracking.forgetContainers(confirmedRemovedIds)
       }
       if (state?.emulators !== undefined) {
-        writeJson(paths.stateFile, {
+        tracking.writeRunState({
           ...state,
           emulators: state.emulators.filter((entry) => !confirmedRemovedIds.has(entry.containerId)),
         })
       }
     }
     log(`Kept ${paths.runDir} because cleanup had errors`)
-    return {
-      ok: false,
-      errors,
-      stoppedProcesses: processes,
-      removedContainers,
-      keptLogsDir,
-      removedRunDir: false,
-    }
+    return { ok: false, errors, stoppedProcesses: processes, removedContainers, keptLogsDir, removedRunDir: false }
   }
 
   rmSync(paths.runDir, { recursive: true, force: true })
   log(`Removed ${paths.runDir}`)
-
-  return {
-    ok: true,
-    errors: [],
-    stoppedProcesses: processes,
-    removedContainers,
-    keptLogsDir,
-    removedRunDir: true,
-  }
+  return { ok: true, errors: [], stoppedProcesses: processes, removedContainers, keptLogsDir, removedRunDir: true }
 }
 
 /** True when the run's own Sentinel is alive and holds its port, so its URL reaches this run and no other. */

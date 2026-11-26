@@ -13,7 +13,7 @@ import {
   runPaths,
   selectRunId,
   wait,
-  writeJson,
+  withRunLock,
 } from './run'
 
 // Seeds a launched run through Sentinel's API, the calls the web app makes. Running it again on a seeded run does
@@ -119,11 +119,18 @@ if (statement.status !== 'completed') {
   fail(`The seeded statement ended as ${statement.status}: ${JSON.stringify(statement).slice(0, 500)}`)
 }
 
-writeJson(resolveSeedFile(paths, state), {
+const marker = {
   seededAt: new Date().toISOString(),
   accounts: { verified: created.claim.id, ...watchIds },
   statements: [statement.id],
-})
+}
+try {
+  await withRunLock(paths, (tracking) => {
+    tracking.writeSeedMarker(resolveSeedFile(paths, state), marker)
+  })
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error))
+}
 console.log(`Seeded run ${paths.runId}:
   ${verified.displayName} (verified) ${created.claim.id}
   ${SEED_ACCOUNTS.watchSegwit.displayName} (watch-only) ${watchIds.watchSegwit}

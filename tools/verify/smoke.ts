@@ -7,7 +7,7 @@ import { z } from 'zod'
 import { readArgs } from './args'
 import { VERIFY_PIN, sentinelClient, signIn } from './client'
 import { extractPdfText } from './pdf-text'
-import { ChildEnv, runAsync } from './process'
+import { ChildEnv, runAsync, verifyHelperEnv } from './process'
 import { type TorMode, classifyTorOutcome } from './rules'
 import {
   EVIDENCE_ROOT,
@@ -126,7 +126,7 @@ async function openFilesInDirs(leaderPid: number, dirs: string[]): Promise<strin
 async function runHelper(args: string[], timeoutMs = HELPER_TIMEOUT_MS): Promise<{ ok: boolean; output: string }> {
   const result = await runAsync(VERIFY_BIN, args, {
     cwd: REPO_ROOT,
-    env: ChildEnv.with(),
+    env: verifyHelperEnv(),
     timeoutMs,
   })
   const output = [result.stdout.trim(), result.stderr.trim()].filter((part) => part.length > 0).join('\n')

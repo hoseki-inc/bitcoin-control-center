@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import { tmpdir } from 'node:os'
 import { describe, it, vi } from 'vitest'
-import { ChildEnv, dockerChildEnv, runCommandResult } from './process'
+import {
+  ChildEnv,
+  callerDockerSelection,
+  dockerChildEnv,
+  dockerChildEnvFor,
+  runCommandResult,
+  verifyHelperEnv,
+} from './process'
 
 describe('ChildEnv', () => {
   it('passes only allowlisted variables from the caller, plus the ones set on purpose', () => {
@@ -14,6 +21,7 @@ describe('ChildEnv', () => {
       'DOCKER_HOST',
       'DOCKER_CONTEXT',
       'DOCKER_CONFIG',
+      'BCC_VERIFY_CACHE_DIR',
     ] as const
     try {
       for (const name of names) {
@@ -43,6 +51,82 @@ describe('ChildEnv', () => {
       assert.equal(vars['DOCKER_CONTEXT'], 'colima')
       assert.equal(vars['DOCKER_CONFIG'], '/tmp/custom-docker-config')
       assert.equal('SENTINEL_PIN' in vars, false)
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+})
+
+describe('Docker environments', () => {
+  it('pins Docker calls to the recorded endpoint and config, whatever the caller selects now', () => {
+    try {
+      vi.stubEnv('DOCKER_HOST', 'unix:///caller.sock')
+      vi.stubEnv('DOCKER_CONTEXT', 'local-b')
+      vi.stubEnv('DOCKER_CONFIG', '/caller-config')
+      vi.stubEnv('SENTINEL_PIN', 'secret')
+
+      const pinned = dockerChildEnvFor({
+        endpoint: 'unix:///owner.sock',
+        context: 'local-a',
+        dockerConfig: '/owner',
+      }).vars
+      assert.equal(pinned['DOCKER_HOST'], 'unix:///owner.sock')
+      assert.equal(pinned['DOCKER_CONFIG'], '/owner')
+      assert.equal('DOCKER_CONTEXT' in pinned, false)
+      assert.equal('SENTINEL_PIN' in pinned, false)
+
+      // A record made with the default config keeps it, rather than taking the caller's.
+      const defaultConfig = dockerChildEnvFor({ endpoint: 'unix:///owner.sock' }).vars
+      assert.equal('DOCKER_CONFIG' in defaultConfig, false)
+
+      const byContext = dockerChildEnvFor({ context: 'local-a' }).vars
+      assert.equal(byContext['DOCKER_CONTEXT'], 'local-a')
+      assert.equal('DOCKER_HOST' in byContext, false)
+
+      assert.deepEqual(dockerChildEnvFor({}).vars, dockerChildEnv().vars)
+      // A record naming only its config keeps that config with the caller's other settings.
+      const configOnly = dockerChildEnvFor({ dockerConfig: '/owner' }).vars
+      assert.equal(configOnly['DOCKER_CONFIG'], '/owner')
+      assert.equal(configOnly['DOCKER_HOST'], 'unix:///caller.sock')
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it("reads the caller's Docker selection, ignoring empty values as the Docker CLI does", () => {
+    try {
+      vi.stubEnv('DOCKER_HOST', '  ')
+      vi.stubEnv('DOCKER_CONTEXT', ' colima ')
+      vi.stubEnv('DOCKER_CONFIG', '')
+      assert.deepEqual(callerDockerSelection(), { context: 'colima' })
+      vi.stubEnv('DOCKER_HOST', 'unix:///custom.sock')
+      vi.stubEnv('DOCKER_CONFIG', '/cfg')
+      assert.deepEqual(callerDockerSelection(), { host: 'unix:///custom.sock', context: 'colima', config: '/cfg' })
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('gives nested helper calls the cache root and Docker selection, and nothing else from the caller', () => {
+    try {
+      vi.stubEnv('BCC_VERIFY_CACHE_DIR', '/cache-root')
+      vi.stubEnv('DOCKER_HOST', 'unix:///tmp/colima.sock')
+      vi.stubEnv('DOCKER_CONTEXT', 'colima')
+      vi.stubEnv('DOCKER_CONFIG', '/tmp/colima-config')
+      vi.stubEnv('SENTINEL_PIN', 'secret')
+      vi.stubEnv('GIT_DIR', '/elsewhere')
+      vi.stubEnv('PATH', '/caller/bin')
+      const { vars } = verifyHelperEnv()
+      assert.equal(vars['BCC_VERIFY_CACHE_DIR'], '/cache-root')
+      assert.equal(vars['DOCKER_HOST'], 'unix:///tmp/colima.sock')
+      assert.equal(vars['DOCKER_CONTEXT'], 'colima')
+      assert.equal(vars['DOCKER_CONFIG'], '/tmp/colima-config')
+      assert.equal(vars['PATH'], '/caller/bin')
+      assert.equal(vars['TMPDIR'], tmpdir())
+      assert.equal('SENTINEL_PIN' in vars, false)
+      assert.equal('GIT_DIR' in vars, false)
+      // Sentinel, fakes and apps still start from the base allowlist.
+      assert.equal('BCC_VERIFY_CACHE_DIR' in ChildEnv.with().vars, false)
     } finally {
       vi.unstubAllEnvs()
     }

@@ -9,6 +9,7 @@ import {
   type RunState,
   buildStamp,
   inspectContainer,
+  invalidMessage,
   isLoopbackUrlForPort,
   isOurProcess,
   isPathInside,
@@ -21,6 +22,7 @@ import {
   runPaths,
   selectRunId,
   servesWebApp,
+  trackContainers,
 } from './run'
 
 // Read-only: is this run worth driving? Every check runs, then the exit code is 1 if any failed.
@@ -192,10 +194,11 @@ async function checkEmulators(state: RunState | null): Promise<void> {
   }
   const recordedContainers = containersFile.status === 'ok' ? containersFile.value : []
   const emulators = state?.emulators ?? []
+  const tracked = trackContainers(recordedContainers, emulators)
 
   const probes: EmulatorProbe[] = []
   for (const emulator of emulators) {
-    const containerState = inspectContainer(emulator.containerId)
+    const containerState = inspectContainer(emulator.containerId, tracked.get(emulator.containerId)?.daemon)
     let healthOk = false
     let healthDetail = 'skipped (container is not running)'
     if (containerState.state === 'running') {
@@ -242,7 +245,7 @@ async function checkEmulators(state: RunState | null): Promise<void> {
     .map((recorded) => ({
       name: recorded.name,
       containerId: recorded.containerId,
-      containerState: inspectContainer(recorded.containerId),
+      containerState: inspectContainer(recorded.containerId, recorded.daemon),
     }))
 
   const [ok, detail] = checkEmulatorsRule(probes, extraContainers)
@@ -253,7 +256,7 @@ const state = readRunState(paths)
 if (state.status === 'missing') {
   check('run', false, `No run state at ${paths.stateFile}. Run ${HELPER} launch.`)
 } else if (state.status === 'invalid') {
-  check('run', false, `${state.file} does not parse. Clean up and relaunch.`)
+  check('run', false, `${invalidMessage(state)}. Clean up and relaunch.`)
 } else {
   check(
     'run',

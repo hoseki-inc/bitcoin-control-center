@@ -34,7 +34,7 @@ import {
   stopProcess,
   verifyCapableBundleProblem,
   wait,
-  writeJson,
+  writeRunState,
 } from './run'
 
 // Starts Control Center for verification: the web app built into the run folder, served by Sentinel from source
@@ -154,7 +154,7 @@ async function startProcess(
   }
   const recorded = { name, pid, startedAt }
   started.push(recorded)
-  recordProcess(paths, recorded)
+  await recordProcess(paths, recorded)
   return recorded
 }
 
@@ -366,7 +366,7 @@ if (electron) {
     if (releaseTag !== undefined) {
       state.releaseTag = releaseTag
     }
-    writeJson(paths.stateFile, state)
+    await writeRunState(paths, state)
     console.log(`
 Run ${runId} is ready (packaged macOS Electron)
   bundle:    ${describeBundle(bundle, build.commit)}
@@ -469,7 +469,7 @@ try {
     sentinel: { ...sentinelProcess, port },
     fakes: { ...fakesProcess, ...fakes },
   }
-  writeJson(paths.stateFile, state)
+  await writeRunState(paths, state)
   console.log(`
 Run ${runId} is ready at ${url}${fresh ? ' (fresh: no seed)' : ''}${desktop ? ' (desktop)' : ''}${pin ? ` (PIN ${VERIFY_PIN})` : ''}
   data:  ${paths.dataDir}
