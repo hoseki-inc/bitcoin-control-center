@@ -120,6 +120,25 @@ describe('newRecord', () => {
     assert.ok(parsed.isOk())
     assert.deepEqual(parsed.unwrap(), record)
   })
+
+  it('refuses an attempt whose recipe would name a folder outside the run, such as ../x', () => {
+    const attempt = {
+      recipe: 'home-summary',
+      number: 1,
+      feature: 'home-summary',
+      proves: [],
+      begunAt: 't',
+      sentinelStartedAt: 't',
+      abandonedAt: null,
+      outcome: null,
+    }
+    const record = recordFor(runState())
+    const read = (recipe: string): boolean =>
+      parseUnknown(RecordSchema, { ...record, attempts: [{ ...attempt, recipe }] }).isOk()
+    assert.equal(read('home-summary'), true)
+    assert.equal(read('../x'), false)
+    assert.equal(read('a/b'), false)
+  })
 })
 
 describe('RecordSchema', () => {

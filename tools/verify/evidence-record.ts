@@ -25,7 +25,8 @@ export const RecordSchema = z.object({
   versions: z.record(z.string(), z.string()),
   attempts: z.array(
     z.object({
-      recipe: z.string(),
+      /** A recipe ID names folders, so it is letters, digits, - and _ only, as `checkId` requires. */
+      recipe: z.string().regex(/^[\w-]+$/),
       number: z.number().int().positive(),
       feature: z.string(),
       proves: z.array(z.string()),

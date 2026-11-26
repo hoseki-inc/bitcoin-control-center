@@ -18,7 +18,9 @@ import { blockTime, currentPrice, indexChain, tipHeight } from './chain'
 import { ChildEnv, type CommandResult, runAsync, runCommand } from './process'
 import {
   type CleanupDeps,
+  type ContainerRemoveResult,
   ContainerSchema,
+  type CreateContainerSpec,
   type DockerCommandRunner,
   type DockerDaemon,
   type EmulatorState,
@@ -27,12 +29,14 @@ import {
   NO_FAULTS,
   type PinnedContainer,
   REPO_ROOT,
+  type RecordedContainer,
   type RecordedProcess,
   type RunPaths,
   type RunState,
   buildStamp,
   captureDockerDaemon,
   cleanupRunResources,
+  createTrackedContainer,
   forgetContainer,
   inspectContainer,
   invalidMessage,
@@ -47,15 +51,18 @@ import {
   readBundleProvenance,
   readContainers,
   readContainersFile,
+  readIntentsFile,
   readProcesses,
   readRunState,
   recordContainer,
   recordProcess,
   removeContainer,
+  removeRunContainers,
   reportsOnlyAbsence,
   resolveDataDir,
   resolveSeedFile,
   runPaths,
+  trackContainers,
   verifyCapableBundleProblem,
   wait,
   withRunLock,
@@ -382,6 +389,7 @@ function tempPaths(root: string, runId = 'container-test'): ReturnType<typeof ru
     stateFile: join(runDir, 'run.json'),
     processesFile: join(runDir, 'processes.json'),
     containersFile: join(runDir, 'containers.json'),
+    intentsFile: join(runDir, 'container-intents.json'),
     fakesFile: join(runDir, 'fakes.json'),
     seedFile: join(dataDir, 'verify-seed.json'),
     requestLog: join(runDir, 'logs', 'fake-requests.log'),
@@ -1454,5 +1462,343 @@ describe('writeJson', () => {
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
+  })
+})
+
+describe('daemon conflicts and interrupted creates', { timeout: 15_000 }, () => {
+  const CID = 'd'.repeat(64)
+  const DAEMON_B: DockerDaemon = { daemonId: 'daemon-b', context: 'local-b', endpoint: 'unix:///fake/b.sock' }
+  const record = (daemon?: DockerDaemon): RecordedContainer => {
+    const entry: RecordedContainer = {
+      name: 'emulator:ledger',
+      containerId: CID,
+      image: 'speculos:test',
+      startedAt: 't',
+    }
+    if (daemon !== undefined) {
+      entry.daemon = daemon
+    }
+    return entry
+  }
+  const ledger = (daemon?: DockerDaemon): EmulatorState => {
+    const entry: EmulatorState = {
+      device: 'ledger',
+      model: 'flex',
+      seed: 'primary',
+      containerId: CID,
+      apiPort: 15000,
+      healthUrl: 'http://127.0.0.1:15000/events',
+    }
+    if (daemon !== undefined) {
+      entry.daemon = daemon
+    }
+    return entry
+  }
+
+  it('marks a container whose two records name different daemons, and fills a missing daemon from the other', () => {
+    assert.match(
+      trackContainers([record(DAEMON_A)], [ledger(DAEMON_B)]).get(CID)?.conflict ?? '',
+      /different Docker daemons.*daemon-a.*daemon-b/,
+    )
+    // Same ID, other endpoint: still a conflict, so no command trusts either record.
+    const moved = { ...DAEMON_A, endpoint: 'unix:///fake/elsewhere.sock' }
+    assert.notEqual(trackContainers([record(DAEMON_A)], [ledger(moved)]).get(CID)?.conflict ?? null, null)
+    assert.equal(trackContainers([record(DAEMON_A)], [ledger(DAEMON_A)]).get(CID)?.conflict, null)
+    const filled = trackContainers([record()], [ledger(DAEMON_B)]).get(CID)
+    assert.deepEqual([filled?.daemon, filled?.conflict], [DAEMON_B, null])
+    assert.equal(trackContainers([record(DAEMON_A)], [ledger()]).get(CID)?.daemon, DAEMON_A)
+  })
+
+  it('never asks a daemon to inspect or remove a conflicting container, through stop and cleanup', async () => {
+    await withRun('verify-conflict-', 'conflict-run', async (paths, root) => {
+      await recordContainer(paths, { ...record(DAEMON_A), daemon: DAEMON_A })
+      await recordProcess(paths, { name: 'sentinel', pid: 1003, startedAt: 't3' })
+      writeJson(paths.stateFile, runStateFixture(paths.runId, [ledger(DAEMON_B)]))
+      const asked: string[] = []
+      const remove = (containerId: string): ContainerRemoveResult => {
+        asked.push(containerId)
+        return { containerId, removed: true, detail: 'removed' }
+      }
+      const stop = await withRunLock(paths, (tracking) =>
+        removeRunContainers(paths, tracking, { select: (name) => name === 'emulator:ledger', remove, log: () => {} }),
+      )
+      assert.match(stop.errors.join('\n'), /different Docker daemons/)
+      const summary = await cleanupRunResources(paths, { ...noopCleanup(root), removeContainer: remove })
+      assert.equal(summary.ok, false)
+      assert.match(summary.errors.join('\n'), /kept container .*different Docker daemons/)
+      assert.deepEqual(asked, [])
+      assert.equal(existsSync(paths.runDir), true)
+      assert.equal(readContainers(paths).length, 1)
+    })
+  })
+
+  it('keeps the run folder when run.json is invalid and processes.json is missing, since no PID can be checked', async () => {
+    await withRun('verify-blind-cleanup-', 'blind-run', async (paths, root) => {
+      writeFileSync(paths.stateFile, '{"runId": ')
+      await recordContainer(paths, { ...record(DAEMON_A), daemon: DAEMON_A })
+      const removed: string[] = []
+      const summary = await cleanupRunResources(paths, {
+        ...noopCleanup(root),
+        removeContainer: (containerId) => {
+          removed.push(containerId)
+          return { containerId, removed: true, detail: 'removed' }
+        },
+      })
+      assert.equal(summary.ok, false)
+      assert.match(
+        summary.errors.join('\n'),
+        /processes\.json is missing, so nothing says which processes this run started/,
+      )
+      assert.equal(existsSync(paths.runDir), true)
+      assert.equal(summary.removedRunDir, false)
+      // Containers it can confirm are still removed and forgotten.
+      assert.deepEqual(removed, [CID])
+      assert.deepEqual(readContainers(paths), [])
+    })
+  })
+
+  /** A Docker double that knows containers by ID and name, as `docker inspect -f {{.Id}} -- <name>` sees them. */
+  interface NamedDocker {
+    runner: DockerCommandRunner
+    calls: string[]
+  }
+  function namedDocker(names: Map<string, string>, reachable = true): NamedDocker {
+    const calls: string[] = []
+    const runner: DockerCommandRunner = (args) => {
+      calls.push(args.join(' '))
+      if (!reachable) {
+        return cmdFail('Cannot connect to the Docker daemon')
+      }
+      if (args[0] === 'info') {
+        return cmdOk('daemon-a\n')
+      }
+      if (args[0] === 'inspect') {
+        const id = names.get(args.at(-1) ?? '')
+        return id === undefined ? cmdFail(`Error: No such container: ${args.at(-1) ?? ''}`) : cmdOk(`${id}\n`)
+      }
+      if (args[0] === 'rm') {
+        return cmdOk(`${args.at(-1) ?? ''}\n`)
+      }
+      if (args[0] === 'create') {
+        return cmdFail('killed before it could say')
+      }
+      return cmdFail(`unexpected ${args.join(' ')}`, 99)
+    }
+    return { runner, calls }
+  }
+
+  it('removes a container whose run was cleaned up while Docker was creating it', async () => {
+    await withRun('verify-intent-race-', 'race-run', async (paths) => {
+      await recordProcess(paths, { name: 'sentinel', pid: 1003, startedAt: 't3' })
+      const asked: string[] = []
+      const created = await createTrackedContainer(
+        paths,
+        { name: 'emulator:ledger', role: 'ledger', image: 'speculos:test', daemon: DAEMON_A, options: [], command: [] },
+        () => null,
+        (args) => {
+          asked.push(args.join(' '))
+          if (args[0] === 'create') {
+            // Cleanup takes the lock and removes the run before the cidfile is written; Docker still echoes the ID.
+            rmSync(paths.runDir, { recursive: true, force: true })
+            return cmdOk(`${CID}\n`)
+          }
+          return args[0] === 'rm' ? cmdOk(`${CID}\n`) : cmdOk('daemon-a\n')
+        },
+      )
+      assert.match(
+        created.unwrapErr() ?? '',
+        /was cleaned up .*refusing to write containers\.json; removed container d{64}/,
+      )
+      assert.ok(asked.includes(`rm -f -- ${CID}`))
+      assert.equal(existsSync(paths.runDir), false)
+    })
+  })
+
+  it('journals a create before Docker runs it, so cleanup finds a container whose starter died before recording it', async () => {
+    await withRun('verify-intent-', 'intent-run', async (paths, root) => {
+      await recordProcess(paths, { name: 'sentinel', pid: 1003, startedAt: 't3' })
+      let journaledFirst = false
+      let name = ''
+      // The double creates the container, writes the cidfile, then the CLI "dies" with a failure.
+      const created = await createTrackedContainer(
+        paths,
+        { name: 'emulator:ledger', role: 'ledger', image: 'speculos:test', daemon: DAEMON_A, options: [], command: [] },
+        () => null,
+        (args) => {
+          if (args[0] === 'create') {
+            const intents = readIntentsFile(paths)
+            journaledFirst = intents.status === 'ok' && intents.value.length === 1
+            name = args[args.indexOf('--name') + 1] ?? ''
+            writeFileSync(args[args.indexOf('--cidfile') + 1] ?? '', CID)
+            return cmdFail('interrupted')
+          }
+          // The rollback can't reach Docker either, so the record is what cleanup has to go on.
+          return args[0] === 'rm' ? cmdFail('Cannot connect to the Docker daemon') : cmdOk('daemon-a\n')
+        },
+      )
+      assert.equal(journaledFirst, true)
+      assert.match(name, /^bcc-verify-intent-run-ledger-[0-9a-f]{8}$/)
+      assert.match(created.unwrapErr() ?? '', /after creating d{64}; .*it stays recorded, so run .* cleanup/)
+      assert.deepEqual(
+        readContainers(paths).map((c) => [c.containerId, c.daemon]),
+        [[CID, DAEMON_A]],
+      )
+
+      // An intent whose cidfile never got written is resolved by its unique name instead.
+      const other = 'e'.repeat(64)
+      const orphanName = 'bcc-verify-intent-run-elf-0badc0de'
+      const goneName = 'bcc-verify-intent-run-elf-00000000'
+      writeJson(paths.intentsFile, [
+        {
+          name: 'builder:ledger-elf',
+          containerName: orphanName,
+          image: 'builder:test',
+          startedAt: 't',
+          daemon: DAEMON_A,
+        },
+        {
+          name: 'builder:ledger-elf',
+          containerName: goneName,
+          image: 'builder:test',
+          startedAt: 't',
+          daemon: DAEMON_A,
+        },
+      ])
+      const down = await cleanupRunResources(paths, {
+        ...noopCleanup(root),
+        docker: namedDocker(new Map(), false).runner,
+        removeContainer: (id) => ({ containerId: id, removed: false, detail: 'Docker down' }),
+      })
+      assert.equal(down.ok, false)
+      assert.match(down.errors.join('\n'), /cannot tell whether bcc-verify-intent-run-elf-0badc0de was created/)
+      const kept = readIntentsFile(paths)
+      assert.deepEqual(kept.status === 'ok' ? kept.value.map((intent) => intent.containerName) : [], [
+        orphanName,
+        goneName,
+      ])
+
+      const docker = namedDocker(new Map([[orphanName, other]]))
+      const removed: string[] = []
+      const summary = await cleanupRunResources(paths, {
+        ...noopCleanup(root),
+        docker: docker.runner,
+        removeContainer: (containerId) => {
+          removed.push(containerId)
+          return { containerId, removed: true, detail: 'removed' }
+        },
+      })
+      assert.equal(summary.ok, true, summary.errors.join('\n'))
+      assert.deepEqual(removed.sort(), [CID, other])
+      assert.ok(docker.calls.includes(`inspect --type container -f {{.Id}} -- ${goneName}`))
+      assert.equal(existsSync(paths.runDir), false)
+    })
+  })
+
+  /** A Docker double whose `create` exits non-zero without writing the cidfile, as when the CLI fails mid-request. */
+  function failingCreate(made: boolean, reachableAfterCreate: boolean): NamedDocker {
+    const calls: string[] = []
+    let createdName: string | null = null
+    const runner: DockerCommandRunner = (args) => {
+      calls.push(args.join(' '))
+      if (args[0] === 'create') {
+        createdName = made ? (args[args.indexOf('--name') + 1] ?? '') : null
+        return cmdFail('error during connect: EOF')
+      }
+      if (!reachableAfterCreate && calls.some((call) => call.startsWith('create '))) {
+        return cmdFail('Cannot connect to the Docker daemon')
+      }
+      if (args[0] === 'info') {
+        return cmdOk('daemon-a\n')
+      }
+      if (args[0] === 'inspect') {
+        return args.at(-1) === createdName
+          ? cmdOk(`${CID}\n`)
+          : cmdFail(`Error: No such container: ${args.at(-1) ?? ''}`)
+      }
+      return args[0] === 'rm' ? cmdOk(`${CID}\n`) : cmdFail(`unexpected ${args.join(' ')}`, 99)
+    }
+    return { runner, calls }
+  }
+
+  const spec: CreateContainerSpec = {
+    name: 'emulator:ledger',
+    role: 'ledger',
+    image: 'speculos:test',
+    daemon: DAEMON_A,
+    options: [],
+    command: [],
+  }
+
+  it('rolls back a container a failed create made anyway, found by its name on the pinned daemon', async () => {
+    await withRun('verify-create-made-', 'made-run', async (paths) => {
+      const docker = failingCreate(true, true)
+      const result = await createTrackedContainer(paths, spec, () => null, docker.runner)
+      assert.match(
+        result.unwrapErr() ?? '',
+        /docker create failed: error during connect: EOF, after creating d{64}; removed container/,
+      )
+      assert.ok(
+        docker.calls.some((call) =>
+          call.startsWith('inspect --type container -f {{.Id}} -- bcc-verify-made-run-ledger-'),
+        ),
+      )
+      assert.ok(docker.calls.includes(`rm -f -- ${CID}`))
+      assert.deepEqual(readContainers(paths), [])
+      assert.deepEqual(readIntentsFile(paths), { status: 'ok', value: [] })
+    })
+  })
+
+  it('drops the intent of a failed create only once its daemon says the name is absent, and keeps it while unreachable', async () => {
+    await withRun('verify-create-absent-', 'absent-run', async (paths) => {
+      const result = await createTrackedContainer(paths, spec, () => null, failingCreate(false, true).runner)
+      assert.equal(result.unwrapErr(), 'docker create failed: error during connect: EOF')
+      assert.deepEqual(readIntentsFile(paths), { status: 'ok', value: [] })
+    })
+    await withRun('verify-create-unknown-', 'unknown-run', async (paths) => {
+      const result = await createTrackedContainer(paths, spec, () => null, failingCreate(true, false).runner)
+      assert.match(
+        result.unwrapErr() ?? '',
+        /whether it made bcc-verify-unknown-run-ledger-[0-9a-f]{8} is unknown .*intent stays for cleanup/,
+      )
+      const kept = readIntentsFile(paths)
+      assert.equal(kept.status === 'ok' ? kept.value.length : -1, 1)
+      assert.deepEqual(readContainers(paths), [])
+    })
+  })
+
+  it('keeps an intent naming another run for inspection, asking no daemon about it', async () => {
+    await withRun('verify-foreign-intent-', 'mine-run', async (paths, root) => {
+      await recordProcess(paths, { name: 'sentinel', pid: 1003, startedAt: 't3' })
+      const foreign = 'bcc-verify-other-run-elf-12345678'
+      writeJson(paths.intentsFile, [
+        { name: 'builder:ledger-elf', containerName: foreign, image: 'builder:test', startedAt: 't', daemon: DAEMON_A },
+      ])
+      const docker = namedDocker(new Map([[foreign, CID]]))
+      const summary = await cleanupRunResources(paths, { ...noopCleanup(root), docker: docker.runner })
+      assert.equal(summary.ok, false)
+      assert.match(summary.errors.join('\n'), /bcc-verify-other-run-elf-12345678 is not named for run mine-run/)
+      assert.deepEqual(docker.calls, [])
+      assert.equal(existsSync(paths.intentsFile), true)
+    })
+  })
+
+  it('never takes a container named for a longer run ID that starts with its own', async () => {
+    await withRun('verify-overlap-intent-', 'emu-chunk3b', async (paths, root) => {
+      await recordProcess(paths, { name: 'sentinel', pid: 1003, startedAt: 't3' })
+      const longer = 'bcc-verify-emu-chunk3b-r3-ledger-1234abcd'
+      writeJson(paths.intentsFile, [
+        { name: 'emulator:ledger', containerName: longer, image: 'speculos:test', startedAt: 't', daemon: DAEMON_A },
+      ])
+      const docker = namedDocker(new Map([[longer, CID]]))
+      const summary = await cleanupRunResources(paths, { ...noopCleanup(root), docker: docker.runner })
+      assert.equal(summary.ok, false)
+      assert.match(
+        summary.errors.join('\n'),
+        /bcc-verify-emu-chunk3b-r3-ledger-1234abcd is not named for run emu-chunk3b/,
+      )
+      assert.deepEqual(docker.calls, [])
+      const kept = readIntentsFile(paths)
+      assert.deepEqual(kept.status === 'ok' ? kept.value.map((intent) => intent.containerName) : [], [longer])
+    })
   })
 })

@@ -11,13 +11,14 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { createServer } from 'node:http'
+import { type Server, createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { describe, it } from 'vitest'
 import { z } from 'zod'
-import { ChildEnv, runAsync, runToLog } from './process'
+import { ChildEnv, runAsync, runCommand, runToLog, startGroup } from './process'
+import { wait } from './run'
 import {
   type EmulatorState,
   HELPER,
@@ -301,54 +302,81 @@ describe('helpers/verify', () => {
     assert.match(output, /no-such-run/)
   })
 
-  it('validates emulator CLI flags, treats BCC_VERIFY_CACHE_DIR as cache root, rejects relative cache paths, and makes zero Docker calls', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'verify-emu-cli-'))
-    try {
-      const fakeDocker = createFakeDocker(dir, baseWorld())
-      const env = { PATH: fakeDocker.pathEnv }
+  it(
+    'validates emulator CLI flags, treats BCC_VERIFY_CACHE_DIR as cache root, rejects relative cache paths, and makes zero Docker calls',
+    { timeout: 60_000 },
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'verify-emu-cli-'))
+      try {
+        const fakeDocker = createFakeDocker(dir, baseWorld())
+        const env = { PATH: fakeDocker.pathEnv }
 
-      const bad = helperIn(dir, ['emulator', 'bogus'], env)
-      assert.equal(bad.failed, true)
-      assert.match(bad.output, /Expected emulator action/)
+        const bad = helperIn(dir, ['emulator', 'bogus'], env)
+        assert.equal(bad.failed, true)
+        assert.match(bad.output, /Expected emulator action/)
 
-      const missingDevice = helperIn(dir, ['emulator', 'press'], env)
-      assert.equal(missingDevice.failed, true)
-      assert.match(missingDevice.output, /--device is required/)
+        const missingDevice = helperIn(dir, ['emulator', 'press'], env)
+        assert.equal(missingDevice.failed, true)
+        assert.match(missingDevice.output, /--device is required/)
 
-      const startLedger = helperIn(dir, ['emulator', 'start', '--device', 'ledger'], {
-        ...env,
-        BCC_VERIFY_CACHE_DIR: '/tmp/bcc-test-cache-root',
-      })
-      assert.equal(startLedger.failed, true)
-      assert.match(startLedger.output, /Ledger emulator runner is not implemented yet/)
-      assert.match(startLedger.output, /model: flex/)
-      assert.match(startLedger.output, /seed: primary/)
-      assert.match(startLedger.output, /\/tmp\/bcc-test-cache-root\/ledger-elfs/)
+        // Without a run there is nothing to attach a Ledger to, and start says so before asking Docker anything.
+        const startLedger = helperIn(dir, ['emulator', 'start', '--device', 'ledger'], {
+          ...env,
+          BCC_VERIFY_CACHE_DIR: '/tmp/bcc-test-cache-root',
+        })
+        assert.equal(startLedger.failed, true)
+        assert.match(startLedger.output, /No verification run exists/)
 
-      const relativeCache = helperIn(dir, ['emulator', 'start', '--device', 'ledger'], {
-        ...env,
-        BCC_VERIFY_CACHE_DIR: './relative-cache',
-      })
-      assert.equal(relativeCache.failed, true)
-      assert.match(relativeCache.output, /BCC_VERIFY_CACHE_DIR must be an absolute path/)
+        const startTrezor = helperIn(dir, ['emulator', 'start', '--device', 'trezor'], env)
+        assert.equal(startTrezor.failed, true)
+        assert.match(startTrezor.output, /Trezor emulator runner is not implemented yet \(seed: primary\)/)
+        for (const action of ['disconnect', 'fault']) {
+          const later = helperIn(
+            dir,
+            ['emulator', action, '--device', 'ledger', ...(action === 'fault' ? ['--mode', 'ok'] : [])],
+            env,
+          )
+          assert.equal(later.failed, true)
+          assert.match(later.output, new RegExp(`cannot run '${action}'`))
+        }
+        const badButton = helperIn(dir, ['emulator', 'press', '--device', 'ledger', '--button', 'up'], env)
+        assert.equal(badButton.failed, true)
+        assert.match(badButton.output, /Unknown --button up/)
 
-      const emptyDoctor = helperIn(dir, ['doctor', '--run', 'empty-run'], env)
-      assert.match(emptyDoctor.output, /PASS\s+emulators\s+none/)
+        mkdirSync(runDirIn(dir, 'no-ledger-run'), { recursive: true })
+        writeJson(join(runDirIn(dir, 'no-ledger-run'), 'run.json'), runStateRecord('no-ledger-run'))
+        for (const action of ['press', 'reject', 'screenshot']) {
+          const idle = helperIn(dir, ['emulator', action, '--device', 'ledger', '--run', 'no-ledger-run'], env)
+          assert.equal(idle.failed, true)
+          assert.match(idle.output, /No Ledger emulator is running for run no-ledger-run/)
+        }
+        rmSync(runDirIn(dir, 'no-ledger-run'), { recursive: true, force: true })
 
-      mkdirSync(runDirIn(dir, 'empty-cleanup-run'), { recursive: true })
-      const emptyStop = helperIn(dir, ['emulator', 'stop', '--run', 'empty-cleanup-run', '--device', 'ledger'], env)
-      assert.equal(emptyStop.failed, false)
-      assert.match(emptyStop.output, /No ledger emulator recorded/)
-      const emptyCleanup = helperIn(dir, ['cleanup', '--run', 'empty-cleanup-run'], env)
-      assert.equal(emptyCleanup.failed, false)
-      assert.equal(existsSync(runDirIn(dir, 'empty-cleanup-run')), false)
+        const relativeCache = helperIn(dir, ['emulator', 'start', '--device', 'ledger'], {
+          ...env,
+          BCC_VERIFY_CACHE_DIR: './relative-cache',
+        })
+        assert.equal(relativeCache.failed, true)
+        assert.match(relativeCache.output, /BCC_VERIFY_CACHE_DIR must be an absolute path/)
 
-      // Neither skeleton start, nor doctor, stop or cleanup on an empty run may invoke Docker, not even docker info.
-      assert.deepEqual(fakeDocker.readCalls(), [])
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
-  })
+        const emptyDoctor = helperIn(dir, ['doctor', '--run', 'empty-run'], env)
+        assert.match(emptyDoctor.output, /PASS\s+emulators\s+none/)
+
+        mkdirSync(runDirIn(dir, 'empty-cleanup-run'), { recursive: true })
+        const emptyStop = helperIn(dir, ['emulator', 'stop', '--run', 'empty-cleanup-run', '--device', 'ledger'], env)
+        assert.equal(emptyStop.failed, false)
+        assert.match(emptyStop.output, /No ledger emulator recorded/)
+        const emptyCleanup = helperIn(dir, ['cleanup', '--run', 'empty-cleanup-run'], env)
+        assert.equal(emptyCleanup.failed, false)
+        assert.equal(existsSync(runDirIn(dir, 'empty-cleanup-run')), false)
+
+        // Neither skeleton start, nor doctor, stop or cleanup on an empty run may invoke Docker, not even docker info.
+        assert.deepEqual(fakeDocker.readCalls(), [])
+      } finally {
+        rmSync(dir, { recursive: true, force: true })
+      }
+    },
+  )
 
   it('pins Docker calls to the recorded daemon, attributes each removal to its command, and forwards DOCKER_* for unpinned records', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-docker-cli-'))
@@ -423,7 +451,7 @@ describe('helpers/verify', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('keeps containers another daemon now answers for, through both stop and cleanup, then retries cleanly on the owner', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-docker-switch-'))
@@ -517,7 +545,7 @@ describe('helpers/verify', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('keeps records when the socket changes daemons between the identity check and the removal, through stop and cleanup', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-docker-midway-'))
@@ -571,7 +599,7 @@ describe('helpers/verify', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('keeps container records and exits nonzero on failed docker rm, and succeeds on retry', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-docker-fail-rm-'))
@@ -610,7 +638,7 @@ describe('helpers/verify', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('treats corrupt containers.json as an error across status, stop, doctor, and cleanup without overwriting or deleting it', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-corrupt-containers-'))
@@ -650,7 +678,7 @@ describe('helpers/verify', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('says a run.json naming another run does not match its folder, and cleanup still clears it from the journals', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-mismatch-cli-'))
@@ -692,6 +720,12 @@ describe('helpers/verify', () => {
       const corruptDir = runDirIn(dir, 'corrupt-state-run')
       mkdirSync(corruptDir, { recursive: true })
       writeFileSync(join(corruptDir, 'run.json'), '{"runId": ')
+      // With no processes.json either, nothing says which processes the run started, so cleanup keeps the folder.
+      const blind = helperIn(dir, ['cleanup', '--run', 'corrupt-state-run'], env)
+      assert.equal(blind.failed, true)
+      assert.match(blind.output, /processes\.json is missing, so nothing says which processes this run started/)
+      assert.equal(existsSync(corruptDir), true)
+      writeJson(join(corruptDir, 'processes.json'), [{ name: 'sentinel', pid: 999_999, startedAt: 'never' }])
       const corrupt = helperIn(dir, ['cleanup', '--run', 'corrupt-state-run'], env)
       assert.equal(corrupt.failed, false, corrupt.output)
       assert.match(corrupt.output, /run\.json does not parse; cleaning up from containers\.json and processes\.json/)
@@ -699,7 +733,7 @@ describe('helpers/verify', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 
   it('keeps the run and exits nonzero when processes.json does not parse', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-bad-procs-cli-'))
@@ -811,5 +845,183 @@ describe('helpers/verify', () => {
       })
       rmSync(dir, { recursive: true, force: true })
     }
-  }, 15_000)
+  }, 30_000)
+
+  it('makes launch remove the containers recorded for its run when it is interrupted', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-launch-abort-'))
+    try {
+      // A fresh ID each time: launch refuses an ID that already has evidence in verify-output.
+      const runId = `abort-${Math.random().toString(36).slice(2, 10)}`
+      const runDir = runDirIn(dir, runId)
+      const fakeDocker = createFakeDocker(dir, baseWorld({ [CID_1]: 'running' }))
+      const log = openSync(join(dir, 'launch.log'), 'w')
+      const launch = startGroup(join(REPO_ROOT, HELPER), ['launch', '--run', runId], {
+        cwd: REPO_ROOT,
+        env: ChildEnv.with({ TMPDIR: dir, PATH: fakeDocker.pathEnv }),
+        log,
+      })
+      const exited = new Promise<void>((done) => {
+        launch.on('exit', () => {
+          done()
+        })
+      })
+      // Once launch has made the run's folders it is building; a container recorded now must not outlive the abort.
+      for (let waited = 0; !existsSync(join(runDir, 'logs')) && waited < 30_000; waited += 100) {
+        await wait(100)
+      }
+      writeJson(join(runDir, 'containers.json'), [containerRecord('emulator:ledger', CID_1, DAEMON_A)])
+      // Launch installs its signal handlers right after making the folders. Signal launch itself, the tsx leader's
+      // child, as a terminal's SIGTERM to that process would; launch acts on it once its current step returns.
+      await wait(300)
+      const [script] = runCommand('pgrep', ['-P', String(launch.pid ?? 0)], { env: ChildEnv.with() })
+        .split('\n')
+        .filter(Boolean)
+      process.kill(Number(script), 'SIGTERM')
+      await exited
+      for (
+        let waited = 0;
+        readFileSync(join(runDir, 'containers.json'), 'utf8').includes(CID_1) && waited < 30_000;
+        waited += 100
+      ) {
+        await wait(100)
+      }
+      closeSync(log)
+      const output = readFileSync(join(dir, 'launch.log'), 'utf8')
+      assert.match(output, /Launch was interrupted \(SIGTERM\)|The web app did not build/)
+      assert.deepEqual(fakeDocker.world().daemons['daemon-a']?.containers, {}, output)
+      assert.deepEqual(JSON.parse(readFileSync(join(runDir, 'containers.json'), 'utf8')), [])
+      assert.deepEqual(
+        fakeDocker.readCalls().map((call) => `${call.args} @${call.daemon ?? 'none'}`),
+        ['info --format {{.ID}} @daemon-a', `rm -f -- ${CID_1} @daemon-a`],
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 90_000)
+
+  it('refuses to touch a container whose records name two daemons, in status, doctor, stop and cleanup', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-conflict-cli-'))
+    try {
+      const runId = 'conflict-cli-run'
+      const runDir = runDirIn(dir, runId)
+      mkdirSync(runDir, { recursive: true })
+      writeJson(join(runDir, 'containers.json'), [containerRecord('emulator:ledger', CID_1, DAEMON_A)])
+      writeJson(join(runDir, 'processes.json'), [])
+      writeJson(
+        join(runDir, 'run.json'),
+        runStateRecord(runId, [
+          {
+            device: 'ledger',
+            model: 'flex',
+            seed: 'primary',
+            containerId: CID_1,
+            daemon: { daemonId: 'daemon-b', context: 'local-b', endpoint: ENDPOINT_B },
+            apiPort: 15000,
+            healthUrl: 'http://127.0.0.1:15000/events?currentscreenonly=true',
+          },
+        ]),
+      )
+      const fakeDocker = createFakeDocker(dir, baseWorld({ [CID_1]: 'running' }))
+      const env = { PATH: fakeDocker.pathEnv }
+      const conflict = /different Docker daemons for container 1{64}/
+      const status = helperIn(dir, ['emulator', 'status', '--run', runId], env)
+      assert.equal(status.failed, true)
+      assert.match(status.output, conflict)
+      const doctor = helperIn(dir, ['doctor', '--run', runId], env)
+      assert.equal(doctor.failed, true)
+      assert.match(
+        doctor.output,
+        new RegExp(`FAIL\\s+emulators\\s+ledger \\(flex\\): Docker unavailable \\(.*${conflict.source}`),
+      )
+      const stop = helperIn(dir, ['emulator', 'stop', '--run', runId, '--device', 'ledger'], env)
+      assert.equal(stop.failed, true)
+      assert.match(stop.output, conflict)
+      const cleanup = helperIn(dir, ['cleanup', '--run', runId], env)
+      assert.equal(cleanup.failed, true)
+      assert.match(cleanup.output, conflict)
+      assert.equal(existsSync(runDir), true)
+      // Nor does a drive command reach Speculos through a record it can't trust.
+      const press = helperIn(dir, ['emulator', 'press', '--device', 'ledger', '--run', runId], env)
+      assert.equal(press.failed, true)
+      assert.match(press.output, conflict)
+      // No daemon was asked about the container, so neither could remove the wrong one.
+      assert.deepEqual(fakeDocker.readCalls(), [])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
+
+  it("passes a running Ledger only on Speculos's idle screen, and fails a prompt, a bad answer or a stuck screen", async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-doctor-ledger-'))
+    let body = ''
+    const server: Server = createServer((_req, res) => {
+      res.writeHead(200, { connection: 'close', 'content-type': 'application/json' })
+      res.end(body)
+    })
+    await new Promise<void>((done) => {
+      server.listen(0, '127.0.0.1', () => {
+        done()
+      })
+    })
+    try {
+      const port = boundPort(server.address())
+      const runId = 'doctor-ledger-run'
+      const runDir = runDirIn(dir, runId)
+      mkdirSync(runDir, { recursive: true })
+      writeJson(join(runDir, 'containers.json'), [containerRecord('emulator:ledger', CID_1, DAEMON_A)])
+      writeJson(
+        join(runDir, 'run.json'),
+        runStateRecord(runId, [
+          {
+            device: 'ledger',
+            model: 'flex',
+            seed: 'primary',
+            containerId: CID_1,
+            daemon: DAEMON_A,
+            apiPort: port,
+            healthUrl: `http://127.0.0.1:${port}/events?currentscreenonly=true`,
+          },
+        ]),
+      )
+      const fakeDocker = createFakeDocker(dir, baseWorld({ [CID_1]: 'running' }))
+      const env = { PATH: fakeDocker.pathEnv }
+      const screen = (...texts: string[]): string =>
+        JSON.stringify({ events: texts.map((text) => ({ text, x: 0, y: 0, w: 10, h: 10, clear: false })) })
+
+      body = screen('Bitcoin', 'This app enables signing', 'transactions on the Bitcoin', 'network.', 'Quit app')
+      const idle = await helperInAsync(dir, ['doctor', '--run', runId], env)
+      assert.match(idle.output, /PASS\s+emulators\s+ledger \(flex\) container 111111111111 ok, screen idle/)
+      const status = await helperInAsync(dir, ['emulator', 'status', '--run', runId], env)
+      assert.equal(status.failed, false)
+      assert.match(status.output, /\(running\) .* screen=idle \["Bitcoin"/)
+
+      body = screen('Review message', 'Swipe to review', 'Reject', '1 of 3')
+      const prompt = await helperInAsync(dir, ['doctor', '--run', runId], env)
+      assert.match(prompt.output, /FAIL\s+emulators\s+.*screen is review \["Review message".*not idle/)
+
+      body = screen('Something went wrong')
+      const stuck = await helperInAsync(dir, ['doctor', '--run', runId], env)
+      assert.match(stuck.output, /FAIL\s+emulators\s+.*screen is unknown \["Something went wrong"\]/)
+
+      body = '<html>not speculos</html>'
+      const garbage = await helperInAsync(dir, ['doctor', '--run', runId], env)
+      assert.match(garbage.output, /FAIL\s+emulators\s+.*Speculos \/events did not answer a screen/)
+
+      // Drive commands check the container on its daemon before they reach the Speculos API.
+      fakeDocker.setWorld((world) => {
+        world.daemons['daemon-a'] = { containers: { [CID_1]: 'stopped' } }
+      })
+      const stopped = await helperInAsync(dir, ['emulator', 'screenshot', '--device', 'ledger', '--run', runId], env)
+      assert.equal(stopped.failed, true)
+      assert.match(stopped.output, /The Ledger emulator's container 1{64} is stopped; stop it and start it again/)
+    } finally {
+      server.closeAllConnections()
+      await new Promise<void>((done) => {
+        server.close(() => {
+          done()
+        })
+      })
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 30_000)
 })

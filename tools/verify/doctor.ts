@@ -3,12 +3,14 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readArgs } from './args'
 import { countAccounts, sentinelClient, signIn } from './client'
+import { classifyScreen, screenFromEvents } from './emulators/ledger-driver'
 import { type EmulatorProbe, type ExtraContainerProbe, activeFaults, checkEmulatorsRule, freshSeedCheck } from './rules'
 import {
+  type EmulatorState,
   HELPER,
   type RunState,
   buildStamp,
-  inspectContainer,
+  inspectTracked,
   invalidMessage,
   isLoopbackUrlForPort,
   isOurProcess,
@@ -17,6 +19,7 @@ import {
   portOwnedBy,
   readAppliedFaults,
   readContainersFile,
+  readIntentsFile,
   readRunState,
   readSeedMarker,
   runPaths,
@@ -185,43 +188,62 @@ async function checkApp(state: RunState): Promise<void> {
   })
 }
 
+/** Fetches a running emulator's health URL; for a Ledger, its answer must be a screen, and the idle one. */
+async function probeHealth(emulator: EmulatorState): Promise<{ ok: boolean; detail: string; summary?: string }> {
+  if (!isLoopbackUrlForPort(emulator.healthUrl, emulator.apiPort, ['http:'])) {
+    return {
+      ok: false,
+      detail: `healthUrl ${emulator.healthUrl} does not match loopback http port ${emulator.apiPort}`,
+    }
+  }
+  try {
+    const response = await fetch(emulator.healthUrl, { redirect: 'manual', signal: AbortSignal.timeout(3_000) })
+    if (response.status >= 300 && response.status < 400) {
+      return { ok: false, detail: `HTTP ${response.status} (redirect rejected)` }
+    }
+    if (!response.ok || emulator.device !== 'ledger' || emulator.model === undefined) {
+      return { ok: response.ok, detail: `HTTP ${response.status}` }
+    }
+    const elements = screenFromEvents(await response.text())
+    if (elements === null) {
+      return { ok: false, detail: 'Speculos /events did not answer a screen' }
+    }
+    const screen = classifyScreen(emulator.model === 'nanosp' ? 'nanosp' : 'flex', elements)
+    return screen.kind === 'idle'
+      ? { ok: true, detail: 'HTTP 200', summary: 'screen idle' }
+      : {
+          ok: false,
+          detail: `screen is ${screen.kind} ${JSON.stringify(screen.texts)}, not idle; finish it with ${HELPER} emulator press|reject --device ledger`,
+        }
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) }
+  }
+}
+
 async function checkEmulators(state: RunState | null): Promise<void> {
   const containersFile = readContainersFile(paths)
-  if (containersFile.status === 'invalid') {
-    const [ok, detail] = checkEmulatorsRule([], [], containersFile.file)
+  const intentsFile = readIntentsFile(paths)
+  if (containersFile.status === 'invalid' || intentsFile.status === 'invalid') {
+    const [ok, detail] = checkEmulatorsRule(
+      [],
+      [],
+      containersFile.status === 'invalid' ? containersFile.file : paths.intentsFile,
+    )
     check('emulators', ok, detail)
     return
   }
+  const pending = intentsFile.status === 'ok' ? intentsFile.value.map((intent) => intent.name) : []
   const recordedContainers = containersFile.status === 'ok' ? containersFile.value : []
   const emulators = state?.emulators ?? []
   const tracked = trackContainers(recordedContainers, emulators)
 
   const probes: EmulatorProbe[] = []
   for (const emulator of emulators) {
-    const containerState = inspectContainer(emulator.containerId, tracked.get(emulator.containerId)?.daemon)
-    let healthOk = false
-    let healthDetail = 'skipped (container is not running)'
-    if (containerState.state === 'running') {
-      if (!isLoopbackUrlForPort(emulator.healthUrl, emulator.apiPort, ['http:'])) {
-        healthDetail = `healthUrl ${emulator.healthUrl} does not match loopback http port ${emulator.apiPort}`
-      } else {
-        try {
-          const response = await fetch(emulator.healthUrl, {
-            redirect: 'manual',
-            signal: AbortSignal.timeout(3_000),
-          })
-          if (response.status >= 300 && response.status < 400) {
-            healthOk = false
-            healthDetail = `HTTP ${response.status} (redirect rejected)`
-          } else {
-            healthOk = response.ok
-            healthDetail = `HTTP ${response.status}`
-          }
-        } catch (error) {
-          healthDetail = error instanceof Error ? error.message : String(error)
-        }
-      }
-    }
+    const containerState = inspectTracked(emulator.containerId, tracked.get(emulator.containerId))
+    const health =
+      containerState.state === 'running'
+        ? await probeHealth(emulator)
+        : { ok: false, detail: 'skipped (container is not running)' }
 
     const bridgeAlive = emulator.bridge !== undefined ? isOurProcess(emulator.bridge) : null
     const bridgePortHolders = emulator.bridge !== undefined ? listeners(emulator.bridge.port) : []
@@ -231,8 +253,9 @@ async function checkEmulators(state: RunState | null): Promise<void> {
     probes.push({
       emulator,
       containerState,
-      healthOk,
-      healthDetail,
+      healthOk: health.ok,
+      healthDetail: health.detail,
+      healthSummary: health.summary,
       bridgeAlive,
       bridgePortOwned,
       bridgePortHolders,
@@ -245,10 +268,10 @@ async function checkEmulators(state: RunState | null): Promise<void> {
     .map((recorded) => ({
       name: recorded.name,
       containerId: recorded.containerId,
-      containerState: inspectContainer(recorded.containerId, recorded.daemon),
+      containerState: inspectTracked(recorded.containerId, tracked.get(recorded.containerId)),
     }))
 
-  const [ok, detail] = checkEmulatorsRule(probes, extraContainers)
+  const [ok, detail] = checkEmulatorsRule(probes, extraContainers, null, pending)
   check('emulators', ok, detail)
 }
 

@@ -133,6 +133,22 @@ const PinnedContainerSchema = ContainerSchema.extend({ daemon: DockerDaemonSchem
 /** A container record naming its daemon, as `recordContainer` requires. */
 export type PinnedContainer = z.infer<typeof PinnedContainerSchema>
 
+const CONTAINER_NAME_RE = /^bcc-verify-[\w-]+-[0-9a-f]{8}$/
+/**
+ * A container this run is about to create: written before `docker create`, replaced by its containers.json record once
+ * the ID is known. Cleanup finds an interrupted create through the cidfile Docker writes (`cidFileOf`, derived from the
+ * run folder and the name, never stored), or else by the unique name.
+ */
+const ContainerIntentSchema = z.object({
+  name: z.string().min(1),
+  containerName: z.string().regex(CONTAINER_NAME_RE),
+  image: z.string().min(1),
+  startedAt: z.string(),
+  daemon: DockerDaemonSchema,
+})
+export type ContainerIntent = z.infer<typeof ContainerIntentSchema>
+const ContainerIntentListSchema = z.array(ContainerIntentSchema)
+
 export const EmulatorStateSchema = z
   .object({
     device: z.enum(EMULATOR_DEVICES),
@@ -251,6 +267,8 @@ export interface RunPaths {
   stateFile: string
   processesFile: string
   containersFile: string
+  /** Containers about to be created, journaled before `docker create` so an interrupted create is still found. */
+  intentsFile: string
   fakesFile: string
   seedFile: string
   requestLog: string
@@ -279,6 +297,7 @@ export function runPaths(runId: string): RunPaths {
     stateFile: join(runDir, 'run.json'),
     processesFile: join(runDir, 'processes.json'),
     containersFile: join(runDir, 'containers.json'),
+    intentsFile: join(runDir, 'container-intents.json'),
     fakesFile: join(runDir, 'fakes.json'),
     seedFile: join(dataDir, 'verify-seed.json'),
     requestLog: join(runDir, 'logs', 'fake-requests.log'),
@@ -418,6 +437,18 @@ export function readContainers(paths: RunPaths): RecordedContainer[] {
   return result.status === 'ok' ? result.value : []
 }
 
+export function readIntentsFile(paths: RunPaths): JsonFile<ContainerIntent[]> {
+  return readJsonFile(ContainerIntentListSchema, paths.intentsFile)
+}
+
+function readIntents(paths: RunPaths): ContainerIntent[] {
+  const result = readIntentsFile(paths)
+  if (result.status === 'invalid') {
+    throw new Error(`${invalidMessage(result)}.`)
+  }
+  return result.status === 'ok' ? result.value : []
+}
+
 /**
  * Read-modify-write access to a run's tracking files, handed out only inside `withRunLock`. Every write refuses once
  * the lock is released or cleanup has removed the run folder, so a late writer can never recreate a removed run.
@@ -428,6 +459,9 @@ export interface RunTracking {
   recordContainer: (recorded: PinnedContainer) => void
   /** Drops these IDs from containers.json. Does nothing when it is missing; refuses a corrupt one. */
   forgetContainers: (containerIds: ReadonlySet<string>) => void
+  /** Journals a container about to be created; `dropIntent` removes it once it is recorded or known never created. */
+  addIntent: (intent: ContainerIntent) => void
+  dropIntent: (containerName: string) => void
   writeRunState: (state: RunState) => void
   /** Writes the seed marker, which lives in the run's data folder. */
   writeSeedMarker: (file: string, marker: SeedMarker) => void
@@ -481,6 +515,17 @@ function trackingFor(paths: RunPaths): TrackingHandle {
         write(
           paths.containersFile,
           existing.value.filter((entry) => !containerIds.has(entry.containerId)),
+        )
+      }
+    },
+    addIntent: (intent) => {
+      write(paths.intentsFile, [...readIntents(paths), intent])
+    },
+    dropIntent: (containerName) => {
+      if (existsSync(paths.intentsFile)) {
+        write(
+          paths.intentsFile,
+          readIntents(paths).filter((intent) => intent.containerName !== containerName),
         )
       }
     },
@@ -558,6 +603,7 @@ type JsonRecord =
   | SeedMarker
   | RecordedProcess[]
   | RecordedContainer[]
+  | ContainerIntent[]
   | Faults
   | z.infer<typeof FakesRecordSchema>
 
@@ -887,7 +933,7 @@ export async function stopProcess(recorded: RecordedProcess): Promise<void> {
 /** Runs one Docker CLI command: against `target` when given, else with the caller's own Docker settings. */
 export type DockerCommandRunner = (args: string[], target?: DockerTarget) => CommandResult
 
-const runDocker: DockerCommandRunner = (args, target) =>
+export const runDocker: DockerCommandRunner = (args, target) =>
   runCommandResult('docker', args, { env: target === undefined ? dockerChildEnv() : dockerChildEnvFor(target) })
 
 export type ContainerInspectResult =
@@ -1050,13 +1096,11 @@ function daemonChangedDuring(daemon: DockerDaemon, docker: DockerCommandRunner):
 }
 
 /**
- * True only when stderr is Docker's absence diagnostic for exactly this ID and nothing else, so a second error or
- * another container's diagnostic never reads as "already gone".
+ * True only when stderr is Docker's absence diagnostic for exactly this ID (or container name) and nothing else, so a
+ * second error or another container's diagnostic never reads as "already gone".
  */
 export function reportsOnlyAbsence(stderr: string, containerId: string): boolean {
-  const match = /^(?:Error response from daemon: |Error: )?No such (?:container|object): ([0-9a-f]{64})$/.exec(
-    stderr.trim(),
-  )
+  const match = /^(?:Error response from daemon: |Error: )?No such (?:container|object): (\S+)$/.exec(stderr.trim())
   return match?.[1] === containerId
 }
 
@@ -1158,40 +1202,314 @@ export interface TrackedContainer {
   name: string
   containerId: string
   daemon: DockerDaemon | undefined
+  /** Set when the records name different daemons for this ID; nothing may then ask any daemon about it. */
+  conflict: string | null
 }
+
+const sameDaemon = (a: DockerDaemon, b: DockerDaemon): boolean =>
+  a.daemonId === b.daemonId && a.endpoint === b.endpoint && a.context === b.context && a.dockerConfig === b.dockerConfig
 
 /**
  * Every recorded container once, keyed by ID: containers.json first, then run.json emulators missing from it. A
- * record's daemon comes from containers.json, or from the emulator registration when containers.json lacks one.
+ * record's daemon comes from containers.json, or from the emulator registration when containers.json lacks one. Two
+ * records naming different daemons for one ID mark it as a conflict, so no command asks the wrong daemon to remove it.
  */
 export function trackContainers(
   recorded: readonly RecordedContainer[],
   emulators: readonly EmulatorState[],
 ): Map<string, TrackedContainer> {
   const tracked = new Map<string, TrackedContainer>()
-  for (const entry of recorded) {
-    if (!tracked.has(entry.containerId)) {
-      tracked.set(entry.containerId, { name: entry.name, containerId: entry.containerId, daemon: entry.daemon })
+  const merge = (name: string, containerId: string, daemon: DockerDaemon | undefined): void => {
+    const existing = tracked.get(containerId)
+    if (existing === undefined) {
+      tracked.set(containerId, { name, containerId, daemon, conflict: null })
+    } else if (existing.daemon === undefined) {
+      existing.daemon = daemon
+    } else if (daemon !== undefined && !sameDaemon(existing.daemon, daemon) && existing.conflict === null) {
+      existing.conflict = `the run's records name different Docker daemons for container ${containerId} (${describeDaemon(existing.daemon)} as ${existing.daemon.daemonId}, ${describeDaemon(daemon)} as ${daemon.daemonId}); fix containers.json or run.json by hand`
     }
+  }
+  for (const entry of recorded) {
+    merge(entry.name, entry.containerId, entry.daemon)
   }
   for (const emulator of emulators) {
-    const existing = tracked.get(emulator.containerId)
-    if (existing === undefined) {
-      tracked.set(emulator.containerId, {
-        name: `emulator:${emulator.device}`,
-        containerId: emulator.containerId,
-        daemon: emulator.daemon,
-      })
-    } else {
-      existing.daemon ??= emulator.daemon
-    }
+    merge(`emulator:${emulator.device}`, emulator.containerId, emulator.daemon)
   }
   return tracked
+}
+
+/** Inspects a tracked container on its daemon; a conflicting record is unavailable without asking any daemon. */
+export function inspectTracked(
+  containerId: string,
+  tracked: TrackedContainer | undefined,
+  docker: DockerCommandRunner = runDocker,
+): ContainerInspectResult {
+  return tracked !== undefined && tracked.conflict !== null
+    ? { state: 'unavailable', detail: tracked.conflict }
+    : inspectContainer(containerId, tracked?.daemon, docker)
+}
+
+type IntentLookup =
+  | { status: 'created'; containerId: string }
+  | { status: 'absent' }
+  | { status: 'unknown'; detail: string }
+
+/** Where `docker create --cidfile` writes a journaled container's ID: inside the run folder, named for the container. */
+export function cidFileOf(paths: RunPaths, containerName: string): string {
+  return join(paths.runDir, 'cids', `${containerName}.cid`)
+}
+
+function readCidFile(file: string): string | null {
+  try {
+    const id = readFileSync(file, 'utf8').trim()
+    return isValidContainerId(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * What became of a journaled create: the ID Docker wrote to the cidfile, or else what its daemon says of the name. A
+ * name that isn't this run's is left unresolved, so its record stays for inspection and nothing is removed.
+ */
+function lookUpIntent(paths: RunPaths, intent: ContainerIntent, docker: DockerCommandRunner): IntentLookup {
+  if (!containerNamePattern(paths.runId).test(intent.containerName)) {
+    return { status: 'unknown', detail: `${intent.containerName} is not named for run ${paths.runId}` }
+  }
+  const fromFile = readCidFile(cidFileOf(paths, intent.containerName))
+  if (fromFile !== null) {
+    return { status: 'created', containerId: fromFile }
+  }
+  const problem = dockerDaemonProblem(intent.daemon, docker)
+  if (problem !== null) {
+    return { status: 'unknown', detail: problem }
+  }
+  const result = docker(['inspect', '--type', 'container', '-f', '{{.Id}}', '--', intent.containerName], intent.daemon)
+  const id = result.stdout.trim()
+  if (succeeded(result) && isValidContainerId(id)) {
+    return { status: 'created', containerId: id }
+  }
+  if (result.error === null && reportsOnlyAbsence(result.stderr, intent.containerName)) {
+    const changed = daemonChangedDuring(intent.daemon, docker)
+    return changed === null ? { status: 'absent' } : { status: 'unknown', detail: changed }
+  }
+  return { status: 'unknown', detail: dockerFailureDetail(result) }
+}
+
+/** Turns each selected journaled create into a containers.json record, or drops it when nothing was created. */
+function resolveIntents(
+  paths: RunPaths,
+  tracking: RunTracking,
+  docker: DockerCommandRunner,
+  select: (name: string) => boolean,
+): string[] {
+  const file = readIntentsFile(paths)
+  if (file.status === 'invalid') {
+    return [`${invalidMessage(file)}; keeping ${paths.runDir}`]
+  }
+  const errors: string[] = []
+  for (const intent of file.status === 'ok' ? file.value : []) {
+    if (!select(intent.name)) {
+      continue
+    }
+    const found = lookUpIntent(paths, intent, docker)
+    if (found.status === 'unknown') {
+      errors.push(`${intent.name}: cannot tell whether ${intent.containerName} was created: ${found.detail}`)
+      continue
+    }
+    if (found.status === 'created' && !readContainers(paths).some((c) => c.containerId === found.containerId)) {
+      const { name, image, startedAt, daemon } = intent
+      tracking.recordContainer({ name, containerId: found.containerId, image, startedAt, daemon })
+    }
+    tracking.dropIntent(intent.containerName)
+  }
+  return errors
+}
+
+export interface RemovedContainers {
+  results: ContainerRemoveResult[]
+  errors: string[]
+}
+
+export interface RemoveContainersOptions {
+  /** Which recorded names to remove, such as `emulator:ledger`; every one when left out. */
+  select?: (name: string) => boolean
+  remove?: (containerId: string, daemon: DockerDaemon | undefined) => ContainerRemoveResult
+  docker?: DockerCommandRunner
+  log?: (line: string) => void
+}
+
+/**
+ * Holding the run's lock: resolves interrupted creates, removes each selected recorded container on its own daemon,
+ * and forgets from containers.json and run.json only those Docker confirms gone. Returns what failed.
+ */
+export function removeRunContainers(
+  paths: RunPaths,
+  tracking: RunTracking,
+  { select = () => true, remove = removeContainer, docker = runDocker, log = console.log }: RemoveContainersOptions,
+): RemovedContainers {
+  const errors = resolveIntents(paths, tracking, docker, select)
+  const containersFile = readContainersFile(paths)
+  const stateResult = readRunState(paths)
+  const state = stateResult.status === 'ok' ? stateResult.value : null
+  const tracked = trackContainers(containersFile.status === 'ok' ? containersFile.value : [], state?.emulators ?? [])
+  const results: ContainerRemoveResult[] = []
+  const removed = new Set<string>()
+  for (const { name, containerId, daemon, conflict } of tracked.values()) {
+    if (!select(name)) {
+      continue
+    }
+    const result =
+      conflict === null
+        ? remove(containerId, daemon)
+        : { containerId, removed: false, detail: `kept container ${containerId}: ${conflict}` }
+    results.push(result)
+    log(`${name}: ${result.detail}`)
+    if (result.removed) {
+      removed.add(containerId)
+    } else {
+      errors.push(`${name}: ${result.detail}`)
+    }
+  }
+  if (removed.size > 0) {
+    if (containersFile.status === 'ok') {
+      tracking.forgetContainers(removed)
+    }
+    if (state?.emulators !== undefined) {
+      tracking.writeRunState({ ...state, emulators: state.emulators.filter((e) => !removed.has(e.containerId)) })
+    }
+  }
+  return { results, errors }
+}
+
+/** The words `createTrackedContainer` puts in a Docker name: Speculos, or the app-bitcoin builder. */
+const CONTAINER_ROLES = ['ledger', 'elf'] as const
+
+/** The exact Docker names this run creates, so run `a` never claims a container named for run `a-b`. */
+function containerNamePattern(runId: string): RegExp {
+  const escaped = runId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return new RegExp(`^bcc-verify-${escaped}-(?:${CONTAINER_ROLES.join('|')})-[0-9a-f]{8}$`)
+}
+
+export interface CreateContainerSpec {
+  /** The record's name, such as `emulator:ledger`. */
+  name: string
+  /** The word for the Docker name. */
+  role: (typeof CONTAINER_ROLES)[number]
+  image: string
+  daemon: DockerDaemon
+  /** `docker create` options before the image, and the command after it. */
+  options: string[]
+  command: string[]
+}
+
+/**
+ * Creates a container so that no interruption can leave it unrecorded: under the run's lock `refuse` may veto it and
+ * the intent is journaled; then `docker create --cidfile` runs on the pinned daemon; then the ID is recorded in
+ * containers.json. The container is created, not started.
+ */
+export async function createTrackedContainer(
+  paths: RunPaths,
+  spec: CreateContainerSpec,
+  refuse: () => string | null = () => null,
+  docker: DockerCommandRunner = runDocker,
+): Promise<Result<string, string>> {
+  const containerName = `bcc-verify-${paths.runId}-${spec.role}-${randomBytes(4).toString('hex')}`
+  const cidFile = cidFileOf(paths, containerName)
+  const intent: ContainerIntent = {
+    name: spec.name,
+    containerName,
+    image: spec.image,
+    startedAt: new Date().toISOString(),
+    daemon: spec.daemon,
+  }
+  const refused = await withRunLock(paths, (tracking) => {
+    const reason = refuse()
+    if (reason === null) {
+      tracking.addIntent(intent)
+      mkdirSync(dirname(cidFile), { recursive: true })
+    }
+    return reason
+  })
+  if (refused !== null) {
+    return Err(refused)
+  }
+  const problem = dockerDaemonProblem(spec.daemon, docker)
+  const created =
+    problem === null
+      ? docker(
+          ['create', '--cidfile', cidFile, '--name', containerName, ...spec.options, spec.image, ...spec.command],
+          spec.daemon,
+        )
+      : null
+  const createdOk = created !== null && succeeded(created)
+  const echoed = createdOk ? created.stdout.trim() : ''
+  const known = readCidFile(cidFile) ?? (isValidContainerId(echoed) ? echoed : null)
+  // A create that ran and failed may still have made the container, so its daemon is asked by name first.
+  const found: IntentLookup =
+    known !== null
+      ? { status: 'created', containerId: known }
+      : created === null
+        ? { status: 'absent' }
+        : lookUpIntent(paths, intent, docker)
+  const failure = problem ?? `docker create failed: ${created === null ? 'not run' : dockerFailureDetail(created)}`
+  let recorded: Result<string, string>
+  try {
+    recorded = await withRunLock(paths, (tracking) => {
+      if (found.status === 'unknown') {
+        return Err(
+          `${failure}; whether it made ${containerName} is unknown (${found.detail}), so its intent stays for cleanup`,
+        )
+      }
+      if (found.status === 'absent') {
+        tracking.dropIntent(containerName)
+        return Err(failure)
+      }
+      const { name, image } = spec
+      tracking.recordContainer({
+        name,
+        containerId: found.containerId,
+        image,
+        startedAt: intent.startedAt,
+        daemon: spec.daemon,
+      })
+      tracking.dropIntent(containerName)
+      return Ok(found.containerId)
+    })
+  } catch (error) {
+    // Cleanup removed the run while Docker was creating: nothing records the container, so remove it here.
+    const removal =
+      found.status === 'created' ? `; ${removeContainer(found.containerId, spec.daemon, docker).detail}` : ''
+    return Err(`${error instanceof Error ? error.message : String(error)}${removal}`)
+  }
+  if (recorded.isOk() && !createdOk) {
+    const containerId = recorded.unwrap()
+    return Err(
+      `${failure}, after creating ${containerId}; ${await discardContainer(paths, containerId, spec.daemon, docker)}`,
+    )
+  }
+  return recorded
+}
+
+/** Removes one container this run created and forgets it once Docker confirms it gone. Returns what happened. */
+export async function discardContainer(
+  paths: RunPaths,
+  containerId: string,
+  daemon: DockerDaemon,
+  docker: DockerCommandRunner = runDocker,
+): Promise<string> {
+  const result = removeContainer(containerId, daemon, docker)
+  if (result.removed) {
+    await forgetContainer(paths, containerId).catch(() => undefined)
+    return result.detail
+  }
+  return `${result.detail}; it stays recorded, so run ${HELPER} cleanup`
 }
 
 export interface CleanupDeps {
   stopProcess?: (recorded: RecordedProcess) => Promise<void>
   removeContainer?: (containerId: string, daemon: DockerDaemon | undefined) => ContainerRemoveResult
+  docker?: DockerCommandRunner
   evidenceRoot?: string
   log?: (line: string) => void
 }
@@ -1209,7 +1527,8 @@ export interface CleanupSummary {
  * Holding the run's lock, stops every process group recorded for this run (including emulator bridges), removes
  * every recorded container on its own daemon, keeps logs under `verify-output/<run-id>/logs/`, and deletes the run's
  * scratch folder. An invalid run.json doesn't block that: containers.json and processes.json, written first, are the
- * journal. The folder stays, and the summary fails, while a container isn't confirmed removed or a journal is invalid.
+ * journal. The folder stays, and the summary fails, while a container isn't confirmed removed, a journal is invalid,
+ * or run.json is invalid with no processes.json to say which processes the run started.
  */
 export async function cleanupRunResources(paths: RunPaths, deps: CleanupDeps = {}): Promise<CleanupSummary> {
   return withRunLock(paths, async (tracking) => cleanupLocked(paths, tracking, deps))
@@ -1217,7 +1536,6 @@ export async function cleanupRunResources(paths: RunPaths, deps: CleanupDeps = {
 
 async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: CleanupDeps): Promise<CleanupSummary> {
   const stop = deps.stopProcess ?? stopProcess
-  const remove = deps.removeContainer ?? removeContainer
   const evidenceRoot = deps.evidenceRoot ?? EVIDENCE_ROOT
   const log = deps.log ?? console.log
 
@@ -1227,6 +1545,11 @@ async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: Clean
   const errors: string[] = []
   if (stateResult.status === 'invalid') {
     log(`${invalidMessage(stateResult)}; cleaning up from containers.json and processes.json`)
+    if (processesFile.status === 'missing') {
+      errors.push(
+        `${invalidMessage(stateResult)} and ${paths.processesFile} is missing, so nothing says which processes this run started; stop them by hand, then delete ${paths.runDir}`,
+      )
+    }
   }
   for (const journal of [containersFile, processesFile]) {
     if (journal.status === 'invalid') {
@@ -1234,7 +1557,6 @@ async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: Clean
     }
   }
   const state = stateResult.status === 'ok' ? stateResult.value : null
-  const emulators = state?.emulators ?? []
 
   const processes: RecordedProcess[] = []
   const seenProcesses = new Set<string>()
@@ -1253,7 +1575,7 @@ async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: Clean
     addProcess(state.fakes)
     addProcess(state.sentinel)
   }
-  for (const emulator of emulators) {
+  for (const emulator of state?.emulators ?? []) {
     if (emulator.bridge !== undefined) {
       addProcess(emulator.bridge)
     }
@@ -1262,19 +1584,12 @@ async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: Clean
     await stop(recorded)
   }
 
-  const tracked = trackContainers(containersFile.status === 'ok' ? containersFile.value : [], emulators)
-  const removedContainers: ContainerRemoveResult[] = []
-  const confirmedRemovedIds = new Set<string>()
-  for (const { name, containerId, daemon } of tracked.values()) {
-    const result = remove(containerId, daemon)
-    removedContainers.push(result)
-    log(`${name}: ${result.detail}`)
-    if (result.removed) {
-      confirmedRemovedIds.add(containerId)
-    } else {
-      errors.push(`${name}: ${result.detail}`)
-    }
-  }
+  const removal = removeRunContainers(paths, tracking, {
+    remove: deps.removeContainer ?? removeContainer,
+    docker: deps.docker ?? runDocker,
+    log,
+  })
+  errors.push(...removal.errors)
 
   let keptLogsDir: string | null = null
   if (existsSync(paths.logsDir)) {
@@ -1283,25 +1598,14 @@ async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: Clean
     log(`Logs kept in ${keptLogsDir}`)
   }
 
+  const summary = { stoppedProcesses: processes, removedContainers: removal.results, keptLogsDir }
   if (errors.length > 0) {
-    if (confirmedRemovedIds.size > 0) {
-      if (containersFile.status === 'ok') {
-        tracking.forgetContainers(confirmedRemovedIds)
-      }
-      if (state?.emulators !== undefined) {
-        tracking.writeRunState({
-          ...state,
-          emulators: state.emulators.filter((entry) => !confirmedRemovedIds.has(entry.containerId)),
-        })
-      }
-    }
     log(`Kept ${paths.runDir} because cleanup had errors`)
-    return { ok: false, errors, stoppedProcesses: processes, removedContainers, keptLogsDir, removedRunDir: false }
+    return { ok: false, errors, ...summary, removedRunDir: false }
   }
-
   rmSync(paths.runDir, { recursive: true, force: true })
   log(`Removed ${paths.runDir}`)
-  return { ok: true, errors: [], stoppedProcesses: processes, removedContainers, keptLogsDir, removedRunDir: true }
+  return { ok: true, errors: [], ...summary, removedRunDir: true }
 }
 
 /** True when the run's own Sentinel is alive and holds its port, so its URL reaches this run and no other. */

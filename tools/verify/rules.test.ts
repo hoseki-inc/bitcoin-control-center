@@ -7,6 +7,7 @@ import { loadEnv } from 'vite'
 import { describe, it, vi } from 'vitest'
 import { z } from 'zod'
 import {
+  type Attempt,
   type EmulatorProbe,
   LiveRun,
   MAP_FILE,
@@ -23,10 +24,12 @@ import {
   latestRecorded,
   launchDecision,
   newAttempt,
+  nextShotName,
   openAttempt,
   parseEmulatorCommand,
   readRecipes,
   recordProblem,
+  screenshotFolder,
   webBuildEnv,
   withAbandoned,
   withFault,
@@ -775,6 +778,43 @@ describe('parseEmulatorCommand', () => {
     })
   })
 
+  it('parses screenshot with its recipe and step, and only the Ledger buttons press knows', () => {
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'screenshot', device: 'ledger' }), {
+      ok: true,
+      command: { action: 'screenshot', device: 'ledger', recipe: undefined, step: 'screen' },
+    })
+    assert.deepEqual(
+      parseEmulatorCommand({
+        ...emptyInput,
+        action: 'screenshot',
+        device: 'ledger',
+        recipe: 'add-ledger',
+        step: 'sign-1',
+      }),
+      { ok: true, command: { action: 'screenshot', device: 'ledger', recipe: 'add-ledger', step: 'sign-1' } },
+    )
+    assert.equal(
+      parseEmulatorCommand({ ...emptyInput, action: 'screenshot', device: 'ledger', step: '../x' }).ok,
+      false,
+    )
+    assert.equal(
+      parseEmulatorCommand({ ...emptyInput, action: 'screenshot', device: 'ledger', recipe: 'a/b' }).ok,
+      false,
+    )
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'screenshot' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'press', device: 'ledger', step: 'x' }).ok, false)
+    assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'status', recipe: 'home-summary' }).ok, false)
+    assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'press', device: 'ledger' }), {
+      ok: true,
+      command: { action: 'press', device: 'ledger', button: undefined },
+    })
+    for (const button of ['left', 'right', 'both', 'next', 'approve', 'dismiss']) {
+      assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'press', device: 'ledger', button }).ok, true, button)
+    }
+    const unknown = parseEmulatorCommand({ ...emptyInput, action: 'press', device: 'ledger', button: 'up' })
+    assert.match(unknown.ok ? '' : unknown.error, /Unknown --button up/)
+  })
+
   it('rejects unknown actions, missing required flags, and misplaced flags', () => {
     assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'restart', device: 'ledger' }).ok, false)
     assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'start' }).ok, false)
@@ -783,5 +823,65 @@ describe('parseEmulatorCommand', () => {
     assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'reject', device: 'ledger', button: 'both' }).ok, false)
     assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger', mode: 'locked' }).ok, false)
     assert.equal(parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'trezor', seed: 'bogus' }).ok, false)
+  })
+})
+
+describe('emulator screenshot destination', () => {
+  const begin = (recipeId: string, attempts: Attempt[]): Attempt =>
+    newAttempt(attempts, { ...recipe, id: recipeId }, '2026-11-25T17:00:00Z', liveA)
+
+  it('picks the named or only open attempt, else the run folder, and never guesses between several', () => {
+    assert.deepEqual(screenshotFolder([], undefined), { ok: true, folder: null })
+    const home = begin('home-summary', [])
+    assert.deepEqual(screenshotFolder([home], undefined), { ok: true, folder: 'home-summary/attempt-1' })
+    assert.deepEqual(screenshotFolder([home], 'home-summary'), { ok: true, folder: 'home-summary/attempt-1' })
+    const missing = screenshotFolder([home], 'add-ledger')
+    assert.match(missing.ok ? '' : missing.error, /add-ledger has no open attempt/)
+    const ledger = begin('add-ledger', [home])
+    const several = screenshotFolder([home, ledger], undefined)
+    assert.match(
+      several.ok ? '' : several.error,
+      /Several attempts are open \(home-summary, add-ledger\); pass --recipe/,
+    )
+    assert.deepEqual(screenshotFolder([home, ledger], 'add-ledger'), { ok: true, folder: 'add-ledger/attempt-1' })
+    const closed = withAbandoned([home], home, '2026-11-25T18:00:00Z')
+    assert.deepEqual(screenshotFolder(closed, undefined), { ok: true, folder: null })
+  })
+
+  it('numbers each screenshot after the files already in the folder', () => {
+    assert.equal(nextShotName([], 'screen'), '01-ledger-screen.png')
+    assert.equal(
+      nextShotName(['01-home.png', '01-home.aria.txt', '02-tooltip.png', 'trace.md'], 'sign'),
+      '03-ledger-sign.png',
+    )
+    assert.equal(nextShotName(['09-x.png', '10-ledger-a.png'], 'b'), '11-ledger-b.png')
+  })
+})
+
+describe('checkEmulatorsRule for 3B', () => {
+  const emulator: EmulatorState = {
+    device: 'ledger',
+    model: 'nanosp',
+    seed: 'primary',
+    containerId: 'a'.repeat(64),
+    apiPort: 15000,
+    healthUrl: 'http://127.0.0.1:15000/events?currentscreenonly=true',
+  }
+  const probe: EmulatorProbe = {
+    emulator,
+    containerState: { state: 'running' },
+    healthOk: true,
+    healthDetail: 'HTTP 200',
+    bridgeAlive: null,
+    bridgePortOwned: null,
+    bridgePortHolders: [],
+    healthSummary: 'screen idle',
+  }
+
+  it('says what the health check read, and fails a create still in the journal', () => {
+    assert.deepEqual(checkEmulatorsRule([probe], []), [true, 'ledger (nanosp) container aaaaaaaaaaaa ok, screen idle'])
+    const [ok, detail] = checkEmulatorsRule([], [], null, ['emulator:ledger'])
+    assert.equal(ok, false)
+    assert.match(detail, /emulator:ledger: a container create is in progress or was interrupted/)
   })
 })
