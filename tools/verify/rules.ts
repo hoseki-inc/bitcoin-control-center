@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
+import { LEDGER_BUTTONS, type LedgerButton } from './emulators/ledger-driver'
 import { ChildEnv } from './process'
 import {
   type ContainerInspectResult,
@@ -448,6 +449,8 @@ export interface EmulatorProbe {
   bridgeAlive: boolean | null
   bridgePortOwned: boolean | null
   bridgePortHolders: number[]
+  /** What a passing health check read, such as a Ledger's idle screen. */
+  healthSummary?: string | undefined
 }
 
 export interface ExtraContainerProbe {
@@ -465,15 +468,18 @@ export function checkEmulatorsRule(
   probes: readonly EmulatorProbe[],
   extraContainers: readonly ExtraContainerProbe[],
   containersInvalidFile: string | null = null,
+  pendingCreates: readonly string[] = [],
 ): [boolean, string] {
   if (containersInvalidFile !== null) {
     return [false, `${containersInvalidFile} does not parse`]
   }
-  if (probes.length === 0 && extraContainers.length === 0) {
+  if (probes.length === 0 && extraContainers.length === 0 && pendingCreates.length === 0) {
     return [true, 'none']
   }
 
-  const issues: string[] = []
+  const issues: string[] = pendingCreates.map(
+    (name) => `${name}: a container create is in progress or was interrupted; stop the device or clean up`,
+  )
   const okSummaries: string[] = []
 
   for (const probe of probes) {
@@ -505,7 +511,8 @@ export function checkEmulatorsRule(
       issues.push(`${label}: ${localIssues.join(', ')}`)
     } else {
       const bridgeSummary = emulator.bridge !== undefined ? `, bridge ${emulator.bridge.port}` : ''
-      okSummaries.push(`${label} container ${emulator.containerId.slice(0, 12)} ok${bridgeSummary}`)
+      const health = probe.healthSummary !== undefined ? `, ${probe.healthSummary}` : ''
+      okSummaries.push(`${label} container ${emulator.containerId.slice(0, 12)} ok${health}${bridgeSummary}`)
     }
   }
 
@@ -524,7 +531,16 @@ export function checkEmulatorsRule(
   return issues.length === 0 ? [true, okSummaries.join('; ')] : [false, issues.join('; ')]
 }
 
-export const EMULATOR_ACTIONS = ['start', 'stop', 'status', 'press', 'reject', 'disconnect', 'fault'] as const
+export const EMULATOR_ACTIONS = [
+  'start',
+  'stop',
+  'status',
+  'press',
+  'reject',
+  'screenshot',
+  'disconnect',
+  'fault',
+] as const
 export type EmulatorAction = (typeof EMULATOR_ACTIONS)[number]
 
 export interface EmulatorCommandInput {
@@ -534,14 +550,17 @@ export interface EmulatorCommandInput {
   model: string | undefined
   button: string | undefined
   mode: string | undefined
+  recipe?: string | undefined
+  step?: string | undefined
 }
 
 export type EmulatorCommand =
   | { action: 'start'; device: EmulatorDevice; seed: EmulatorSeedName; model: string | undefined }
   | { action: 'stop'; device: EmulatorDevice }
   | { action: 'status'; device: EmulatorDevice | undefined }
-  | { action: 'press'; device: EmulatorDevice; button: string | undefined }
+  | { action: 'press'; device: EmulatorDevice; button: LedgerButton | undefined }
   | { action: 'reject'; device: EmulatorDevice }
+  | { action: 'screenshot'; device: EmulatorDevice; recipe: string | undefined; step: string }
   | { action: 'disconnect'; device: EmulatorDevice }
   | { action: 'fault'; device: EmulatorDevice; mode: string }
 
@@ -579,6 +598,9 @@ export function parseEmulatorCommand(input: EmulatorCommandInput): ParsedEmulato
   }
   if (input.mode !== undefined && input.action !== 'fault') {
     return { ok: false, error: '--mode is only valid with emulator fault' }
+  }
+  if ((input.recipe !== undefined || input.step !== undefined) && input.action !== 'screenshot') {
+    return { ok: false, error: '--recipe and --step are only valid with emulator screenshot' }
   }
 
   if (input.action === 'status') {
@@ -618,8 +640,26 @@ export function parseEmulatorCommand(input: EmulatorCommandInput): ParsedEmulato
     }
     case 'stop':
       return { ok: true, command: { action: 'stop', device: input.device } }
-    case 'press':
-      return { ok: true, command: { action: 'press', device: input.device, button: input.button } }
+    case 'press': {
+      const { button } = input
+      if (button === undefined) {
+        return { ok: true, command: { action: 'press', device: input.device, button: undefined } }
+      }
+      const known = LEDGER_BUTTONS.find((candidate) => candidate === button)
+      return known === undefined
+        ? { ok: false, error: `Unknown --button ${button}. Expected: ${LEDGER_BUTTONS.join('|')}` }
+        : { ok: true, command: { action: 'press', device: input.device, button: known } }
+    }
+    case 'screenshot': {
+      const step = input.step ?? 'screen'
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(step)) {
+        return { ok: false, error: '--step uses lowercase letters, digits and -' }
+      }
+      if (input.recipe !== undefined && !/^[\w-]+$/.test(input.recipe)) {
+        return { ok: false, error: `Recipe IDs use letters, digits, - and _ only: ${input.recipe}` }
+      }
+      return { ok: true, command: { action: 'screenshot', device: input.device, recipe: input.recipe, step } }
+    }
     case 'reject':
       return { ok: true, command: { action: 'reject', device: input.device } }
     case 'disconnect':
@@ -631,4 +671,31 @@ export function parseEmulatorCommand(input: EmulatorCommandInput): ParsedEmulato
       return { ok: true, command: { action: 'fault', device: input.device, mode: input.mode } }
     }
   }
+}
+
+/**
+ * Where `emulator screenshot` saves: the named recipe's open attempt, else the only open attempt, else the run's
+ * evidence folder itself when none is open. A named recipe with no open attempt, or several open without a name, is
+ * refused rather than guessed.
+ */
+export function screenshotFolder(
+  attempts: readonly Attempt[],
+  recipe: string | undefined,
+): { ok: true; folder: string | null } | { ok: false; error: string } {
+  const open = attempts.filter((attempt) => attempt.outcome === null && attempt.abandonedAt === null)
+  const picked = recipe === undefined ? open : open.filter((attempt) => attempt.recipe === recipe)
+  if (recipe !== undefined && picked.length === 0) {
+    return { ok: false, error: `${recipe} has no open attempt; run evidence begin ${recipe} first` }
+  }
+  if (picked.length > 1) {
+    return { ok: false, error: `Several attempts are open (${picked.map((a) => a.recipe).join(', ')}); pass --recipe` }
+  }
+  const [attempt] = picked
+  return { ok: true, folder: attempt === undefined ? null : `${attempt.recipe}/attempt-${attempt.number}` }
+}
+
+/** The next `NN-ledger-<step>.png` after the numbered files already in a folder. */
+export function nextShotName(files: readonly string[], step: string): string {
+  const last = Math.max(0, ...files.map((file) => Number(/^(\d{2})-/.exec(file)?.[1] ?? 0)))
+  return `${String(last + 1).padStart(2, '0')}-ledger-${step}.png`
 }

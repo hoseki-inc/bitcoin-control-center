@@ -28,12 +28,14 @@ import {
   readJsonFile,
   readRunState,
   recordProcess,
+  removeRunContainers,
   requireJsonFile,
   runPaths,
   servesWebApp,
   stopProcess,
   verifyCapableBundleProblem,
   wait,
+  withRunLock,
   writeRunState,
 } from './run'
 
@@ -128,6 +130,17 @@ async function abort(message: string): Promise<never> {
     aborting = true
     for (const recorded of started) {
       await stopProcess(recorded)
+    }
+    // Containers recorded for the run (none yet in a plain launch) are removed too, each on its own daemon.
+    if (existsSync(paths.runDir)) {
+      try {
+        const { errors } = await withRunLock(paths, (tracking) => removeRunContainers(paths, tracking, {}))
+        for (const error of errors) {
+          console.error(error)
+        }
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error))
+      }
     }
   }
   return fail(`${message}\nLogs: ${paths.logsDir}\nThen run ${HELPER} cleanup --run ${runId}`)

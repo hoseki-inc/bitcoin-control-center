@@ -43,6 +43,11 @@ export function verifyCacheDirOverride(): string | undefined {
   return value !== undefined && value !== '' ? value : undefined
 }
 
+/** True when the caller opted into the live Docker emulator tests with `BCC_VERIFY_EMULATOR_TESTS=1`. */
+export function emulatorTestsEnabled(): boolean {
+  return process.env['BCC_VERIFY_EMULATOR_TESTS'] === '1'
+}
+
 function callerVars(names: readonly string[]): Record<string, string> {
   return Object.fromEntries(
     names.flatMap((name) => {
@@ -113,8 +118,8 @@ export function dockerChildEnvFor(target: DockerTarget): ChildEnv {
  * Environment for a nested `helpers/verify` call: the base allowlist plus BCC_VERIFY_CACHE_DIR and the Docker
  * selection, which the helper forwards only to its own Docker calls. Sentinel, fakes and apps still get `ChildEnv.with`.
  */
-export function verifyHelperEnv(): ChildEnv {
-  return ChildEnv.with(callerVars(['BCC_VERIFY_CACHE_DIR', ...DOCKER_INHERITED]))
+export function verifyHelperEnv(extra: Readonly<Record<string, string>> = {}): ChildEnv {
+  return ChildEnv.with({ ...callerVars(['BCC_VERIFY_CACHE_DIR', ...DOCKER_INHERITED]), ...extra })
 }
 
 interface CommandOptions {
