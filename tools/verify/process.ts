@@ -43,15 +43,78 @@ export function verifyCacheDirOverride(): string | undefined {
   return value !== undefined && value !== '' ? value : undefined
 }
 
-/** Child environment for Docker CLI calls, forwarding DOCKER_HOST, DOCKER_CONTEXT, and DOCKER_CONFIG when set. */
-export function dockerChildEnv(): ChildEnv {
-  const extra = Object.fromEntries(
-    DOCKER_INHERITED.flatMap((name) => {
+function callerVars(names: readonly string[]): Record<string, string> {
+  return Object.fromEntries(
+    names.flatMap((name) => {
       const value = process.env[name]
       return value === undefined ? [] : [[name, value]]
     }),
   )
-  return ChildEnv.with(extra)
+}
+
+/** Child environment for Docker CLI calls, forwarding DOCKER_HOST, DOCKER_CONTEXT, and DOCKER_CONFIG when set. */
+export function dockerChildEnv(): ChildEnv {
+  return ChildEnv.with(callerVars(DOCKER_INHERITED))
+}
+
+/** The caller's Docker selection, in the CLI's order of precedence: DOCKER_HOST, then DOCKER_CONTEXT. */
+export interface DockerSelection {
+  host?: string
+  context?: string
+  config?: string
+}
+
+/** The DOCKER_HOST, DOCKER_CONTEXT and DOCKER_CONFIG the caller set, ignoring empty values as the Docker CLI does. */
+export function callerDockerSelection(): DockerSelection {
+  const read = (name: (typeof DOCKER_INHERITED)[number]): string | undefined => {
+    const value = process.env[name]?.trim()
+    return value === undefined || value === '' ? undefined : value
+  }
+  const selection: DockerSelection = {}
+  const host = read('DOCKER_HOST')
+  const context = read('DOCKER_CONTEXT')
+  const config = read('DOCKER_CONFIG')
+  if (host !== undefined) {
+    selection.host = host
+  }
+  if (context !== undefined) {
+    selection.context = context
+  }
+  if (config !== undefined) {
+    selection.config = config
+  }
+  return selection
+}
+
+/** Where a recorded container's Docker daemon was reached. */
+export interface DockerTarget {
+  endpoint?: string
+  context?: string
+  dockerConfig?: string
+}
+
+/**
+ * Child environment pinned to a recorded Docker daemon: DOCKER_HOST set to its endpoint (or DOCKER_CONTEXT to its
+ * context when no endpoint was recorded) and DOCKER_CONFIG to its recorded config folder, whatever the caller's shell
+ * selects now. With neither endpoint nor context it is the caller's own Docker environment, with any recorded config.
+ */
+export function dockerChildEnvFor(target: DockerTarget): ChildEnv {
+  const config: Record<string, string> = target.dockerConfig !== undefined ? { DOCKER_CONFIG: target.dockerConfig } : {}
+  if (target.endpoint !== undefined) {
+    return ChildEnv.with({ DOCKER_HOST: target.endpoint, ...config })
+  }
+  if (target.context !== undefined) {
+    return ChildEnv.with({ DOCKER_CONTEXT: target.context, ...config })
+  }
+  return ChildEnv.with({ ...callerVars(DOCKER_INHERITED), ...config })
+}
+
+/**
+ * Environment for a nested `helpers/verify` call: the base allowlist plus BCC_VERIFY_CACHE_DIR and the Docker
+ * selection, which the helper forwards only to its own Docker calls. Sentinel, fakes and apps still get `ChildEnv.with`.
+ */
+export function verifyHelperEnv(): ChildEnv {
+  return ChildEnv.with(callerVars(['BCC_VERIFY_CACHE_DIR', ...DOCKER_INHERITED]))
 }
 
 interface CommandOptions {

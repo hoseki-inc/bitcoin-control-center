@@ -53,7 +53,7 @@ Never verify against `pnpm dev` or `turbo`: turbo drops `DATA_DIR`, so Sentinel 
 
 | Check                                                    | On FAIL                                                                                                                                                    |
 | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `run`                                                    | No run state, or it does not parse. Launch one.                                                                                                            |
+| `run`                                                    | No run state, or it does not parse or names another run. Launch one; cleanup still clears the old folder.                                                  |
 | `sentinel process` / `electron process`, `fakes process` | The recorded PID exited or was reused. Clean up and relaunch.                                                                                              |
 | `ports`                                                  | This run's processes do not own their ports (including CDP on `--electron`). Clean up and relaunch; never drive a port another process holds.              |
 | `isolation` (`--electron` only)                          | `userDataDir` is missing or not isolated inside the scratch run folder and outside `~/Library/Application Support`. Clean up and relaunch.                 |
@@ -63,6 +63,7 @@ Never verify against `pnpm dev` or `turbo`: turbo drops `DATA_DIR`, so Sentinel 
 | `electrum`                                               | Sentinel is not connected to this run's fake Electrum.                                                                                                     |
 | `prices`                                                 | The fake mempool is not the only price source. A journey changed the price settings; launch a new run.                                                     |
 | `seed`                                                   | Not seeded, or a journey removed a seeded account or the seeded statement. Seed, or launch a new run for later journeys that need the baseline.            |
+| `emulators`                                              | A recorded container isn't running on its daemon, a health or bridge check failed, or `containers.json` doesn't parse. Stop the device or clean up.        |
 | `faults`                                                 | A fault is still on. Put it right with `helpers/verify fault <target> ok`.                                                                                 |
 | `fake coverage`                                          | A fake could not serve a request. The journey may have shown an error the real services would not; extend `tools/verify/fakes.ts` before trusting results. |
 
@@ -121,7 +122,11 @@ Proof standards:
 
 ## Cleanup
 
-`helpers/verify cleanup`. It stops every process launch recorded, only while it is still that process, copies the run's logs to `verify-output/<run-id>/logs/`, and deletes the scratch folder. On `--electron` runs it signals the Electron leader with `SIGTERM` first so `before-quit` stops Sentinel and Tor cleanly before escalating. It never kills by name or port and never deletes anything in `verify-output/`. Run it after every run, failed and interrupted ones included.
+`helpers/verify cleanup`. It stops every process launch recorded, only while it is still that process, removes every Docker container recorded for the run on the daemon that started it, copies the run's logs to `verify-output/<run-id>/logs/`, and deletes the scratch folder. On `--electron` runs it signals the Electron leader with `SIGTERM` first so `before-quit` stops Sentinel and Tor cleanly before escalating. It never kills by name or port, never removes a container it didn't record, and never deletes anything in `verify-output/`. Run it after every run, failed and interrupted ones included.
+
+Cleanup exits 1 and keeps the scratch folder while any recorded container isn't confirmed gone: Docker is down, `docker rm` failed, or the recorded Docker endpoint now reaches another daemon, as after switching between Colima and Docker Desktop. The error names the daemon and context to go back to. Fix that and run cleanup again; it retries only what is left. It also exits 1 and keeps the folder when `containers.json` or `processes.json` does not parse, rather than forget what they list: stop those processes and containers by hand, then delete the folder. A `run.json` that does not parse, or names another run, doesn't stop cleanup; the other two files are enough.
+
+If the daemon that started a container is gone for good, for example after resetting Docker Desktop or `colima delete`, cleanup keeps failing: it can't confirm the container is gone. Its containers went with that daemon, so once you are sure the daemon no longer exists, delete the run folder the error names by hand.
 
 ## Weekly online smoke
 
@@ -152,6 +157,10 @@ helpers/verify smoke --run weekly-electron-$(date +%Y%m%d) --tor-mode online
 | `evidence begin <recipe>`                                                                                                   | Opens a recipe's next attempt and its empty folder, on a live run.                     |
 | `evidence record <recipe> --status <status> [--reason <text>]`                                                              | Closes the open attempt with its outcome and rewrites the report.                      |
 | `evidence abandon <recipe>`                                                                                                 | Gives up the open attempt without an outcome.                                          |
-| `cleanup`                                                                                                                   | Stops this run's processes, keeps its logs, removes its scratch folder.                |
+| `emulator status [--device <device>]`                                                                                       | Shows each recorded emulator container and its state on the daemon that started it.    |
+| `emulator stop --device ledger\|trezor\|coldcard`                                                                           | Stops that device's bridge and removes its containers; exits 1 and keeps any it can't. |
+| `cleanup`                                                                                                                   | Stops this run's processes and containers, keeps its logs, removes its scratch folder. |
 
 The seed data and fakes live in `tools/verify/chain.ts` and `tools/verify/fakes.ts`.
+
+The emulator device runners arrive in later changes; until then `emulator start`, `press`, `reject`, `disconnect` and `fault` exit 1 saying the runner is not implemented.

@@ -5,15 +5,17 @@ import {
   FAULT_TARGETS,
   type FaultMode,
   type FaultTarget,
+  type Faults,
   HELPER,
   NO_FAULTS,
   fail,
+  invalidMessage,
   readAppliedFaults,
   requireJsonFile,
   runPaths,
   selectRunId,
   wait,
-  writeJson,
+  withRunLock,
 } from './run'
 
 // Makes a fake fail on purpose, to drive the app's error states, then puts it right. `down` refuses connections,
@@ -32,8 +34,20 @@ if (!isTarget(target) || !isMode(mode)) {
   fail(USAGE)
 }
 const paths = runPaths(selectRunId(values.run))
-const next = withFault(requireJsonFile(readAppliedFaults(paths)) ?? NO_FAULTS, target, mode)
-writeJson(paths.faultsFile, next)
+let next: Faults
+try {
+  next = await withRunLock(paths, (tracking) => {
+    const applied = readAppliedFaults(paths)
+    if (applied.status === 'invalid') {
+      throw new Error(`${invalidMessage(applied)}. Clean up this run and launch a new one.`)
+    }
+    const faults = withFault(applied.status === 'ok' ? applied.value : NO_FAULTS, target, mode)
+    tracking.writeFaults(faults)
+    return faults
+  })
+} catch (error) {
+  fail(error instanceof Error ? error.message : String(error))
+}
 
 const deadline = Date.now() + APPLY_TIMEOUT_MS
 while (requireJsonFile(readAppliedFaults(paths))?.seq !== next.seq) {

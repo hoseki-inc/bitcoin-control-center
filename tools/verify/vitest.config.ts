@@ -8,5 +8,5 @@ export default defineConfig({
       '@hoseki/apps': fileURLToPath(new URL('../../apps', import.meta.url)),
     },
   },
-  test: { include: ['*.test.ts'] },
+  test: { include: ['*.test.ts', 'emulators/*.test.ts'] },
 })

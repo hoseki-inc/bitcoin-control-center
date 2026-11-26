@@ -6,10 +6,12 @@ import {
   EMULATOR_DEVICES,
   type EmulatorDevice,
   HELPER,
+  type RunPaths,
+  type RunTracking,
   checkId,
   fail,
-  forgetContainer,
   inspectContainer,
+  invalidMessage,
   ledgerElfCacheDir,
   readContainersFile,
   readRunState,
@@ -17,7 +19,8 @@ import {
   runPaths,
   selectRunId,
   stopProcess,
-  writeJson,
+  trackContainers,
+  withRunLock,
 } from './run'
 
 // CLI skeleton for controlling hardware wallet emulators during a verification run.
@@ -35,6 +38,66 @@ const DEVICE_LABELS: Readonly<Record<EmulatorDevice, string>> = {
 
 function formatContainerState(state: ContainerInspectResult): string {
   return state.state === 'unavailable' ? `Docker unavailable: ${state.detail}` : state.state
+}
+
+/**
+ * Stops a device's bridges and removes its containers, forgetting each container only once Docker confirms it gone
+ * from the daemon that runs it. Runs under the run's lock; returns the failures, so the caller exits after releasing it.
+ */
+async function stopDevice(paths: RunPaths, tracking: RunTracking, device: EmulatorDevice): Promise<string[]> {
+  const stateResult = readRunState(paths)
+  const containersResult = readContainersFile(paths)
+  if (stateResult.status === 'invalid') {
+    return [`${invalidMessage(stateResult)}.`]
+  }
+  if (containersResult.status === 'invalid') {
+    return [`${invalidMessage(containersResult)}.`]
+  }
+  const state = stateResult.status === 'ok' ? stateResult.value : null
+  const recordedContainers = containersResult.status === 'ok' ? containersResult.value : []
+  const tracked = trackContainers(recordedContainers, state?.emulators ?? [])
+
+  const matchingEmulators = (state?.emulators ?? []).filter((entry) => entry.device === device)
+  const containerIds = new Set<string>(matchingEmulators.map((entry) => entry.containerId))
+  for (const recorded of recordedContainers) {
+    if (recorded.name === `emulator:${device}`) {
+      containerIds.add(recorded.containerId)
+    }
+  }
+
+  if (matchingEmulators.length === 0 && containerIds.size === 0) {
+    console.log(`No ${device} emulator recorded for run ${paths.runId}.`)
+    return []
+  }
+
+  for (const emulator of matchingEmulators) {
+    if (emulator.bridge !== undefined) {
+      await stopProcess({
+        name: emulator.bridge.name,
+        pid: emulator.bridge.pid,
+        startedAt: emulator.bridge.startedAt,
+      })
+    }
+  }
+  const confirmedRemovedIds = new Set<string>()
+  const failures: string[] = []
+  for (const containerId of containerIds) {
+    const result = removeContainer(containerId, tracked.get(containerId)?.daemon)
+    console.log(`emulator:${device}: ${result.detail}`)
+    if (result.removed) {
+      confirmedRemovedIds.add(containerId)
+      tracking.forgetContainers(new Set([containerId]))
+    } else {
+      failures.push(result.detail)
+    }
+  }
+  if (state?.emulators !== undefined && confirmedRemovedIds.size > 0) {
+    const remaining = state.emulators.filter(
+      (entry) => entry.device !== device || !confirmedRemovedIds.has(entry.containerId),
+    )
+    tracking.writeRunState({ ...state, emulators: remaining })
+  }
+  return failures
 }
 
 const { values, positionals } = readArgs(
@@ -75,13 +138,14 @@ switch (command.action) {
     const stateResult = readRunState(paths)
     const containersResult = readContainersFile(paths)
     if (stateResult.status === 'invalid') {
-      fail(`${stateResult.file} does not parse.`)
+      fail(`${invalidMessage(stateResult)}.`)
     }
     if (containersResult.status === 'invalid') {
-      fail(`${containersResult.file} does not parse.`)
+      fail(`${invalidMessage(containersResult)}.`)
     }
     const state = stateResult.status === 'ok' ? stateResult.value : null
     const recordedContainers = containersResult.status === 'ok' ? containersResult.value : []
+    const tracked = trackContainers(recordedContainers, state?.emulators ?? [])
 
     const emulators = (state?.emulators ?? []).filter(
       (entry) => command.device === undefined || entry.device === command.device,
@@ -101,7 +165,9 @@ switch (command.action) {
     }
 
     for (const emulator of emulators) {
-      const stateLabel = formatContainerState(inspectContainer(emulator.containerId))
+      const stateLabel = formatContainerState(
+        inspectContainer(emulator.containerId, tracked.get(emulator.containerId)?.daemon),
+      )
       const modelPart = emulator.model !== undefined ? ` model=${emulator.model}` : ''
       const bridgePart =
         emulator.bridge !== undefined ? ` bridge=${emulator.bridge.url} (PID ${emulator.bridge.pid})` : ''
@@ -110,7 +176,7 @@ switch (command.action) {
       )
     }
     for (const container of extraContainers) {
-      const stateLabel = formatContainerState(inspectContainer(container.containerId))
+      const stateLabel = formatContainerState(inspectContainer(container.containerId, container.daemon))
       console.log(`${container.name}: container=${container.containerId} (${stateLabel}) image=${container.image}`)
     }
     process.exit(0)
@@ -118,56 +184,11 @@ switch (command.action) {
 
   case 'stop': {
     const paths = runPaths(selectRunId(values.run))
-    const stateResult = readRunState(paths)
-    const containersResult = readContainersFile(paths)
-    if (stateResult.status === 'invalid') {
-      fail(`${stateResult.file} does not parse.`)
-    }
-    if (containersResult.status === 'invalid') {
-      fail(`${containersResult.file} does not parse.`)
-    }
-    const state = stateResult.status === 'ok' ? stateResult.value : null
-    const recordedContainers = containersResult.status === 'ok' ? containersResult.value : []
-
-    const matchingEmulators = (state?.emulators ?? []).filter((entry) => entry.device === command.device)
-    const containerIds = new Set<string>(matchingEmulators.map((entry) => entry.containerId))
-    for (const recorded of recordedContainers) {
-      if (recorded.name === `emulator:${command.device}`) {
-        containerIds.add(recorded.containerId)
-      }
-    }
-
-    if (matchingEmulators.length === 0 && containerIds.size === 0) {
-      console.log(`No ${command.device} emulator recorded for run ${paths.runId}.`)
-      process.exit(0)
-    }
-
-    for (const emulator of matchingEmulators) {
-      if (emulator.bridge !== undefined) {
-        await stopProcess({
-          name: emulator.bridge.name,
-          pid: emulator.bridge.pid,
-          startedAt: emulator.bridge.startedAt,
-        })
-      }
-    }
-    const confirmedRemovedIds = new Set<string>()
-    const failures: string[] = []
-    for (const containerId of containerIds) {
-      const result = removeContainer(containerId)
-      console.log(`emulator:${command.device}: ${result.detail}`)
-      if (result.removed) {
-        confirmedRemovedIds.add(containerId)
-        forgetContainer(paths, containerId)
-      } else {
-        failures.push(result.detail)
-      }
-    }
-    if (state?.emulators !== undefined && confirmedRemovedIds.size > 0) {
-      const remaining = state.emulators.filter(
-        (entry) => entry.device !== command.device || !confirmedRemovedIds.has(entry.containerId),
-      )
-      writeJson(paths.stateFile, { ...state, emulators: remaining })
+    let failures: string[]
+    try {
+      failures = await withRunLock(paths, async (tracking) => stopDevice(paths, tracking, command.device))
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error))
     }
     if (failures.length > 0) {
       fail(`Failed to stop ${command.device} emulator: ${failures.join('; ')}`)
