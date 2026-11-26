@@ -46,7 +46,17 @@
       "persistent": true
     },
     "control-center#test": {
-      "inputs": ["$TURBO_DEFAULT$", "$TURBO_ROOT$/.agents/skills/verify-control-center/features/map.json"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/.agents/skills/verify-control-center/features/map.json",
+        "$TURBO_ROOT$/packages/**/*.{ts,tsx,html,css,json}",
+        "$TURBO_ROOT$/apps/*/**/*.{html,css,json}",
+        "$TURBO_ROOT$/desktop/**/*.{html,css,json}",
+        "$TURBO_ROOT$/start9/**/*.{html,css,json}",
+        "!$TURBO_ROOT$/**/node_modules/**",
+        "!$TURBO_ROOT$/**/dist/**",
+        "!$TURBO_ROOT$/**/package-lock.json"
+      ],
       "outputs": ["coverage/**"]
     },
     "@bitcoin-control-center/shared#test": {

@@ -1,0 +1,21 @@
+<svg width="16" height="22" viewBox="0 0 16 22" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Trezor 1 1" clip-path="url(#clip0_4874_41212)">
+<g id="Clip path group">
+<mask id="mask0_4874_41212" style="mask-type:luminance" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="22">
+<g id="clip0_2422_97434">
+<path id="Vector" d="M15.1979 0.854004H0.797852V21.254H15.1979V0.854004Z" fill="white"/>
+</g>
+</mask>
+<g mask="url(#mask0_4874_41212)">
+<g id="Group">
+<path id="Vector_2" d="M12.8687 5.82679C12.8687 3.432 10.7907 1.44531 8.26119 1.44531C5.73169 1.44531 3.65369 3.433 3.65369 5.82679V7.22725H1.75781V17.3003L8.26119 20.3248L14.7661 17.2983V7.27016H12.8701L12.8687 5.82679ZM6.0026 5.82679C6.0026 4.69775 6.99644 3.79421 8.26119 3.79421C9.52594 3.79421 10.5198 4.69775 10.5198 5.82679V7.22725H6.0026V5.82679ZM12.1458 15.6738L8.26119 17.4809L4.37662 15.6738V9.62106H12.1458V15.6738Z" fill="black"/>
+</g>
+</g>
+</g>
+</g>
+<defs>
+<clipPath id="clip0_4874_41212">
+<rect width="14.4" height="20.4" fill="white" transform="translate(0.799805 0.856445)"/>
+</clipPath>
+</defs>
+</svg>

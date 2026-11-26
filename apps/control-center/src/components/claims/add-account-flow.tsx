@@ -1,5 +1,4 @@
 import { Box, Button, Flex, Grid, Icon, keyframes } from '@chakra-ui/react'
-import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { PageHeading } from '@hoseki/packages/ui/design-system/page-heading'
 import { ManualEntryIcon, ManualSignIcon, MultisigImage } from './account-type-media'
 import { ConnectionType } from './claims-landing/connection-type'
@@ -75,19 +74,19 @@ export function AddAccountFlow({ onClose, linkState }: AddAccountFlowProps): JSX
           <Grid templateColumns="repeat(3, 1fr)" gap={4} mb={8}>
             <ConnectionType
               title="Trezor"
-              imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/trezor.svg`}
+              imagePath="/images/hardware-wallets/trezor.svg"
               to="/accounts/verify/trezor"
               state={linkState}
             />
             <ConnectionType
               title="COLDCARD"
-              imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/coldcard.svg`}
+              imagePath="/images/hardware-wallets/coldcard.svg"
               to="/accounts/verify/coldcard"
               state={linkState}
             />
             <ConnectionType
               title="Ledger"
-              imagePath={`${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/ledger.svg`}
+              imagePath="/images/hardware-wallets/ledger.svg"
               to="/accounts/verify/ledger"
               state={linkState}
             />

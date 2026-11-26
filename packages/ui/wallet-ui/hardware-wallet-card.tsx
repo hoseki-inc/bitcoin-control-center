@@ -2,7 +2,6 @@ import { Badge, Box, Button, HStack, Icon, Input, Stack, Text, chakra } from '@c
 import { AnimatePresence, motion } from 'framer-motion'
 import { CheckIcon, ChevronLeftIcon, ChevronRightIcon, EyeIcon, EyeOffIcon, XIcon } from 'lucide-react'
 import { type ReactNode, useState } from 'react'
-import { HOSEKI_ASSETS_CDN_URL } from '../../constants'
 import { Spinner } from '../design-system'
 import { formatUsd, toBitcoinAmountDisplayValue, toXpubDisplayValue } from '../utils'
 import type { HardwareWallet } from './types'
@@ -115,7 +114,7 @@ export function HardwareWalletCard({
         <Box position="absolute" left={0} top={0} bottom={0} width="4px" bg="neutral.900" borderRadius="md" />
       )}
       <Stack minW="164px" w="164px" gap={1} flexShrink={0}>
-        <chakra.img src={`${HOSEKI_ASSETS_CDN_URL}/bitcoin-medium.svg`} alt="Wallet" w="32px" mx="auto" mb={1} />
+        <chakra.img src="/images/bitcoin-medium.svg" alt="Wallet" w="32px" mx="auto" mb={1} />
         <Text textStyle="label/md" fontWeight="medium" color="neutral.600">
           {wallet.label}
         </Text>

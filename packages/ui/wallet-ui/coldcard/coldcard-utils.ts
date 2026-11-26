@@ -1,5 +1,4 @@
 import { Address, type DerivationPath, type Xpub, derivationPathSchema } from '@hoseki/packages/bitcoin'
-import { HOSEKI_ASSETS_CDN_URL } from '@hoseki/packages/constants'
 import { Err, Ok, Result, parseUnknown } from '@hoseki/packages/result'
 import { bitcoinAddressString, bitcoinSinglesigAccountDescriptor } from '@hoseki/packages/schemas'
 import { Slip132 } from '@hoseki/packages/wallet'
@@ -78,17 +77,17 @@ export function parseSignatureFile(signedFileContents: string): Result<ParsedSig
 export const ColdcardModels = {
   'MK2/MK3': {
     name: 'MK2/MK3',
-    imageSrc: `${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/web-res/coldcard-mk4.png`,
+    imageSrc: '/images/hardware-wallets/web-res/coldcard-mk4.png',
     imageAlt: 'Coldcard MK2/MK3',
   },
   MK4: {
     name: 'MK4',
-    imageSrc: `${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/web-res/coldcard-mk4.png`,
+    imageSrc: '/images/hardware-wallets/web-res/coldcard-mk4.png',
     imageAlt: 'Coldcard MK4',
   },
   Q: {
     name: 'Q',
-    imageSrc: `${HOSEKI_ASSETS_CDN_URL}/hardware-wallets/web-res/coldcard-q.png`,
+    imageSrc: '/images/hardware-wallets/web-res/coldcard-q.png',
     imageAlt: 'Coldcard Q',
   },
 }
