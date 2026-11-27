@@ -19,7 +19,7 @@ Preconditions: a run launched with `helpers/verify launch --fresh --desktop` and
 - **Reach the form**: go to `/`, click `Continue` four times, waiting for each step to settle, to `Step 5 of 6`. Click `My own node`, then `Continue`. `Connect your node` shows `Address` (placeholder `umbrel.local or 192.168.1.20`), `Port` `50002`, `Protocol` `SSL`, and `Connect via Tor` off, with buttons `Back`, `Skip` and `Connect`.
 - **No address**: click `Connect`. `Enter your node’s address.`
 - **Bad port**: Address `127.0.0.1`, Port `70000`, click `Connect`. `Enter a port from 1 to 65535.`
-- **Onion without Tor**: Address `verifyexampleaddress.onion`, Port `50001`, click `Connect`. `Onion addresses need Tor. Turn on Connect via Tor.`
+- **Onion without Tor**: Address `verifyexampleaddress.onion`, Port `50001`. The hint `Onion addresses need Tor. Turn on Connect via Tor.` shows. Click `Connect`: the dialog `Turn on Tor to connect` opens with `Tor must be on to connect to an onion address.`, and the step stays on `Connect your node`. Click `OK` to close it.
 - **Connection fails**: Address `127.0.0.1`, Port `1`, Protocol `TCP`, click `Connect`. `Couldn’t connect to 127.0.0.1:1. Check these details and that your node is on.` shows with `connect ECONNREFUSED 127.0.0.1:1` beneath, still on step 5.
 - **Stored proof, failed**: `helpers/verify query --sql "SELECT key, value FROM settings"` and `helpers/verify query --sql "SELECT nickname, host, port, protocol, tor_enabled FROM desktop_connection_profiles"` into `stored.json`: no `electrum_host`, and the only connection is `Current connection`.
 - **Connect**: set Port `<port>` and click `Connect`. Toast `Connected to your node`, and the dialog moves to `Step 6 of 6`, `Start with one account`.

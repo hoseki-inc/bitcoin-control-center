@@ -22,7 +22,7 @@ Preconditions: a run launched with `--desktop`. Seeding doesn't matter. In a run
 - **Open Settings**: go to `/settings`. Under heading `Statement data`, radio `mempool` (`mempool.space`, `Fastest · Default`) is checked and the help line reads `Fastest. Your IP address and transaction details are shared with mempool.space.`
 - **Choose Electrum**: click radio `electrum` (`Configured Electrum server`, `Slower`). It is checked and the help line reads `Slower. Your IP address and transaction details are shared with the server operator.`
 - **Stored proof**: `helpers/verify query --sql "SELECT key, value FROM settings WHERE key = 'statement_tx_source'"` into `stored.json`: `electrum`.
-- **Reload**: reload `/settings`. Radio `electrum` is still checked.
+- **Reload**: reload `/settings`. Radio `electrum` is still checked. The saved choice loads after the section draws, so wait for the radio to become checked rather than reading it once the heading shows.
 - **Back to mempool.space**: click radio `mempool`. Status `Statement source saved` shows, the help line is the mempool.space one again, and the same query reads `mempool`. Add it to `stored.json` under its own key.
 
 ## Gotchas

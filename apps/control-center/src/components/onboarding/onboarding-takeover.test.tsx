@@ -342,17 +342,33 @@ it('stays on the form when your node does not connect', async () => {
   expect(heading()).toBe('Connect your node')
 })
 
-it('asks for Tor before connecting to an onion address', async () => {
+it('opens a dialog asking for Tor when Connect is pressed on an onion address with Tor off', async () => {
   const serverChoice = fakeServerChoice()
   await renderTakeover(true, serverChoice)
   await toServerStep()
   await choose('own')
   await click('Continue')
   await type('node-host', 'abcdefghijklmnop.onion')
+  // The hint shows before the press.
+  expect(document.body.textContent).toContain('Onion addresses need Tor. Turn on Connect via Tor.')
   await click('Connect')
-  expect(document.body.querySelector('[role="alert"]')?.textContent).toContain('Onion addresses need Tor.')
+  const dialog = await vi.waitFor(() => {
+    const found = Array.from(document.body.querySelectorAll('[role="dialog"]')).find((item) =>
+      item.textContent.includes('Turn on Tor to connect'),
+    )
+    assert(found !== undefined, 'Expected the Tor dialog')
+    return found
+  })
+  expect(dialog.textContent).toContain('Tor must be on to connect to an onion address.')
+  expect(document.body.querySelector('[role="alert"]')).toBeNull()
   expect(serverChoice.connectNode).not.toHaveBeenCalled()
+  expect(serverChoice.startTor).not.toHaveBeenCalled()
   expect(document.body.textContent).toContain('Your IP address203.0.113.24')
+  await click('OK')
+  await vi.waitFor(() => {
+    expect(document.body.textContent).not.toContain('Turn on Tor to connect')
+  })
+  expect(heading()).toBe('Connect your node')
   await toggle('node-tor')
   expect(serverChoice.startTor).toHaveBeenCalledTimes(1)
   expect(document.body.textContent).toContain('Your IP addressHidden by Tor')

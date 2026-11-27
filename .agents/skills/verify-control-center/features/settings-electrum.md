@@ -17,7 +17,7 @@ This recipe goes to `/settings#electrum-server` directly.
 
 ## Driving it with the browser
 
-Preconditions: a run launched with `--desktop`, after `notices-public-server.md`, which saves and connects `Verify Fake`. `<port>` below is the Electrum port from the doctor's `ports` check.
+Preconditions: a run launched with `--desktop`, after `notices-public-server.md` recorded verified on the same run, which saves and connects `Verify Fake`. If it did not, the list doesn't read `2 of 5` with `Verify Fake`: record this recipe `unreachable` rather than recreating `Verify Fake` here. `<port>` below is the Electrum port from the doctor's `ports` check.
 
 - **List**: `Saved connections` reads `2 of 5`: `Current connection` `Direct` and `Verify Fake` `Connected`. The details read `Verify Fake`, `Connected · 127.0.0.1:<port> (TCP)`.
 - **Test**: click `Test Connection`. `Connection successful` shows above the buttons.
@@ -28,7 +28,7 @@ Preconditions: a run launched with `--desktop`, after `notices-public-server.md`
 - **Unsaved changes**: change Port to `2`, then click `Verify Fake` in the list. `You have unsaved changes. Discard them to continue?` shows with `Keep editing` and `Discard changes`. Click `Discard changes`; `Verify Fake` opens.
 - **Active can't be deleted**: click `Delete Verify Fake`. The dialog `Delete “Verify Fake”?` says `You’re connected to this server. Connect to another saved connection before deleting this one.` and `Delete connection` is disabled. Click `Cancel`.
 - **Rename**: open `Verify Down`, click `Rename Verify Down`, type `Verify Closed Port` and click `Save connection name`. Toast `Connection renamed`. Its Port still reads `1`, so the discarded edit was never saved.
-- **Limit**: save `Verify Extra 1` (`127.0.0.1`, port `2`, `TCP`) and `Verify Extra 2` (port `3`) with `Save`. The list reads `5 of 5`, and `New connection` is disabled with `Limit reached. Delete one to add another.`
+- **Limit**: save `Verify Extra 1` (`127.0.0.1`, port `2`, `TCP`) and `Verify Extra 2` (port `3`) with `Save`. The list reads `5 of 5`, and `New connection` is disabled with `Limit reached. Delete one to add another.` That text joins the button's accessible name, `New connection Limit reached. Delete one to add another.`, so find the button by the name's `New connection` prefix here and after the delete.
 - **Stored proof, at the limit**: `helpers/verify query --sql "SELECT nickname, host, port, protocol, tor_enabled FROM desktop_connection_profiles"` into `stored.json`: five rows, `Verify Closed Port` on port `1`.
 - **Delete**: click `Delete Verify Extra 2`. The dialog says `This removes the saved connection. Your accounts and wallet data are kept.` Click `Delete connection`. Toast `Connection deleted`; the list reads `4 of 5`.
 - **Save and connect**: click `New connection`. Name `Verify Fake 2`, Host `127.0.0.1`, Port `<port>`, `TCP`, and click `Save & Connect`. Toast `Connection saved`; `Verify Fake 2` is `Connected`, `Verify Fake` is `Direct`, and the list reads `5 of 5`.

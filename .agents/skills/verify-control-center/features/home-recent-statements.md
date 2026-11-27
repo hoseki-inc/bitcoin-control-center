@@ -14,10 +14,10 @@ Proves: `recent-cards`, `recent-open`
 
 ## Driving it with the browser
 
-Preconditions: the baseline, with the one seeded statement.
+Preconditions: the baseline, with the one seeded statement. Drive it before any recipe on the same run that adds a statement, or on a run of its own: a second statement adds a second card.
 
 - **Card**: on `/home`, scroll to `Recent Statements`. One card reads `Statement`, `Period: Dec 31, 2025 - Jan 31, 2026` in America/New_York (the seeded period is January 2026 in UTC) and `Created:` with today's date. Its only control is button `View statement created <date>`.
-- **Open**: click the card's `View`. The URL becomes `/statements/<id>` with `Statement Details`, `Verify Seed`, `Completed`, `Download` and `Delete`.
+- **Open**: click the card's `View`. The URL becomes `/statements/<id>` with `Statement Details`, `Verify Seed`, `Completed`, `Download` and `Delete`. The status badge's text is `completed`, capitalized by style, so match it ignoring case.
 - **Stored proof**: `helpers/verify query --sql "SELECT id, status, user_name, timezone, opening_date, closing_date FROM statements"` into `stored.json`. The `id` matches the URL.
 
 ## Gotchas

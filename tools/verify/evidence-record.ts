@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { STATUSES, latestRecorded } from './rules'
+import { STATUSES, earlierOutcomes, latestRecorded } from './rules'
 import { type BundleProvenance, BundleProvenanceSchema, type RunState } from './run'
 
 // The pure part of `helpers/verify evidence`: what evidence.json holds and how report.md reads. evidence.ts does the
@@ -187,8 +187,11 @@ export function report(record: EvidenceRecord): string {
   }
   for (const attempt of shown) {
     const { outcome } = attempt
+    const earlier = earlierOutcomes(record.attempts, attempt)
+    // A pass after a failed first attempt is a flake until the cause is known: the report never hides it.
+    const retried = outcome.status === 'verified' && earlier.some((item) => item.status !== 'verified')
     lines.push(
-      `## ${attempt.recipe}: ${LABELS[outcome.status]}`,
+      `## ${attempt.recipe}: ${LABELS[outcome.status]}${retried ? ' on retry (flaky)' : ''}`,
       '',
       `Feature: ${attempt.feature}, attempt ${attempt.number}`,
       '',
@@ -200,6 +203,9 @@ export function report(record: EvidenceRecord): string {
         outcome.status === 'unreachable' ? `Missing precondition: ${outcome.reason}` : `Reason: ${outcome.reason}`,
         '',
       )
+    }
+    for (const item of earlier) {
+      lines.push(`Earlier attempt: ${LABELS[item.status]}${item.reason === null ? '' : `, ${item.reason}`}.`, '')
     }
     lines.push(`Recorded ${outcome.recordedAt}.`, '')
     if (outcome.artifacts.length > 0) {

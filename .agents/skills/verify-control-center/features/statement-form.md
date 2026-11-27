@@ -18,7 +18,7 @@ This recipe drives both, for Cancel.
 Preconditions: the baseline. Today is the run's date; the examples below are for 2026-11-18.
 
 - **Save a name**: on `/settings`, type `Verify Owner` in `Your name` and press Enter. Toast `Name saved`.
-- **Open the form**: click link `Statements`, then link `Generate Statement`. The URL is `/statements/create`. `Start Date` is 90 days before `End Date`, `End Date` is two days ago (`2026-11-16`) and its `max` is the same day. `Verify Savings` is ticked.
+- **Open the form**: click link `Statements`, then link `Generate Statement`. The URL is `/statements/create`. `Start Date` is 90 days before `End Date`, `End Date` is two days ago in the browser's time zone (`2026-11-16` on November 18) and its `max` is the same day. `Verify Savings` is ticked.
 - **Name prefill**: expand `Contact Information (optional)`. `Name` reads `Verify Owner`.
 - **End date clamp**: set `End Date` to today and move focus away. It reads two days ago again.
 - **Start after end**: set `Start Date` `2026-10-01` and `End Date` `2026-09-01`, click `Generate Statement`. Toast `Start date must be before end date`; the URL stays `/statements/create`.

@@ -189,9 +189,29 @@ export function beginProblem(
     return `${recipeId} can't be driven yet: ${recipe.problem}`
   }
   const open = openAttempt(attempts, recipeId)
-  return open === undefined
+  if (open !== undefined) {
+    return `Attempt ${open.number} of ${recipeId} is still open. Record its outcome, or run evidence abandon ${recipeId} to give it up, before beginning another.`
+  }
+  // Recipes on one run share its data and its faults, so a second driver would change what the first one proves.
+  const other = attempts.find((attempt) => attempt.outcome === null && attempt.abandonedAt === null)
+  if (other !== undefined) {
+    return `${other.recipe} is still open on this run. Recipes on one run go one at a time: record or abandon ${other.recipe} first, or drive ${recipeId} on its own run.`
+  }
+  const recorded = attempts.filter((attempt) => attempt.recipe === recipeId && attempt.outcome !== null).length
+  return recorded < MAX_RECORDED_ATTEMPTS
     ? null
-    : `Attempt ${open.number} of ${recipeId} is still open. Record its outcome, or run evidence abandon ${recipeId} to give it up, before beginning another.`
+    : `${recipeId} already has ${recorded} recorded attempts in this run: a first attempt and its one retry. Report the result as it stands; fix the cause and try again on a new run.`
+}
+
+/** A first attempt and one retry: enough to tell a flake from a failure, without retrying until something passes. */
+export const MAX_RECORDED_ATTEMPTS = 2
+
+/** The recipe's recorded outcomes before this attempt, oldest first. */
+export function earlierOutcomes(attempts: Attempt[], latest: Attempt): Outcome[] {
+  return attempts
+    .filter((attempt) => attempt.recipe === latest.recipe && attempt.number < latest.number)
+    .sort((a, b) => a.number - b.number)
+    .flatMap((attempt) => (attempt.outcome === null ? [] : [attempt.outcome]))
 }
 
 /** A new open attempt, numbered after every earlier attempt at the recipe. */

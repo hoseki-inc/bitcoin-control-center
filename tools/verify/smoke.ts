@@ -6,7 +6,7 @@ import { type Browser, type Page, chromium } from 'playwright-core'
 import { z } from 'zod'
 import { readArgs } from './args'
 import { VERIFY_PIN, sentinelClient, signIn } from './client'
-import { extractPdfText } from './pdf-text'
+import { extractPdfText, pdfTextIncludes } from './pdf-text'
 import { ChildEnv, runAsync, verifyHelperEnv } from './process'
 import { type TorMode, classifyTorOutcome } from './rules'
 import {
@@ -835,7 +835,7 @@ try {
             `Downloaded file is not a valid non-empty PDF (header=${String(parsedPdf.validHeader)}, bytes=${parsedPdf.byteLength})`,
           )
         }
-        if (!parsedPdf.text.includes('Verify Seed') || !parsedPdf.text.includes('Verify Savings')) {
+        if (!pdfTextIncludes(parsedPdf.text, 'Verify Seed') || !pdfTextIncludes(parsedPdf.text, 'Verify Savings')) {
           throw new Error(
             `Downloaded PDF text is missing expected seeded content ("Verify Seed" / "Verify Savings"). Extracted snippet: ${parsedPdf.text.slice(0, 240)}`,
           )
