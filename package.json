@@ -54,7 +54,7 @@
     "buffer": "6.0.3",
     "date-fns": "4.4.0",
     "decimal.js": "10.6.0",
-    "drizzle-orm": "1.0.0-rc.4",
+    "drizzle-orm": "1.0.0-rc.5",
     "ecpair": "2.1.0",
     "fastestsmallesttextencoderdecoder": "1.0.22",
     "fastify": "5.12.8",
