@@ -1,6 +1,6 @@
 import { deflateSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { extractPdfText } from './pdf-text'
+import { extractPdfText, normalizePdfText, pdfTextIncludes } from './pdf-text'
 
 function buildStreamObj(id: number, body: Buffer, compress: boolean): Buffer {
   const payload = compress ? deflateSync(body) : body
@@ -95,5 +95,39 @@ describe('extractPdfText', () => {
     const result = extractPdfText(pdf)
     expect(result.validHeader).toBe(true)
     expect(result.text).toContain('Seed!')
+  })
+
+  it('keeps later glyphs in place after a ligature entry in a bfrange array', () => {
+    // pdfkit writes fi as <0066 0069>; skipping it would shift every later glyph by one (balance read kalance).
+    const cmap = Buffer.from(
+      ['begincmap', '1 beginbfrange', '<0000> <0003> [<0073> <0066 0069> <002e> <0062>]', 'endbfrange', 'endcmap'].join(
+        '\n',
+      ),
+      'latin1',
+    )
+    const content = Buffer.from('BT /F1 12 Tf <0000000100030002> Tj ET', 'latin1')
+    const pdf = Buffer.concat([
+      Buffer.from('%PDF-1.4\n', 'latin1'),
+      Buffer.from('1 0 obj\n<< /Resources << /Font << /F1 2 0 R >> >> >>\nendobj\n', 'latin1'),
+      Buffer.from('2 0 obj\n<< /Type /Font /ToUnicode 3 0 R >>\nendobj\n', 'latin1'),
+      buildStreamObj(3, cmap, true),
+      buildStreamObj(4, content, true),
+      Buffer.from('%%EOF\n', 'latin1'),
+    ])
+    expect(extractPdfText(pdf).text).toBe('sfib.')
+  })
+})
+
+describe('pdfTextIncludes', () => {
+  it('matches a phrase the extractor split across lines', () => {
+    const text = 'PROVIDED BY USER\nVerify Owner\n12\nVerify Lane\nTestville, TS 00000'
+    expect(text).not.toContain('12 Verify Lane')
+    expect(pdfTextIncludes(text, '12 Verify Lane')).toBe(true)
+    expect(pdfTextIncludes(text, '13 Verify Lane')).toBe(false)
+  })
+
+  it('collapses whitespace in the phrase too', () => {
+    expect(normalizePdfText('  0.64999000\n BTC \t')).toBe('0.64999000 BTC')
+    expect(pdfTextIncludes('0.64999000\nBTC', '0.64999000  BTC')).toBe(true)
   })
 })

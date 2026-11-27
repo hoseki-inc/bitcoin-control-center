@@ -87,6 +87,22 @@ describe('beginProblem', () => {
     assert.match(beginProblem([], 'statements', broken, liveA) ?? '', /can't be driven yet/)
   })
 
+  it('refuses a third recorded attempt: one retry classifies a flake', () => {
+    const outcome = { status: 'failed' as const, reason: 'x', recordedAt: '2026-11-17T00:01:00Z', artifacts: [] }
+    const first = { ...begun, outcome }
+    const second = { ...begun, number: 2, outcome }
+    assert.equal(beginProblem([first], 'statements', recipe, liveA), null)
+    assert.match(beginProblem([first, second], 'statements', recipe, liveA) ?? '', /one retry/)
+    const abandoned = { ...begun, number: 2, abandonedAt: '2026-11-17T00:02:00Z' }
+    assert.equal(beginProblem([first, abandoned], 'statements', recipe, liveA), null)
+  })
+
+  it('refuses to begin a recipe while another recipe is open on the same run', () => {
+    const other = newAttempt([], { ...recipe, id: 'home-summary', feature: 'home' }, '2026-11-17T00:00:00Z', liveA)
+    assert.match(beginProblem([other], 'statements', recipe, liveA) ?? '', /home-summary is still open on this run/)
+    assert.equal(beginProblem([{ ...other, abandonedAt: '2026-11-17T00:01:00Z' }], 'statements', recipe, liveA), null)
+  })
+
   it('refuses a second attempt while one is open', () => {
     const refusal = beginProblem([begun], 'statements', recipe, liveA) ?? ''
     assert.match(refusal, /still open/)

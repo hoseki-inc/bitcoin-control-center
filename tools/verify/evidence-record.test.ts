@@ -270,4 +270,24 @@ describe('report', () => {
     assert.match(text, /^Missing precondition: no macOS session$/m)
     assert.match(text, /^- \[desktop-shell\/attempt-1\/trace\.md\]\(desktop-shell\/attempt-1\/trace\.md\)$/m)
   })
+
+  it('marks a pass after a failed first attempt as flaky and keeps the failure', () => {
+    const attempt = (number: number, status: 'verified' | 'failed', reason: string | null) => ({
+      recipe: 'statements',
+      number,
+      feature: 'statements',
+      proves: ['generate'],
+      begunAt: '2026-11-25T10:06:00.000Z',
+      sentinelStartedAt: 'x',
+      abandonedAt: null,
+      outcome: { status, reason, recordedAt: '2026-11-25T10:07:00.000Z', artifacts: [] },
+    })
+    const record: EvidenceRecord = {
+      ...recordFor(runState()),
+      attempts: [attempt(1, 'failed', 'Completed not shown'), attempt(2, 'verified', null)],
+    }
+    const text = report(record)
+    assert.match(text, /^## statements: Verified on retry \(flaky\)$/m)
+    assert.match(text, /^Earlier attempt: Failed, Completed not shown\.$/m)
+  })
 })

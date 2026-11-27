@@ -39,7 +39,7 @@ function parseToUnicodeCmap(cmap: string): ToUnicodeMap {
   const bfcharBlocks = cmap.matchAll(/beginbfchar([\s\S]*?)endbfchar/g)
   for (const block of bfcharBlocks) {
     const body = block[1] ?? ''
-    for (const pair of body.matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g)) {
+    for (const pair of body.matchAll(/<([0-9a-fA-F]+)>\s*<([0-9a-fA-F\s]+)>/g)) {
       const src = (pair[1] ?? '').toUpperCase()
       const dst = pair[2] ?? ''
       if (src.length > 0 && dst.length > 0) {
@@ -71,7 +71,8 @@ function parseToUnicodeCmap(cmap: string): ToUnicodeMap {
           entries.set(key, String.fromCodePoint(dstStart + (code - start)))
         }
       } else if (dstArray !== undefined) {
-        const targets = Array.from(dstArray.matchAll(/<([0-9a-fA-F]+)>/g), (m) => m[1] ?? '')
+        // A ligature maps to several code units, written with spaces between them: <0066 0069> is fi.
+        const targets = Array.from(dstArray.matchAll(/<([0-9a-fA-F\s]+)>/g), (m) => m[1] ?? '')
         for (let offset = 0; offset < targets.length; offset += 1) {
           const target = targets[offset]
           if (target !== undefined && target.length > 0) {
@@ -416,4 +417,17 @@ export function extractPdfText(pdf: Buffer): PdfVerification {
     byteLength: pdf.byteLength,
     text: textParts.join('\n').trim(),
   }
+}
+
+/** Collapses every run of whitespace, line breaks included, to one space. */
+export function normalizePdfText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim()
+}
+
+/**
+ * Whether extracted PDF text contains a phrase. The extractor splits text at every drawing operation,
+ * so an address drawn as `12` and `Verify Lane` comes back on two lines: compare with whitespace collapsed.
+ */
+export function pdfTextIncludes(text: string, phrase: string): boolean {
+  return normalizePdfText(text).includes(normalizePdfText(phrase))
 }

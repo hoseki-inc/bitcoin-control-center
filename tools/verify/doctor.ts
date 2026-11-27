@@ -1,10 +1,17 @@
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readArgs } from './args'
 import { countAccounts, sentinelClient, signIn } from './client'
 import { classifyScreen, screenFromEvents } from './emulators/ledger-driver'
-import { type EmulatorProbe, type ExtraContainerProbe, activeFaults, checkEmulatorsRule, freshSeedCheck } from './rules'
+import {
+  type EmulatorProbe,
+  type ExtraContainerProbe,
+  activeFaults,
+  checkEmulatorsRule,
+  freeAttemptNumber,
+  freshSeedCheck,
+} from './rules'
 import {
   type EmulatorState,
   HELPER,
@@ -29,7 +36,8 @@ import {
 } from './run'
 
 // Read-only: is this run worth driving? Every check runs, then the exit code is 1 if any failed.
-// Usage: helpers/verify doctor [--run <id>]
+// Usage: helpers/verify doctor [--run <id>] [--save <attempt folder>]
+// --save also writes the output to the folder's next free doctor-<n>.log, so a later doctor never replaces a failed one.
 
 interface Check {
   name: string
@@ -37,7 +45,8 @@ interface Check {
   detail: string
 }
 
-const paths = runPaths(selectRunId(readArgs({ run: { type: 'string' } }).values.run))
+const args = readArgs({ run: { type: 'string' }, save: { type: 'string' } }).values
+const paths = runPaths(selectRunId(args.run))
 const checks: Check[] = []
 const check = (name: string, ok: boolean, detail: string): void => {
   checks.push({ name, ok, detail })
@@ -318,7 +327,13 @@ check(
   unserved.length === 0 ? 'the fakes answered every request' : unserved.slice(0, 3).join('; '),
 )
 
-for (const { name, ok, detail } of checks) {
-  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(16)} ${detail}`)
+const output = checks.map(({ name, ok, detail }) => `${ok ? 'PASS' : 'FAIL'}  ${name.padEnd(16)} ${detail}`).join('\n')
+console.log(output)
+const saveTo = args.save
+if (saveTo !== undefined) {
+  const logFile = (n: number): string => join(saveTo, `doctor-${n}.log`)
+  const file = logFile(freeAttemptNumber(1, (n) => existsSync(logFile(n))))
+  writeFileSync(file, `${new Date().toISOString()}\n${output}\n`, { flag: 'wx' })
+  console.log(`Saved ${file}`)
 }
 process.exit(checks.every((item) => item.ok) ? 0 : 1)

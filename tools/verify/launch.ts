@@ -309,7 +309,16 @@ if (electron) {
     const electronProcess = await startProcess(
       'electron',
       electronBin,
-      [`--user-data-dir=${userDataDir}`, '--remote-debugging-address=127.0.0.1', `--remote-debugging-port=${cdpPort}`],
+      [
+        `--user-data-dir=${userDataDir}`,
+        '--remote-debugging-address=127.0.0.1',
+        `--remote-debugging-port=${cdpPort}`,
+        // A window another window covers, or any window while the display sleeps, stops drawing frames. Animations then
+        // never finish, and a driver waiting for a control to settle waits forever. Verify windows keep drawing.
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-background-timer-throttling',
+      ],
       REPO_ROOT,
       ChildEnv.with({ BCC_VERIFY_CONFIG: verifyConfigFile }),
     )
