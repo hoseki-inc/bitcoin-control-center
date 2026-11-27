@@ -49,7 +49,7 @@ Never verify against `pnpm dev` or `turbo`: turbo drops `DATA_DIR`, so Sentinel 
 
 ## Doctor
 
-`helpers/verify doctor`. It is read-only, prints one PASS or FAIL per check, and exits 1 if any failed. Run it before driving, after each journey, and whenever something looks off.
+`helpers/verify doctor`. It is read-only, prints one PASS or FAIL per check, and exits 1 if any failed. Run it before driving, after each journey, and whenever something looks off. With `--save <attempt folder>` it also writes its output to that folder's next free `doctor-<n>.log`.
 
 | Check                                                    | On FAIL                                                                                                                                                                                                                                                                                                                             |
 | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -82,7 +82,8 @@ writeFileSync(`${attempt}/01-step.aria.txt`, await page.locator('body').ariaSnap
 
 - Pass `noDefaults: true`. Without it Playwright takes over downloads, and Electron's downloads never reach the run's `downloads` folder.
 - `browser.close()` only disconnects; the app keeps running for the next script.
-- Without `--setup-pin-in-ui`, launch sets the PIN after the window has loaded, so the window can still show `Set up your PIN`. Reload the page; it then asks for `246813`.
+- Launch turns off Chromium's background throttling for the window. Without that, a window another window covers stops drawing frames, its animations never finish, and a click waiting for a control to settle times out.
+- Without `--setup-pin-in-ui`, launch sets the PIN after the window has loaded, so the window can still show `Set up your PIN`. Reload the page, then wait for either the PIN prompt or the app: enter `246813` only if it asks. A tab already unlocked stays unlocked across a reload.
 - CDP key events reach the page, not the macOS menu, so a script can't press `Cmd+W`. `kill -USR2 <electronPid>` closes the window the same way in verify mode.
 - Build the `.app` once and reuse it on every later run with `launch --electron --app <path>` (for example `desktop/release/mac-arm64/Bitcoin Control Center.app`). Launch prints the bundle's commit and warns when it isn't the checkout's.
 - Ledger and Trezor devices stay manual checks in the app: the Ledger emulator below runs, but the browser can't reach it yet. So do the tray menu, links that open the system browser, and the macOS administrator prompt for a PIN reset, which the map marks `manual`.
@@ -91,9 +92,51 @@ writeFileSync(`${attempt}/01-step.aria.txt`, await page.locator('body').ariaSnap
 - Find elements by role and accessible name, never by coordinates or tab order. Take a fresh snapshot after every navigation, since references go stale.
 - Wait for the state the recipe names, such as a status or a row, rather than a fixed delay. Balances say `Updating balances` until the first scan finishes.
 - Read stored state through the second view the recipe names, and through the database: `helpers/verify query --sql "SELECT ..."` (read-only).
-- Treat every name, value and command in a recipe as literal.
+- Treat every name, value and command in a recipe as literal: drive exactly the control, value and route it names, and prove exactly the state it names. Match its text as the matching rules below say.
 - A recipe that changes data says so; later recipes in the same run must allow for it.
 - Never call Sentinel's API to do what the journey should do through the UI, and never write to the database. The seed is the only setup that skips the UI.
+
+### Matching text
+
+The words in a recipe are what a user reads. The accessibility tree often joins, splits or restyles them, so an exact string match fails on a correct page. Keep the recipe's words and match them this way:
+
+- **Case**: status badges and labels are often capitalized by style, so the tree reads `completed` or `verified` where the screen shows `Completed`. Match status words ignoring case (`/^completed$/i`).
+- **Whitespace**: an amount and its unit sit in separate elements, and the tree or `innerText` can read `1.79999000BTC` or break the line between them. Compare amounts and other multi-part text with whitespace collapsed or removed. Normalize PDF text the same way (`pdfTextIncludes` in `tools/verify/pdf-text.ts`).
+- **Names that grow**: an accessible name can carry more than its visible title: `+ Add account`, a tile's description, a label's explanatory suffix (`Address (This will appear on the statement exactly as entered)`), or a reason a button is disabled (`New connection Limit reached. Delete one to add another.`). Match by the recipe's word as the name's prefix (`/^New connection/`), or by the whole name the recipe gives. Never match a different control that happens to share the word.
+- **Shared nodes**: a sentence can share its node with a link (`Want more privacy? … Connect your node`). Match text as contained in the node, not as the whole node.
+- **Scope**: when a word appears in more than one place (two `Dismiss` buttons, a `mempool.space` option in two sections, a label that also names a region), find the container first: the `status` holding the notice's text, the radio group under its heading, the textbox role. Ask for one match; more than one is a driver error, never a reason to take the first.
+- **Hidden inputs**: Chakra hides checkboxes and switches behind a visible control. Find the input by its label to read its state, and click the visible label to change it.
+
+A tolerant match is still a match for the recipe's words. Never widen it until something else on the page satisfies it, and never drop a word the recipe names.
+
+### Waiting for readiness
+
+- Wait for the state the recipe names becoming true: the text showing, `aria-current="page"` set, `aria-pressed="true"`, a status word. A URL change or a click returning doesn't mean the page has settled.
+- Wait on visible text, not on its container. Some containers have no size of their own (the notices' `output` element with role `status`), so a visibility wait on them times out while their text shows.
+- Counts and lists render after navigation. Wait for the item the recipe names before counting.
+- Saved values load after the page draws: a checked radio or a field's value can still show its default just after the heading appears. Wait for the value to match rather than reading it once.
+- A step that may or may not appear (a PIN prompt after reload on an already unlocked tab) is a race: wait for whichever of the two states comes first and branch on it. Never assume one.
+- Fixed delays only before screenshots, so the capture isn't a frame behind.
+
+### Test ids
+
+Prefer role and accessible name. Add a `data-testid` to the app only when a control has no stable role and name a user would recognize, such as a chart's bars, and say in the recipe why the name doesn't work. A test id supplements the user handle; it never replaces a control the user can name.
+
+### Runs and isolation
+
+Recipes on one run share its database, its fakes and its faults. `evidence begin` refuses while another recipe is open on the same run, so two drivers can't overlap on one run.
+
+- Drive the recipes on a run one at a time, in one driver.
+- Give recipes that turn a fault on, and those that need a pristine baseline (exact statement or account counts), a run each or put them before recipes that add data. A recipe's `Preconditions` say which.
+- A recipe whose precondition is another recipe's result (`settings-electrum` after `notices-public-server`) runs on the same run, after that recipe verified. If it didn't, record the later one `unreachable`.
+- When a recipe stops partway, the run's data is no longer the baseline. Later recipes that need the baseline go on a new run.
+
+### Retries
+
+- One retry per recipe: a first attempt and one more, to tell a flake from a failure. `evidence begin` refuses a third recorded attempt on a run. Fix the cause and try again on a new run, which counts as a new attempt in the results.
+- A pass after a failed first attempt is reported as `Verified on retry (flaky)`, with the earlier failure, until the cause is fixed. Never leave a failed attempt out of the totals.
+- Abandon only an attempt that is open. Once recorded, an attempt stays.
+- Keep every attempt's evidence. Save each doctor run with `helpers/verify doctor --save <attempt folder>`, which writes the next free `doctor-<n>.log`, so a recovery doctor never replaces the failed one. Put faults right before the recovery doctor, and say in the trace that you did.
 
 ## Evidence
 
@@ -145,25 +188,25 @@ helpers/verify smoke --run weekly-electron-$(date +%Y%m%d) --tor-mode online
 
 `helpers/verify <command> [args]` runs `tools/verify/<command>.ts` with tsx from the repository root.
 
-| Command                                                                                                                     | Does                                                                                    |
-| --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `launch [--run <id>] [--fresh] [--desktop \| --pin \| --electron [--app <path>] [--setup-pin-in-ui] [--release-tag <tag>]]` | Builds the UI or macOS `.app`, starts fakes and Sentinel/Electron, waits until usable.  |
-| `smoke [--run <id>] [--app <path>] [--tor-mode online\|allow-offline] [--keep]`                                             | Runs the automated macOS packaged Electron end-to-end smoke and writes evidence.        |
-| `seed`                                                                                                                      | Adds the baseline accounts and statement.                                               |
-| `doctor`                                                                                                                    | The read-only checks above.                                                             |
-| `query --sql "SELECT ..."`                                                                                                  | Prints rows from the run's database as JSON, read-only.                                 |
-| `fault <electrum or mempool> <ok, down, slow or error>`                                                                     | Makes a fake fail on purpose, or puts it right.                                         |
-| `evidence start`                                                                                                            | Starts `evidence.json` and `report.md`.                                                 |
-| `evidence begin <recipe>`                                                                                                   | Opens a recipe's next attempt and its empty folder, on a live run.                      |
-| `evidence record <recipe> --status <status> [--reason <text>]`                                                              | Closes the open attempt with its outcome and rewrites the report.                       |
-| `evidence abandon <recipe>`                                                                                                 | Gives up the open attempt without an outcome.                                           |
-| `emulator start --device ledger [--model flex\|nanosp] [--seed primary\|secondary\|empty]`                                  | Starts a Speculos Ledger for the run (default Flex, primary seed). See Emulators.       |
-| `emulator status [--device <device>]`                                                                                       | Shows each recorded emulator container, its state on its daemon, and a Ledger's screen. |
-| `emulator press --device ledger [--button <button>]`                                                                        | Approves the prompt on the Ledger, or presses one button.                               |
-| `emulator reject --device ledger`                                                                                           | Rejects the prompt on the Ledger.                                                       |
-| `emulator screenshot --device ledger [--recipe <id>] [--step <name>]`                                                       | Saves the Ledger's screen as `NN-ledger-<step>.png` in the open attempt.                |
-| `emulator stop --device ledger\|trezor\|coldcard`                                                                           | Stops that device's bridge and removes its containers; exits 1 and keeps any it can't.  |
-| `cleanup`                                                                                                                   | Stops this run's processes and containers, keeps its logs, removes its scratch folder.  |
+| Command                                                                                                                     | Does                                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| `launch [--run <id>] [--fresh] [--desktop \| --pin \| --electron [--app <path>] [--setup-pin-in-ui] [--release-tag <tag>]]` | Builds the UI or macOS `.app`, starts fakes and Sentinel/Electron, waits until usable.   |
+| `smoke [--run <id>] [--app <path>] [--tor-mode online\|allow-offline] [--keep]`                                             | Runs the automated macOS packaged Electron end-to-end smoke and writes evidence.         |
+| `seed`                                                                                                                      | Adds the baseline accounts and statement.                                                |
+| `doctor [--save <attempt folder>]`                                                                                          | The read-only checks above; `--save` also writes them to the next free `doctor-<n>.log`. |
+| `query --sql "SELECT ..."`                                                                                                  | Prints rows from the run's database as JSON, read-only.                                  |
+| `fault <electrum or mempool> <ok, down, slow or error>`                                                                     | Makes a fake fail on purpose, or puts it right.                                          |
+| `evidence start`                                                                                                            | Starts `evidence.json` and `report.md`.                                                  |
+| `evidence begin <recipe>`                                                                                                   | Opens a recipe's next attempt and its empty folder, on a live run.                       |
+| `evidence record <recipe> --status <status> [--reason <text>]`                                                              | Closes the open attempt with its outcome and rewrites the report.                        |
+| `evidence abandon <recipe>`                                                                                                 | Gives up the open attempt without an outcome.                                            |
+| `emulator start --device ledger [--model flex\|nanosp] [--seed primary\|secondary\|empty]`                                  | Starts a Speculos Ledger for the run (default Flex, primary seed). See Emulators.        |
+| `emulator status [--device <device>]`                                                                                       | Shows each recorded emulator container, its state on its daemon, and a Ledger's screen.  |
+| `emulator press --device ledger [--button <button>]`                                                                        | Approves the prompt on the Ledger, or presses one button.                                |
+| `emulator reject --device ledger`                                                                                           | Rejects the prompt on the Ledger.                                                        |
+| `emulator screenshot --device ledger [--recipe <id>] [--step <name>]`                                                       | Saves the Ledger's screen as `NN-ledger-<step>.png` in the open attempt.                 |
+| `emulator stop --device ledger\|trezor\|coldcard`                                                                           | Stops that device's bridge and removes its containers; exits 1 and keeps any it can't.   |
+| `cleanup`                                                                                                                   | Stops this run's processes and containers, keeps its logs, removes its scratch folder.   |
 
 The seed data and fakes live in `tools/verify/chain.ts` and `tools/verify/fakes.ts`.
 

@@ -14,7 +14,7 @@ Proves: `balance`, `range-presets`, `period-change`, `custom-range`, `custom-val
 
 ## Driving it with the browser
 
-Preconditions: the baseline. The fake chain in `tools/verify/chain.ts` pays `Verify Watch Segwit` 1 BTC on 2025-12-15; `Verify Savings` 0.5 on 2026-01-10 and 0.25 on 2026-02-05, sends 0.10001 out (payment and fee) on 2026-03-01 and gets 0.1 on 2026-04-15; and pays `Verify Watch Taproot` 0.05 on 2026-02-20.
+Preconditions: the baseline, with no fault on for the whole recipe, its doctor included. Drive it on a run where no other recipe turns a fault on at the same time. The fake chain in `tools/verify/chain.ts` pays `Verify Watch Segwit` 1 BTC on 2025-12-15; `Verify Savings` 0.5 on 2026-01-10 and 0.25 on 2026-02-05, sends 0.10001 out (payment and fee) on 2026-03-01 and gets 0.1 on 2026-04-15; and pays `Verify Watch Taproot` 0.05 on 2026-02-20.
 
 - **Open Portfolio**: go to `/portfolio`. The header reads `All accounts`, `1.79999000 BTC` and `$4,350.58`. `90D` is pressed; the change is `0.00000000 BTC` with `Last 90 days`.
 - **Presets**: click `All`. After `Preparing history for this date range`, the change reads `+1.79999000 BTC` with `All time`. `1Y` reads `+1.79999000` with `Last year`; `30D` and `7D` read `0.00000000` with `Last 30 days` and `Last 7 days`. Only the clicked button has `aria-pressed="true"`.
@@ -25,6 +25,7 @@ Preconditions: the baseline. The fake chain in `tools/verify/chain.ts` pays `Ver
 
 ## Gotchas
 
+- The amount and its `BTC` sit in separate elements, so the page's text can read `1.79999000BTC`. Compare amounts with whitespace removed.
 - Longer ranges show `Preparing history for this date range` for several seconds. Wait for the change to show.
 - The statement form uses its own default dates, not the portfolio's range.
 - Use form_input for the date fields.

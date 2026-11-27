@@ -14,7 +14,7 @@ Proves: `release`, `release-dismiss`
 
 Preconditions: a seeded macOS run launched with `helpers/verify launch --electron --release-tag v99.0.0_0`, unlocked with `246813`. Launch points the release check at the fake mempool's `/latest.json`, which serves that tag, so the check never leaves `127.0.0.1`.
 
-- **See the notice**: open `/home`. At the bottom of the window, `Bitcoin Control Center 99.0.0 is available.` shows with link `Download` and button `Dismiss`, inside the notice's element with ARIA role `status`.
+- **See the notice**: open `/home`. At the bottom of the window, `Bitcoin Control Center 99.0.0 is available.` shows with link `Download` and button `Dismiss`, inside the notice's element with ARIA role `status`. Wait for the text `Bitcoin Control Center 99.0.0 is available.` to be visible, not for the `status` element: it is an `output` with no size of its own, so a visibility wait on it times out while its text shows.
 - **Download link**: read link `Download`'s `href` without opening it: `https://www.bitcoincontrolcenter.com/#downloads`.
 - **Dismiss**: click button `Dismiss` inside that `status` element. The notice is gone. Click link `Settings`, then link `Home`: it stays gone.
 - **Back after a reload**: reload the page (`page.reload()` over CDP) and unlock with `246813` if asked. The notice shows again: the dismissal lasts only while the page stays loaded, as after a relaunch.

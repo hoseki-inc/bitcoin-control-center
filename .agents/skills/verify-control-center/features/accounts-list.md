@@ -23,7 +23,7 @@ Preconditions: the baseline.
 - **Header totals**: the header reads `1.79999000 BTC`, `$4,350.58`, `1 Verified`, `2 Unverified` and `Synced`. The BTC is the sum of the three cards, and so is the dollar figure.
 - **Cards**: three cards, each a link to `/accounts/<id>`: `Unverified` `Verify Watch Taproot` `0.05000000 BTC` `$120.85` `2.8%`; `Unverified` `Verify Watch Segwit` `1.00000000 BTC` `$2,417.00` `55.6%`; `Verified` `Verify Savings` `0.74999000 BTC` `$1,812.73` `41.7%`.
 - **Header entry**: click link `Add Account`. The URL becomes `/accounts/add` with the heading `Connect New Account`. Go back.
-- **Dashed card**: click button `Add account` after the last card. The same chooser opens. Go back.
+- **Dashed card**: click button `+ Add account` after the last card. The same chooser opens. Go back.
 - **Open a card**: click `Verify Watch Segwit`. The URL becomes `/accounts/<id>` with the heading `Verify Watch Segwit`, `1.00000000 BTC` and `Unverified`.
 - **Stored proof**: `helpers/verify query --sql "SELECT a.display_name, a.status, (SELECT balance_sats FROM balance_snapshots b WHERE b.account_id = a.id ORDER BY b.timestamp DESC LIMIT 1) AS latest_sats FROM accounts a WHERE a.deleted_at IS NULL ORDER BY a.created_at"` into `stored.json`. The statuses and balances match the cards.
 

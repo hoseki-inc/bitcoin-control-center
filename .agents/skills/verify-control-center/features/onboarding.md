@@ -18,7 +18,7 @@ Preconditions: a run launched with `helpers/verify launch --fresh` and not seede
 
 - **Opens**: go to `/`. The URL becomes `/home` and a dialog shows `Your Bitcoin, in one place`, `Step 1 of 5`, step dots, and buttons `Skip` and `Continue`.
 - **Steps**: click `Continue`. `Step 2 of 5` reads `Bring in what you already use` and adds `Back`. Click `Back`: `Step 1 of 5`. Continue to `Step 5 of 5`, which offers `Back`, `Not Now` and `Add Account` instead of `Skip` and `Continue`.
-- **Backdrop**: click `Back` to step 4, then click outside the dialog. It stays open on step 4.
+- **Backdrop**: click `Back` to step 4, then click the gradient background outside the centered card (for example near a corner of the window). The introduction fills the window, so there is no separate overlay element: the background is the dialog's own content. It stays open on step 4.
 - **Escape**: press Escape. The dialog closes and Home shows its empty state.
 - **Stays closed**: reload. No dialog.
 - **Stored proof**: `helpers/verify query --sql "SELECT key, value FROM settings"` into `stored.json`: `onboarding_v1` is `dismissed`.

@@ -16,7 +16,7 @@ Proves: `other-currency`, `address`, `empty-period`
 
 Preconditions: the baseline, with a name saved in Settings (`statement-form` saves `Verify Owner`).
 
-- **EUR with an address**: on `/statements/create`, click the `Contact Information (optional)` toggle. `Name` reads the saved name. Set `Start Date` `2026-02-01`, `End Date` `2026-03-31`, `Currency` `EUR`, and type `12 Verify Lane`, Shift+Enter, `Testville, TS 00000` in `Address`. Click `Generate Statement`.
+- **EUR with an address**: on `/statements/create`, click the `Contact Information (optional)` toggle. `Name` reads the saved name. Set `Start Date` `2026-02-01`, `End Date` `2026-03-31`, `Currency` `EUR`, and type `12 Verify Lane`, Shift+Enter, `Testville, TS 00000` in the field labeled `Address (This will appear on the statement exactly as entered)`; match its label by the `Address` prefix. Click `Generate Statement`.
 - **Details**: the URL becomes `/statements/<id>` with `Completed`, the name and both address lines under Contact Details, `Currency: EUR` and `Period: Feb 1 - Mar 31, 2026`.
 - **PDF, EUR**: the text has `PROVIDED BY USER`, the name, `12 Verify Lane` and `Testville, TS 00000`, `APPROX. EUR VALUE: EUR 1,307.13`, opening `0.50000000 BTC` (EUR 978.50), money in `0.25000000`, money out `0.10001000`, closing `0.64999000 BTC`, both transactions with EUR values, and a note that EUR values use saved Bitcoin-to-EUR rates from the configured mempool.
 - **Quiet period**: generate another statement for `2026-06-01` to `2026-06-30` in USD. Its PDF shows opening and closing `0.74999000 BTC`, nothing in or out, and on the account page `No Transactions to Display` and `There were no transactions or balance changes during this period.`
@@ -27,5 +27,6 @@ Preconditions: the baseline, with a name saved in Settings (`statement-form` sav
 - EUR values follow the fake price on each date, so they are fixed for these dates.
 - A rate column only appears on the cover page of a combined statement, not on a single statement.
 - The `Contact Information (optional)` heading is inside its toggle button. If a click on the heading does not open it, click the button itself.
+- The PDF text extractor breaks lines at every drawing operation, so `12 Verify Lane` can come back as `12` and `Verify Lane` on two lines. Collapse whitespace before matching a phrase, with `pdfTextIncludes` from `tools/verify/pdf-text.ts`.
 - The PDF pane can paint blank. Read the PDF's text from the iframe's `blob:` URL as the statements recipe describes. pdfkit writes ToUnicode ranges as `<start> <end> [<u1> <u2> …]`; read those arrays, or every glyph decodes to the wrong letter.
 - A click can miss when the layout has just shifted, or while a page fades in after loading. Check the result after every click, and find the element again before retrying.

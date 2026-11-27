@@ -382,7 +382,7 @@
             {
               "id": "own-node-validation",
               "kind": "failure",
-              "does": "Enter your node's address, a port from 1 to 65535, or Onion addresses need Tor"
+              "does": "Enter your node's address, or a port from 1 to 65535; Connect on an onion address with Tor off opens a dialog asking for Tor"
             },
             {
               "id": "own-node-connect-failed",
@@ -397,7 +397,7 @@
             {
               "id": "tor",
               "kind": "edge",
-              "does": "Connect via Tor, and its failure message",
+              "does": "Connect via Tor starts Tor; Connect on an onion address with Tor off asks for Tor in a dialog",
               "needs": "electron"
             }
           ],

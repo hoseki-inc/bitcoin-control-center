@@ -21,7 +21,7 @@ Preconditions: a launched run whose doctor passes `prices` (source mempool, fall
 
 - **Open Settings**: go to `/settings`. Wait for the heading `Bitcoin price`.
 - **Read the section**: under `Bitcoin price`, combobox `Price source` shows `Your mempool server (127.0.0.1:<mempool port>)`, the port the doctor's `ports` check names. Its other options are `Block`, `mempool.space`, `Coinbase` and `CoinGecko`. Checkbox `Allow fallbacks` is unchecked.
-- **Turn fallbacks on**: click checkbox `Allow fallbacks`. It becomes checked, and a green check shows beside `Price source`.
+- **Turn fallbacks on**: click checkbox `Allow fallbacks`. Its input is hidden behind Chakra's control: click the visible label text, and read the state from the checkbox. It becomes checked, and a green check shows beside `Price source`.
 - **Stored proof**: `helpers/verify query --sql "SELECT key, value FROM settings WHERE key LIKE 'price%'"` into `stored.json`. `price_source` is `mempool` and `price_fallbacks_enabled` is `true`.
 - **Reload**: reload the page and wait for `Bitcoin price`. `Allow fallbacks` is still checked and `Price source` is unchanged.
 - **Turn fallbacks off**: click `Allow fallbacks` again. It becomes unchecked, the query shows `price_fallbacks_enabled` `false`, and the doctor's `prices` check passes again.
