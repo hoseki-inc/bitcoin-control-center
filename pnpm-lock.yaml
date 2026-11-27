@@ -165,8 +165,8 @@ importers:
         specifier: 1.0.0-rc.4
         version: 1.0.0-rc.4(@libsql/client@0.18.0)(@sinclair/typebox@0.34.52)(valibot@1.5.0(@typescript/typescript6@6.0.2))(zod@4.6.7)
       ecpair:
-        specifier: 2.1.0
-        version: 2.1.0
+        specifier: 3.0.2
+        version: 3.0.2(@typescript/typescript6@6.0.2)
       fastestsmallesttextencoderdecoder:
         specifier: 1.0.22
         version: 1.0.22
