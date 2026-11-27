@@ -2,10 +2,17 @@ import {
   Alert,
   AlertDescription,
   Box,
+  Button,
   FormControl,
   FormLabel,
   HStack,
   Input,
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalFooter,
+  ModalHeader,
+  ModalOverlay,
   Radio,
   RadioGroup,
   Select,
@@ -222,6 +229,8 @@ function NodeForm({
   isDisabled,
   isConnected,
   problem,
+  needsTor,
+  onCloseNeedsTor,
 }: {
   draft: ConnectionDetails
   onChange: (value: Partial<ConnectionDetails>) => void
@@ -230,6 +239,9 @@ function NodeForm({
   /** Connected to these details already, as when coming back to the form. */
   isConnected: boolean
   problem: Problem | null
+  /** Connect was pressed on an onion address with Tor off. */
+  needsTor: boolean
+  onCloseNeedsTor: () => void
 }): JSX.Element {
   const hostRef = useRef<HTMLInputElement>(null)
   const problemRef = useRef<HTMLDivElement>(null)
@@ -342,6 +354,22 @@ function NodeForm({
           <ProblemDescription problem={problem} />
         </Alert>
       )}
+      <Modal isOpen={needsTor} onClose={onCloseNeedsTor} isCentered>
+        <ModalOverlay />
+        <ModalContent mx={4}>
+          <ModalHeader>Turn on Tor to connect</ModalHeader>
+          <ModalBody>
+            <Text textStyle="text/sm" color="neutral.700">
+              Tor must be on to connect to an onion address. Turn on Connect via Tor, then press Connect.
+            </Text>
+          </ModalBody>
+          <ModalFooter>
+            <Button flex={1} onClick={onCloseNeedsTor}>
+              OK
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Stack>
   )
 }
@@ -353,9 +381,6 @@ function invalidReason(draft: ConnectionDetails): string | null {
   }
   if (!isValidPort(draft.port)) {
     return 'Enter a port from 1 to 65535.'
-  }
-  if (isOnionHost(draft.host) && !draft.torEnabled) {
-    return 'Onion addresses need Tor. Turn on Connect via Tor.'
   }
   return null
 }
@@ -381,6 +406,7 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
   const [choiceFailure, setChoiceFailure] = useState<Problem | null>(null)
   const [draft, setDraft] = useState(blankConnection)
   const [problem, setProblem] = useState<Problem | null>(null)
+  const [needsTor, setNeedsTor] = useState(false)
   // The details last connected here, so coming back to the form and on doesn't connect again.
   const [connected, setConnected] = useState<ConnectionDetails | null>(null)
 
@@ -399,6 +425,11 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
       const invalid = invalidReason(draft)
       if (invalid !== null) {
         setProblem({ message: invalid })
+        return false
+      }
+      // Tor stays off until the user turns it on, so this press neither starts Tor nor connects.
+      if (isOnionHost(draft.host) && !draft.torEnabled) {
+        setNeedsTor(true)
         return false
       }
       setBusy(true)
@@ -488,6 +519,10 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
             isDisabled={busy}
             isConnected={isConnected}
             problem={problem}
+            needsTor={needsTor}
+            onCloseNeedsTor={() => {
+              setNeedsTor(false)
+            }}
             onSubmit={next}
             onChange={(value) => {
               setDraft((current) => ({ ...current, ...value }))
@@ -507,5 +542,5 @@ export function useServerSteps(choice: ElectrumChoice | undefined): OnboardingSt
       })
     }
     return steps
-  }, [choice, server, publicTor, busy, choiceFailure, draft, problem, connected])
+  }, [choice, server, publicTor, busy, choiceFailure, draft, problem, needsTor, connected])
 }
