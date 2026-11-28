@@ -3,13 +3,16 @@ import { join } from 'node:path'
 import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import { readArgs } from './args'
+import { LEDGER_FIRMWARE, bridgeModeNow } from './emulators/ledger'
 import {
   CdpVersionSchema,
+  type EmulatorProvenance,
   type EvidenceRecord,
   LABELS,
   RecordSchema,
   type RuntimeVersions,
   cdpVersions,
+  describeEmulator,
   newRecord,
   report,
   startProblem,
@@ -26,6 +29,7 @@ import {
   openAttempt,
   readRecipes,
   recordProblem,
+  sortEvidence,
   withAbandoned,
   withOutcome,
 } from './rules'
@@ -33,6 +37,7 @@ import {
   EVIDENCE_ROOT,
   HELPER,
   REPO_ROOT,
+  type RunState,
   buildStamp,
   checkId,
   fail,
@@ -87,7 +92,21 @@ async function readElectronVersions(cdpPort: number): Promise<RuntimeVersions> {
   }
 }
 
-const listing = (directory: string): string[] => (existsSync(directory) ? readdirSync(directory).sort() : [])
+/** The run's Ledger as an attempt records it, with the bridge's mode now; undefined when the run has none. */
+async function ledgerProvenance(state: RunState | null): Promise<EmulatorProvenance | undefined> {
+  const ledger = state?.emulators?.find((emulator) => emulator.device === 'ledger')
+  if (ledger === undefined) {
+    return undefined
+  }
+  let bridge = 'none (Speculos API only)'
+  if (ledger.bridge !== undefined) {
+    const now = await bridgeModeNow(paths, ledger.bridge)
+    bridge = 'mode' in now ? now.mode : `not answering (${now.problem})`
+  }
+  return { device: 'ledger', model: ledger.model ?? null, seed: ledger.seed, firmware: LEDGER_FIRMWARE, bridge }
+}
+
+const listing = (directory: string): string[] => (existsSync(directory) ? sortEvidence(readdirSync(directory)) : [])
 
 const [command, recipeArg] = positionals
 if (command === 'start') {
@@ -135,11 +154,14 @@ if (command === 'start') {
     const planned = newAttempt(record.attempts, recipe, new Date().toISOString(), live)
     // A folder left by an interrupted begin is skipped, never reused.
     const number = freeAttemptNumber(planned.number, (n) => existsSync(join(folder, recipeId, `attempt-${n}`)))
-    const attempt = { ...planned, number }
+    const emulator = await ledgerProvenance(state)
+    const attempt = emulator === undefined ? { ...planned, number } : { ...planned, number, emulator }
     const folderPath = join(folder, attemptFolder(attempt))
     mkdirSync(folderPath, { recursive: true })
     save({ ...record, attempts: [...record.attempts, attempt] })
-    console.log(`Attempt ${attempt.number} of ${recipeId}. Save its evidence in ${folderPath}`)
+    console.log(
+      `Attempt ${attempt.number} of ${recipeId}. Save its evidence in ${folderPath}${emulator === undefined ? '' : `\nEmulator: ${describeEmulator(emulator)}`}`,
+    )
   } else if (command === 'abandon') {
     if (open === undefined) {
       fail(`${recipeId} has no open attempt to abandon.`)

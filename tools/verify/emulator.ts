@@ -1,12 +1,14 @@
-import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { readArgs } from './args'
-import { emulatorApiUrl, startLedgerEmulator } from './emulators/ledger'
+import { emulatorApiUrl, withLedgerDriveLock } from './emulators/ledger'
+import { type BridgeControl, bridgeControl } from './emulators/ledger-bridge'
 import { type DriveResult, classifyScreen, drivePrompt, pressOnce, speculosApi } from './emulators/ledger-driver'
-import { dockerArch, ensureLedgerElf } from './emulators/ledger-elf'
+import { type LedgerLaunch, startLedger } from './emulators/ledger-launch'
 import { RecordSchema } from './evidence-record'
 import { EMULATOR_ACTIONS, nextShotName, parseEmulatorCommand, screenshotFolder } from './rules'
 import {
+  BridgeRecordSchema,
   type ContainerInspectResult,
   EMULATOR_DEVICES,
   EVIDENCE_ROOT,
@@ -14,34 +16,42 @@ import {
   type EmulatorState,
   HELPER,
   type LedgerModel,
+  type RecordedProcess,
   type RunPaths,
   type RunTracking,
-  captureDockerDaemon,
+  bridgeRecordFile,
   checkId,
   fail,
   inspectTracked,
   invalidMessage,
   isPathInside,
   ledgerElfCacheDir,
+  liveStartProblem,
+  portOwnedBy,
   readContainersFile,
+  readIntentsFile,
   readJsonFile,
+  readProcessesFile,
+  readReservation,
   readRunState,
   removeRunContainers,
   requireJsonFile,
+  reservationOwnerAlive,
   runPaths,
   selectRunId,
-  stopProcess,
+  stopRecordedGroups,
   trackContainers,
   withRunLock,
 } from './run'
 
-// Controls a run's hardware wallet emulators. The Ledger runs as Speculos in Docker (tools/verify/emulators); Trezor
-// and Coldcard runners, and Ledger disconnect and fault, come in later changes and exit 1 until then.
+// Controls a run's hardware wallet emulators. The Ledger runs as Speculos in Docker (tools/verify/emulators), with a
+// bridge when started with --bridge; Trezor and Coldcard runners, and Ledger disconnect and fault, come in later
+// changes and exit 1 until then.
 // Usage: helpers/verify emulator start|stop|status|press|reject|screenshot|disconnect|fault [--run <id>]
-//          --device ledger|trezor|coldcard [--seed primary|secondary|empty] [--model flex|nanosp] [--button <button>]
-//          [--recipe <id>] [--step <name>] [--mode <mode>]
+//          --device ledger|trezor|coldcard [--seed primary|secondary|empty] [--model flex|nanosp] [--bridge]
+//          [--auto-approve] [--button <button>] [--recipe <id>] [--step <name>] [--mode <mode>]
 
-const USAGE = `Usage: ${HELPER} emulator ${EMULATOR_ACTIONS.join('|')} [--run <id>] [--device ${EMULATOR_DEVICES.join('|')}] [--seed primary|secondary|empty] [--model flex|nanosp] [--button <button>] [--recipe <id>] [--step <name>] [--mode <mode>]`
+const USAGE = `Usage: ${HELPER} emulator ${EMULATOR_ACTIONS.join('|')} [--run <id>] [--device ${EMULATOR_DEVICES.join('|')}] [--seed primary|secondary|empty] [--model flex|nanosp] [--bridge] [--auto-approve] [--button <button>] [--recipe <id>] [--step <name>] [--mode <mode>]`
 
 const DEVICE_LABELS: Readonly<Record<EmulatorDevice, string>> = {
   ledger: 'Ledger',
@@ -66,12 +76,40 @@ async function stopDevice(paths: RunPaths, tracking: RunTracking, device: Emulat
   if (containersResult.status === 'invalid') {
     return [`${invalidMessage(containersResult)}.`]
   }
-  const name = `emulator:${device}`
-  for (const emulator of stateResult.status === 'ok' ? (stateResult.value.emulators ?? []) : []) {
-    if (emulator.device === device && emulator.bridge !== undefined) {
-      await stopProcess({ name: emulator.bridge.name, pid: emulator.bridge.pid, startedAt: emulator.bridge.startedAt })
-    }
+  const busy = liveStartProblem(paths)
+  if (busy !== null) {
+    return [busy]
   }
+  const name = `emulator:${device}`
+  // A Ledger's bridge is in run.json once its start finished, and in processes.json from the moment it was started,
+  // so a start that died in between still leaves a record to stop it by.
+  const bridges: RecordedProcess[] = (stateResult.status === 'ok' ? (stateResult.value.emulators ?? []) : []).flatMap(
+    (emulator) =>
+      emulator.device === device && emulator.bridge !== undefined
+        ? [{ name: emulator.bridge.name, pid: emulator.bridge.pid, startedAt: emulator.bridge.startedAt }]
+        : [],
+  )
+  if (device === 'ledger') {
+    const journal = readProcessesFile(paths)
+    if (journal.status === 'invalid') {
+      return [`${invalidMessage(journal)}; it may name a Ledger bridge, so nothing was stopped.`]
+    }
+    bridges.push(
+      ...(journal.status === 'ok' ? journal.value : []).filter((recorded) => recorded.name === 'ledger-bridge'),
+    )
+  }
+  const running = await stopRecordedGroups(bridges)
+  if (running.length > 0) {
+    // Its page could still reach the device: keep its record, the start reservation and the containers.
+    return [
+      `${running.map((recorded) => `${recorded.name} (PID ${recorded.pid})`).join(', ')} did not stop; nothing else was removed. Stop it, then run emulator stop again.`,
+    ]
+  }
+  if (device === 'ledger') {
+    rmSync(bridgeRecordFile(paths), { force: true })
+  }
+  // A start whose process died can't finish; its containers are removed below like any other.
+  tracking.writeReservation(null)
   const { results, errors } = removeRunContainers(paths, tracking, {
     select: (recorded) => recorded === name,
     log: (line) => {
@@ -103,6 +141,31 @@ function recordedLedger(paths: RunPaths): EmulatorState & { model: LedgerModel }
   return { ...ledger, model: ledger.model === 'nanosp' ? 'nanosp' : 'flex' }
 }
 
+/**
+ * The control API of the Ledger's bridge, from the record the bridge wrote. Throws when there is no usable record, or
+ * when the control port isn't held by the bridge's process group, so the token never goes to another process.
+ */
+function controlOf(paths: RunPaths, bridge: NonNullable<EmulatorState['bridge']>): BridgeControl {
+  const record = readJsonFile(BridgeRecordSchema, bridgeRecordFile(paths))
+  if (record.status !== 'ok' || record.value.pid !== bridge.pid || record.value.controlPort !== bridge.controlPort) {
+    throw new Error(`the bridge (PID ${bridge.pid}) left no usable ${bridgeRecordFile(paths)}`)
+  }
+  if (!portOwnedBy(bridge.controlPort, bridge.pid)) {
+    throw new Error(`control port ${bridge.controlPort} is not held by the bridge (PID ${bridge.pid})`)
+  }
+  return bridgeControl(record.value)
+}
+
+/** A drive through the bridge, with a bridge that doesn't answer reported as a failed drive. */
+async function viaBridge(run: () => Promise<DriveResult>): Promise<DriveResult> {
+  try {
+    return await run()
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return { ok: false, trace: [], reason: `the bridge did not drive the device: ${detail}`, screenshot: null }
+  }
+}
+
 /** Prints a drive's steps and the screen it left; on failure saves the screen to the run's logs and exits 1. */
 function report(paths: RunPaths, what: string, done: string, result: DriveResult): never {
   for (const line of result.trace) {
@@ -131,6 +194,8 @@ const { values, positionals } = readArgs(
     device: { type: 'string' },
     seed: { type: 'string' },
     model: { type: 'string' },
+    bridge: { type: 'boolean' },
+    'auto-approve': { type: 'boolean' },
     button: { type: 'string' },
     mode: { type: 'string' },
     recipe: { type: 'string' },
@@ -144,6 +209,8 @@ const parsed = parseEmulatorCommand({
   device: values.device,
   seed: values.seed,
   model: values.model,
+  bridge: values.bridge,
+  autoApprove: values['auto-approve'],
   button: values.button,
   mode: values.mode,
   recipe: values.recipe,
@@ -177,6 +244,25 @@ switch (command.action) {
     const state = stateResult.status === 'ok' ? stateResult.value : null
     const recordedContainers = containersResult.status === 'ok' ? containersResult.value : []
     const tracked = trackContainers(recordedContainers, state?.emulators ?? [])
+    const intents = readIntentsFile(paths)
+    const reservation = readReservation(paths)
+    // A create journaled but not yet recorded, and a start in progress, show before anything is running.
+    const pending = [
+      ...(intents.status === 'ok' ? intents.value : [])
+        .filter((intent) => command.device === undefined || intent.name === `emulator:${command.device}`)
+        .map(
+          (intent) => `${intent.name}: create pending (container ${intent.containerName}, since ${intent.startedAt})`,
+        ),
+      ...(reservation.status === 'ok' &&
+      (command.device === undefined || reservation.value.name === `emulator:${command.device}`)
+        ? [
+            `${reservation.value.name}: start ${reservationOwnerAlive(reservation.value) ? 'in progress' : 'interrupted'} (PID ${reservation.value.pid}, since ${reservation.value.reservedAt})`,
+          ]
+        : []),
+    ]
+    for (const line of pending) {
+      console.log(line)
+    }
 
     const emulators = (state?.emulators ?? []).filter(
       (entry) => command.device === undefined || entry.device === command.device,
@@ -189,7 +275,7 @@ switch (command.action) {
       return command.device === undefined || entry.name === `emulator:${command.device}`
     })
 
-    if (emulators.length === 0 && extraContainers.length === 0) {
+    if (emulators.length === 0 && extraContainers.length === 0 && pending.length === 0) {
       const scope = command.device !== undefined ? `${command.device} emulator` : 'emulators'
       console.log(`No ${scope} recorded for run ${paths.runId}.`)
       process.exit(0)
@@ -213,8 +299,17 @@ switch (command.action) {
         }
       }
       const modelPart = emulator.model !== undefined ? ` model=${emulator.model}` : ''
-      const bridgePart =
-        emulator.bridge !== undefined ? ` bridge=${emulator.bridge.url} (PID ${emulator.bridge.pid})` : ''
+      let bridgePart = ''
+      if (emulator.bridge !== undefined) {
+        let mode: string
+        try {
+          const status = await controlOf(paths, emulator.bridge).status()
+          mode = `${status.mode}${status.inFlight === null ? '' : `, APDU waiting ${status.inFlight.seconds} s`}`
+        } catch (error) {
+          mode = `not answering: ${error instanceof Error ? error.message : String(error)}`
+        }
+        bridgePart = ` bridge=${emulator.bridge.url} (PID ${emulator.bridge.pid}, ${mode})`
+      }
       console.log(
         `${emulator.device}:${modelPart} seed=${emulator.seed} container=${emulator.containerId} (${formatContainerState(inspected)}) health=${emulator.healthUrl}${screen}${bridgePart}`,
       )
@@ -250,41 +345,29 @@ switch (command.action) {
       )
     }
     const model: LedgerModel = command.model === 'nanosp' ? 'nanosp' : 'flex'
-    let cacheDir: string
     try {
-      cacheDir = ledgerElfCacheDir()
+      ledgerElfCacheDir()
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error))
     }
     const paths = runPaths(selectRunId(values.run))
-    if (requireJsonFile(readRunState(paths)) === null) {
+    const state =
+      requireJsonFile(readRunState(paths)) ??
       fail(`Run ${paths.runId} has no run.json. Launch it first with ${HELPER} launch.`)
+    const launch: LedgerLaunch = { model, seed: command.seed }
+    if (command.bridge !== null) {
+      launch.bridge = { mode: command.bridge, target: state.url }
     }
-    const daemon = captureDockerDaemon()
-    if (daemon.isErr()) {
-      fail(daemon.unwrapErr())
+    const started = await startLedger(paths, launch)
+    if (started.isErr()) {
+      fail(`Ledger emulator did not start: ${started.unwrapErr()}`)
     }
-    const arch = dockerArch(daemon.unwrap())
-    if (arch.isErr()) {
-      fail(arch.unwrapErr())
-    }
-    const start = { model, seed: command.seed, arch: arch.unwrap(), daemon: daemon.unwrap() }
-    try {
-      const elf = await ensureLedgerElf(paths, { ...start, cacheDir })
-      if (elf.isErr()) {
-        fail(elf.unwrapErr())
-      }
-      console.log(`Starting Speculos (${model}, seed ${command.seed}) on linux/${start.arch}`)
-      const started = await startLedgerEmulator(paths, { ...start, elfPath: elf.unwrap() })
-      if (started.isErr()) {
-        fail(`Ledger emulator did not start: ${started.unwrapErr()}`)
-      }
-      const emulator = started.unwrap()
-      console.log(
-        `Ledger ${model} is ready: container ${emulator.containerId.slice(0, 12)}, Speculos API ${emulatorApiUrl(emulator)}`,
-      )
-    } catch (error) {
-      fail(error instanceof Error ? error.message : String(error))
+    const emulator = started.unwrap()
+    console.log(
+      `Ledger ${model} is ready: container ${emulator.containerId.slice(0, 12)}, Speculos API ${emulatorApiUrl(emulator)}`,
+    )
+    if (emulator.bridge !== undefined) {
+      console.log(`Open Control Center at ${emulator.bridge.url} to reach the Ledger (bridge ${emulator.bridge.mode}).`)
     }
     process.exit(0)
   }
@@ -297,17 +380,33 @@ switch (command.action) {
     const paths = runPaths(selectRunId(values.run))
     const ledger = recordedLedger(paths)
     const api = speculosApi(emulatorApiUrl(ledger))
-    if (command.action === 'reject') {
-      report(paths, 'reject', 'rejected the prompt', await drivePrompt(api, ledger.model, 'reject'))
+    const button = command.action === 'press' ? command.button : undefined
+    const { bridge } = ledger
+    // With a bridge, the bridge drives, so its auto-approve and other commands wait their turn; without one, a lock
+    // per device does the same for commands.
+    const drive = async (): Promise<DriveResult> => {
+      if (bridge !== undefined) {
+        return viaBridge(async () => {
+          const control = controlOf(paths, bridge)
+          return command.action === 'reject' ? control.reject() : control.press(button)
+        })
+      }
+      return withLedgerDriveLock(paths, async () =>
+        command.action === 'reject'
+          ? drivePrompt(api, ledger.model, 'reject')
+          : button === undefined
+            ? drivePrompt(api, ledger.model, 'approve')
+            : pressOnce(api, ledger.model, button),
+      )
     }
-    const { button } = command
+    if (command.action === 'reject') {
+      report(paths, 'reject', 'rejected the prompt', await drive())
+    }
     report(
       paths,
       button === undefined ? 'approve' : `press-${button}`,
       button === undefined ? 'approved the prompt' : `pressed ${button}`,
-      button === undefined
-        ? await drivePrompt(api, ledger.model, 'approve')
-        : await pressOnce(api, ledger.model, button),
+      await drive(),
     )
   }
 
@@ -327,13 +426,18 @@ switch (command.action) {
     if (!isPathInside(folder, runFolder)) {
       fail(`Refusing to write outside ${runFolder}: ${folder}`)
     }
-    mkdirSync(folder, { recursive: true })
-    const file = join(folder, nextShotName(existsSync(folder) ? readdirSync(folder) : [], command.step))
+    // The screen first, so a failed read leaves no empty folder behind.
+    let png: Buffer
     try {
-      writeFileSync(file, await speculosApi(emulatorApiUrl(ledger)).screenshot())
+      png = await (ledger.bridge === undefined
+        ? speculosApi(emulatorApiUrl(ledger)).screenshot()
+        : controlOf(paths, ledger.bridge).screenshot())
     } catch (error) {
       fail(`Could not read the Ledger screen: ${error instanceof Error ? error.message : String(error)}`)
     }
+    mkdirSync(folder, { recursive: true })
+    const file = join(folder, nextShotName(readdirSync(folder), command.step))
+    writeFileSync(file, png)
     console.log(file)
     process.exit(0)
   }

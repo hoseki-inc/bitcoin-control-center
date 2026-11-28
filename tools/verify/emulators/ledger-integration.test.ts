@@ -9,6 +9,7 @@ import LedgerBtcApp from '@ledgerhq/hw-app-btc'
 import { pathStringToArray } from '@ledgerhq/hw-app-btc/lib/bip32'
 import { AppClient } from '@ledgerhq/hw-app-btc/lib/newops/appClient'
 import Transport from '@ledgerhq/hw-transport'
+import TransportWebHID from '@ledgerhq/hw-transport-webhid'
 import { Verifier } from 'bip322-js'
 import { describe, it } from 'vitest'
 import { z } from 'zod'
@@ -20,12 +21,14 @@ import {
   REPO_ROOT,
   type RunState,
   dockerDaemonProblem,
+  isOurProcess,
   readRunState,
   reportsOnlyAbsence,
   runDocker,
   runPaths,
   writeJson,
 } from '../run'
+import { LEDGER_VENDOR_ID, installWebHidShim } from './webhid-shim'
 
 // Opt-in: BCC_VERIFY_EMULATOR_TESTS=1 pnpm exec vitest run --root tools/verify. Builds or reuses the cached ELFs,
 // starts real Speculos on Docker for each model through the CLI, and drives Ledger's own hw-app-btc against it.
@@ -65,8 +68,57 @@ async function helper(dir: string, args: string[]): Promise<{ output: string; fa
   return { output: `${result.stdout}${result.stderr}`, failed: result.code !== 0 }
 }
 
+/** A run folder with a run.json, laid out where the helper looks when its temp folder is `dir`. */
+function fakeRun(dir: string, runId: string): string {
+  const runDir = join(dir, 'bcc-verify', createHash('sha256').update(REPO_ROOT).digest('hex').slice(0, 8), runId)
+  mkdirSync(runDir, { recursive: true })
+  const state: RunState = {
+    runId,
+    launchedAt: new Date().toISOString(),
+    fresh: false,
+    desktop: false,
+    electron: false,
+    setupPinInUi: false,
+    pin: false,
+    build: { commit: 'abc', tree: 't', dirty: false },
+    url: 'http://127.0.0.1:9',
+    sentinel: { name: 'sentinel', pid: 999_999, startedAt: 'never', port: 9 },
+    fakes: { name: 'fakes', pid: 999_998, startedAt: 'never', electrumPort: 10, mempoolPort: 11 },
+  }
+  writeJson(join(runDir, 'run.json'), state)
+  return runDir
+}
+
+/** A page with the WebHID shim, talking to the bridge at `drive`, and LedgerJS's own WebHID transport on it. */
+async function shimPage(drive: string): Promise<TransportWebHID> {
+  const hid = installWebHidShim({
+    navigator: {},
+    fetch: async (input, init) => fetch(`${drive}${input instanceof Request ? input.url : input.toString()}`, init),
+  })
+  assert.ok(hid !== null)
+  const [device] = await hid.requestDevice({ filters: [{ vendorId: LEDGER_VENDOR_ID }] })
+  assert.ok(device !== undefined)
+  // As TransportWebHID.open does, without the global navigator.hid it reads for its disconnect listener.
+  await device.open()
+  return new TransportWebHID(device)
+}
+
+async function teardown(dir: string, runId: string): Promise<void> {
+  // On a failure, cleanup removes what the run recorded. If it can't, the run and its journal stay for a look.
+  const cleaned = await helper(dir, ['cleanup', '--run', runId])
+  rmSync(join(EVIDENCE_ROOT, runId), { recursive: true, force: true })
+  if (cleaned.failed) {
+    console.error(`Kept ${dir}: cleanup of ${runId} failed:\n${cleaned.output}`)
+  } else {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}
+
 const MESSAGE =
   'I, the owner, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me. ID=emulator-3b'
+/** Control Center's own challenge, whose 21-character ID gives the Flex a separate Message content page. */
+const APP_MESSAGE =
+  'I, the owner, affirm sole control of this account. No other third-party claims/access permitted. Ownership revocable solely by me. ID=9nQurUa5DFGSQVgVEYE9Y'
 
 describe.runIf(emulatorTestsEnabled())('Ledger on Speculos (BCC_VERIFY_EMULATOR_TESTS=1)', () => {
   it.each(['flex', 'nanosp'] as const)(
@@ -75,24 +127,8 @@ describe.runIf(emulatorTestsEnabled())('Ledger on Speculos (BCC_VERIFY_EMULATOR_
       const dir = mkdtempSync(join(tmpdir(), 'verify-speculos-'))
       const runId = `itest-${model}-${Math.random().toString(36).slice(2, 8)}`
       // The helper gets `dir` as its temp folder, so the run lives there, as helper.test.ts lays it out.
-      const runDir = join(dir, 'bcc-verify', createHash('sha256').update(REPO_ROOT).digest('hex').slice(0, 8), runId)
       try {
-        mkdirSync(runDir, { recursive: true })
-        const state: RunState = {
-          runId,
-          launchedAt: new Date().toISOString(),
-          fresh: false,
-          desktop: false,
-          electron: false,
-          setupPinInUi: false,
-          pin: false,
-          build: { commit: 'abc', tree: 't', dirty: false },
-          url: 'http://127.0.0.1:9',
-          sentinel: { name: 'sentinel', pid: 999_999, startedAt: 'never', port: 9 },
-          fakes: { name: 'fakes', pid: 999_998, startedAt: 'never', electrumPort: 10, mempoolPort: 11 },
-        }
-        writeJson(join(runDir, 'run.json'), state)
-
+        const runDir = fakeRun(dir, runId)
         const start = await helper(dir, ['emulator', 'start', '--device', 'ledger', '--model', model, '--run', runId])
         assert.equal(start.failed, false, start.output)
         assert.match(start.output, new RegExp(`Ledger ${model} is ready`))
@@ -165,16 +201,127 @@ describe.runIf(emulatorTestsEnabled())('Ledger on Speculos (BCC_VERIFY_EMULATOR_
         assert.equal(cleanup.failed, false, cleanup.output)
         assert.equal(existsSync(runDir), false)
       } finally {
-        // On a failure, cleanup removes what the run recorded. If it can't, the run and its journal stay for a look.
-        const teardown = await helper(dir, ['cleanup', '--run', runId])
-        rmSync(join(EVIDENCE_ROOT, runId), { recursive: true, force: true })
-        if (teardown.failed) {
-          console.error(`Kept ${dir}: cleanup of ${runId} failed:\n${teardown.output}`)
-        } else {
-          rmSync(dir, { recursive: true, force: true })
-        }
+        await teardown(dir, runId)
       }
     },
     600_000,
   )
+
+  it.each(['flex', 'nanosp'] as const)(
+    'drives %s from LedgerJS over WebHID through the bridge: xpubs, approve, reject, and a reload taking over',
+    async (model) => {
+      const dir = mkdtempSync(join(tmpdir(), 'verify-bridge-'))
+      const runId = `ibridge-${model}-${Math.random().toString(36).slice(2, 8)}`
+      try {
+        const runDir = fakeRun(dir, runId)
+        const start = await helper(dir, [
+          'emulator',
+          'start',
+          '--device',
+          'ledger',
+          '--model',
+          model,
+          '--bridge',
+          '--run',
+          runId,
+        ])
+        assert.equal(start.failed, false, start.output)
+        assert.match(
+          start.output,
+          /Open Control Center at http:\/\/127\.0\.0\.1:\d+ to reach the Ledger \(bridge manual\)/,
+        )
+        const recorded = readRunState({ ...runPaths(runId), stateFile: join(runDir, 'run.json') })
+        const bridge = recorded.status === 'ok' ? recorded.value.emulators?.[0]?.bridge : undefined
+        assert.ok(bridge !== undefined)
+        assert.match((await helper(dir, ['emulator', 'status', '--run', runId])).output, /bridge=.* manual\)/)
+
+        const transport = await shimPage(bridge.url)
+        const btc = new LedgerBtcApp({ transport })
+        for (const [path, expected] of [
+          ["m/84'/0'/0'", EMULATOR_PRIMARY.accounts.nativeSegwit.xpub],
+          ["m/86'/0'/0'", EMULATOR_PRIMARY.accounts.taproot.xpub],
+        ] as const) {
+          assert.equal(await btc.getWalletXpub({ path, xpubVersion: 0x0488b21e }), expected.toString(), path)
+        }
+
+        // Approved through the bridge's control port, which owns driving once a bridge runs.
+        const signing = btc.signMessage("m/84'/0'/0'/0/0", Buffer.from(APP_MESSAGE).toString('hex'))
+        const press = await helper(dir, ['emulator', 'press', '--device', 'ledger', '--run', runId])
+        assert.equal(press.failed, false, press.output)
+        const signature = encodeHwAppBtcSignature(await signing)
+        assert.equal(
+          Verifier.verifySignature('bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', APP_MESSAGE, signature, false),
+          true,
+        )
+        const refused = assert.rejects(btc.signMessage("m/84'/0'/0'/0/0", Buffer.from(APP_MESSAGE).toString('hex')), {
+          statusCode: 0x6985,
+        })
+        const reject = await helper(dir, ['emulator', 'reject', '--device', 'ledger', '--run', runId])
+        assert.equal(reject.failed, false, reject.output)
+        await refused
+
+        // A second page, as after a reload, owns the device; the first page's next APDU fails as a lost device.
+        const reloaded = new LedgerBtcApp({ transport: await shimPage(bridge.url) })
+        const both = await Promise.allSettled([
+          btc.getWalletXpub({ path: "m/84'/0'/0'", xpubVersion: 0x0488b21e }),
+          reloaded.getWalletXpub({ path: "m/84'/0'/0'", xpubVersion: 0x0488b21e }),
+        ])
+        const [stale] = both
+        assert.ok(stale.status === 'rejected')
+        assert.match(stale.reason instanceof Error ? stale.reason.message : '', /write/i)
+        assert.deepEqual(both[1], {
+          status: 'fulfilled',
+          value: EMULATOR_PRIMARY.accounts.nativeSegwit.xpub.toString(),
+        })
+
+        const shot = await helper(dir, ['emulator', 'screenshot', '--device', 'ledger', '--run', runId])
+        assert.equal(shot.failed, false, shot.output)
+        assert.deepEqual([...readFileSync(shot.output.trim()).subarray(0, 4)], [0x89, 0x50, 0x4e, 0x47])
+
+        const stop = await helper(dir, ['emulator', 'stop', '--device', 'ledger', '--run', runId])
+        assert.equal(stop.failed, false, stop.output)
+        await assert.rejects(fetch(bridge.url), 'the drive proxy is gone after stop')
+        assert.equal(isOurProcess(bridge), false)
+      } finally {
+        await teardown(dir, runId)
+      }
+    },
+    600_000,
+  )
+
+  it('approves on its own with --auto-approve, until a manual press turns that off', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-bridge-auto-'))
+    const runId = `iauto-${Math.random().toString(36).slice(2, 8)}`
+    try {
+      const runDir = fakeRun(dir, runId)
+      const start = await helper(dir, [
+        'emulator',
+        'start',
+        '--device',
+        'ledger',
+        '--bridge',
+        '--auto-approve',
+        '--run',
+        runId,
+      ])
+      assert.equal(start.failed, false, start.output)
+      const recorded = readRunState({ ...runPaths(runId), stateFile: join(runDir, 'run.json') })
+      const bridge = recorded.status === 'ok' ? recorded.value.emulators?.[0]?.bridge : undefined
+      assert.ok(bridge !== undefined)
+      const btc = new LedgerBtcApp({ transport: await shimPage(bridge.url) })
+      const signature = encodeHwAppBtcSignature(
+        await btc.signMessage("m/84'/0'/0'/0/0", Buffer.from(APP_MESSAGE).toString('hex')),
+      )
+      assert.equal(
+        Verifier.verifySignature('bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu', APP_MESSAGE, signature, false),
+        true,
+      )
+      const idle = await helper(dir, ['emulator', 'press', '--device', 'ledger', '--run', runId])
+      assert.equal(idle.failed, true)
+      assert.match(idle.output, /no prompt appeared/)
+      assert.match((await helper(dir, ['emulator', 'status', '--run', runId])).output, /bridge=.* manual\)/)
+    } finally {
+      await teardown(dir, runId)
+    }
+  }, 600_000)
 })

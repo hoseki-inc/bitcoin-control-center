@@ -8,7 +8,8 @@
     "desktop-web": "Needs helpers/verify launch --desktop: the desktop web app and Sentinel's --desktop options, driven in a browser.",
     "electron": "Needs helpers/verify launch --electron: the packaged macOS Electron app with its own scratch data folder, driven over CDP (or helpers/verify smoke).",
     "packaged": "Needs helpers/verify launch --electron: a packaged macOS desktop build (use --release-tag <tag> for release-notice flows).",
-    "emulator": "Needs a hardware wallet emulator.",
+    "ledger-emulator": "Needs helpers/verify launch --emulator ledger: a Speculos Ledger and its bridge, driven from the bridge's drive URL.",
+    "emulator": "Needs a hardware wallet emulator this skill can't drive yet: Trezor, Coldcard, or a Ledger fault or disconnect.",
     "camera": "Needs QR camera input.",
     "exchange-fake": "Needs a local fake of the exchange APIs; Sentinel calls the real hosts today.",
     "outside": "Reaches a real outside service. Check the link or request, never load it.",
@@ -127,16 +128,28 @@
           "needs": "emulator",
           "subFeatures": [
             {
-              "id": "show-details",
+              "id": "ledger-details",
               "kind": "happy",
-              "does": "Show Trezor or Ledger Device Details prints the result as JSON"
+              "does": "Show Ledger Device Details prints the Ledger's model as JSON",
+              "needs": "ledger-emulator"
             },
             {
-              "id": "device-error",
+              "id": "ledger-error",
               "kind": "failure",
-              "does": "Prints an error when the device cannot be read"
+              "does": "Prints an error when the Ledger cannot be read"
+            },
+            {
+              "id": "trezor-details",
+              "kind": "happy",
+              "does": "Show Trezor Device Details prints the Trezor's label and model as JSON"
+            },
+            {
+              "id": "trezor-error",
+              "kind": "failure",
+              "does": "Prints an error when the Trezor cannot be read"
             }
-          ]
+          ],
+          "recipes": [{ "file": "hardware-test-page.md", "proves": ["ledger-details"] }]
         }
       ]
     },
@@ -1099,7 +1112,7 @@
           "id": "add-ledger",
           "does": "Connects a Ledger (WebHID on web, native picker on desktop) and signs",
           "routes": ["/accounts/verify/ledger", "/accounts/:claimId/signing"],
-          "needs": "emulator",
+          "needs": "ledger-emulator",
           "subFeatures": [
             {
               "id": "connect",
@@ -1117,11 +1130,18 @@
               "does": "Prove Control on the device, then the receipt"
             },
             {
+              "id": "user-reject",
+              "kind": "failure",
+              "does": "Rejecting on the device shows the rejection, keeps the claim pending, and signing again works"
+            },
+            {
               "id": "disconnect",
               "kind": "failure",
-              "does": "Unplugging shows a toast; Retry resets the device"
+              "does": "Unplugging shows a toast; Retry resets the device",
+              "needs": "emulator"
             }
-          ]
+          ],
+          "recipes": [{ "file": "add-ledger.md", "proves": ["connect", "no-wallets", "sign", "user-reject"] }]
         },
         {
           "id": "add-keystone",

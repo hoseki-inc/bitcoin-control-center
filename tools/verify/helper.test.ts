@@ -899,6 +899,66 @@ describe('helpers/verify', () => {
     }
   }, 90_000)
 
+  it('aborts cleanly when Ctrl-C reaches launch while git stamps the build', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'verify-launch-stamp-'))
+    try {
+      const runId = `stamp-${Math.random().toString(36).slice(2, 10)}`
+      const runDir = runDirIn(dir, runId)
+      // A git that hangs on the build stamp's diff, as a slow one would, and passes everything else to the real git.
+      const bin = join(dir, 'bin')
+      mkdirSync(bin)
+      const realGit = runCommand('which', ['git'], { env: ChildEnv.with() }).trim()
+      const marker = join(dir, 'stamping')
+      writeFileSync(
+        join(bin, 'git'),
+        `#!/bin/sh\nif [ "$1" = diff ]; then touch ${JSON.stringify(marker)}; exec sleep 60; fi\nexec ${JSON.stringify(realGit)} "$@"\n`,
+        { mode: 0o755 },
+      )
+      const log = openSync(join(dir, 'launch.log'), 'w')
+      const launch = startGroup(join(REPO_ROOT, HELPER), ['launch', '--run', runId], {
+        cwd: REPO_ROOT,
+        env: ChildEnv.with({ TMPDIR: dir, PATH: `${bin}${delimiter}${ChildEnv.with().vars['PATH'] ?? ''}` }),
+        log,
+      })
+      const exited = new Promise<number | null>((done) => {
+        launch.on('exit', (code) => {
+          done(code)
+        })
+      })
+      for (let waited = 0; !existsSync(marker) && waited < 30_000; waited += 100) {
+        await wait(100)
+      }
+      assert.equal(existsSync(marker), true, 'launch never reached the build stamp')
+      // A bridge recorded for the run, as launch --emulator would have by now, must not outlive the abort.
+      const bridgeLog = openSync(join(dir, 'bridge.log'), 'w')
+      const bridge = startGroup('sleep', ['60'], { cwd: dir, env: ChildEnv.with(), log: bridgeLog })
+      closeSync(bridgeLog)
+      const bridgePid = bridge.pid ?? 0
+      const started = runCommand('ps', ['-o', 'lstart=', '-p', String(bridgePid)], {
+        env: ChildEnv.with({ TZ: 'UTC', LC_ALL: 'C' }),
+      }).trim()
+      writeJson(join(runDir, 'processes.json'), [{ name: 'ledger-bridge', pid: bridgePid, startedAt: started }])
+      const bridgeGone = new Promise<void>((done) => {
+        bridge.on('exit', () => {
+          done()
+        })
+      })
+      // Ctrl-C signals the whole process group: the helper, tsx, launch and the hanging git.
+      process.kill(-(launch.pid ?? 0), 'SIGINT')
+      const code = await exited
+      closeSync(log)
+      const output = readFileSync(join(dir, 'launch.log'), 'utf8')
+      assert.equal(code, 1, output)
+      assert.match(output, /Launch was interrupted/)
+      assert.doesNotMatch(output, /\n\s+at |node:internal|Error: Command failed/, output)
+      assert.match(output, new RegExp(`cleanup --run ${runId}`))
+      assert.match(output, new RegExp(`ledger-bridge: stopped PID ${bridgePid}`))
+      await bridgeGone
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 60_000)
+
   it('refuses to touch a container whose records name two daemons, in status, doctor, stop and cleanup', () => {
     const dir = mkdtempSync(join(tmpdir(), 'verify-conflict-cli-'))
     try {

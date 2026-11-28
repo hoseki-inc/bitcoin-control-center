@@ -5,14 +5,18 @@ import { parseUnknown } from '@hoseki/packages/result/lib/parse'
 import { z } from 'zod'
 import { readArgs } from './args'
 import { VERIFY_PIN, sentinelClient, signIn } from './client'
+import { bridgeModeNow } from './emulators/ledger'
+import { startLedger } from './emulators/ledger-launch'
 import { describeBundle } from './evidence-record'
 import { ChildEnv, runToLog, startGroup } from './process'
-import { launchDecision, webBuildEnv } from './rules'
+import { type LiveLedger, launchDecision, webBuildEnv } from './rules'
 import {
   type BundleProvenance,
+  EMULATOR_SEED_NAMES,
   EVIDENCE_ROOT,
   FakesRecordSchema,
   HELPER,
+  LEDGER_MODELS,
   REPO_ROOT,
   type RecordedProcess,
   type RunState,
@@ -26,6 +30,7 @@ import {
   processStartTime,
   readBundleProvenance,
   readJsonFile,
+  readProcessesFile,
   readRunState,
   recordProcess,
   removeRunContainers,
@@ -43,7 +48,8 @@ import {
 // on a free port, against the local fakes on an empty data folder. Never touches `pnpm dev` or its data.
 // With --desktop, Sentinel and the web app run as the desktop app does (`pnpm dev:desktop`), so Settings shows the
 // desktop-only sections; there is no Electron shell. With --pin, PINs are on as on Umbrel, and launch sets the run's
-// test PIN (VERIFY_PIN in client.ts), which the helper commands sign in with.
+// test PIN (VERIFY_PIN in client.ts), which the helper commands sign in with. With --emulator ledger, a Speculos Ledger
+// and its bridge start too, and the app is opened at the bridge's drive URL, where it can reach the device.
 
 const TSX = join(REPO_ROOT, 'node_modules/.bin/tsx')
 const VITE = join(REPO_ROOT, 'node_modules/.bin/vite')
@@ -60,6 +66,10 @@ const { values } = readArgs({
   app: { type: 'string' },
   'setup-pin-in-ui': { type: 'boolean' },
   'release-tag': { type: 'string' },
+  emulator: { type: 'string' },
+  'ledger-model': { type: 'string' },
+  'emulator-seed': { type: 'string' },
+  'auto-approve': { type: 'boolean' },
 })
 const runId = values.run ?? newRunId()
 const fresh = values.fresh === true
@@ -69,6 +79,10 @@ const electron = values.electron === true
 const appPath = values.app
 const setupPinInUi = values['setup-pin-in-ui'] === true
 const releaseTag = values['release-tag']
+const emulator = values.emulator
+const ledgerModel = values['ledger-model'] ?? 'flex'
+const emulatorSeed = values['emulator-seed'] ?? 'primary'
+const autoApprove = values['auto-approve'] === true
 
 if (electron && desktop) {
   fail('--electron and --desktop do not combine.')
@@ -83,6 +97,24 @@ if (desktop && pin) {
 if ((appPath !== undefined || setupPinInUi || releaseTag !== undefined) && !electron) {
   fail('--app, --setup-pin-in-ui, and --release-tag require --electron.')
 }
+if (emulator !== undefined && emulator !== 'ledger') {
+  fail(`--emulator ${emulator} is not available; only --emulator ledger is.`)
+}
+if (
+  emulator === undefined &&
+  (values['ledger-model'] !== undefined || values['emulator-seed'] !== undefined || autoApprove)
+) {
+  fail('--ledger-model, --emulator-seed and --auto-approve require --emulator ledger.')
+}
+if (emulator !== undefined && electron) {
+  fail('--emulator does not combine with --electron yet: the packaged app reaches the Ledger in a later change.')
+}
+const model =
+  LEDGER_MODELS.find((candidate) => candidate === ledgerModel) ??
+  fail(`--ledger-model must be ${LEDGER_MODELS.join(' or ')}.`)
+const seed =
+  EMULATOR_SEED_NAMES.find((candidate) => candidate === emulatorSeed) ??
+  fail(`--emulator-seed must be ${EMULATOR_SEED_NAMES.join(', ')}.`)
 if (electron && process.platform !== 'darwin') {
   fail('--electron currently supports macOS (darwin) only.')
 }
@@ -97,8 +129,24 @@ const paths = runPaths(runId)
 
 const existing = requireJsonFile(readRunState(paths))
 const alive = existing && isOurProcess(existing.sentinel) && isOurProcess(existing.fakes) ? existing : null
-const decision = launchDecision({
-  alive,
+
+/** The live run's Ledger, with its bridge's mode as the bridge reports it now (a manual press turns auto off). */
+async function liveLedger(state: RunState): Promise<LiveLedger> {
+  const ledger = state.emulators?.find((entry) => entry.device === 'ledger')
+  if (ledger === undefined) {
+    return null
+  }
+  const { bridge } = ledger
+  const live = { model: ledger.model ?? 'unknown', seed: ledger.seed }
+  if (bridge === undefined) {
+    return { ...live, mode: null }
+  }
+  const now = await bridgeModeNow(paths, bridge)
+  return 'mode' in now ? { ...live, mode: now.mode } : { ...live, mode: 'unknown', problem: now.problem }
+}
+
+const decisionInput: Parameters<typeof launchDecision>[0] = {
+  alive: alive === null ? null : { ...alive, ledger: await liveLedger(alive) },
   folderExists: existsSync(paths.runDir),
   evidenceExists: existsSync(join(EVIDENCE_ROOT, runId)),
   fresh,
@@ -107,10 +155,15 @@ const decision = launchDecision({
   electron,
   setupPinInUi,
   releaseTag,
-})
+}
+if (emulator === 'ledger') {
+  decisionInput.ledger = { model, seed, autoApprove }
+}
+const decision = launchDecision(decisionInput)
 if (decision.action === 'running' && alive) {
+  const drive = alive.emulators?.find((entry) => entry.bridge !== undefined)?.bridge?.url
   console.log(
-    `Run ${runId} is already running at ${alive.url}${alive.fresh ? ' (fresh: no seed)' : ''}${alive.electron ? ' (electron)' : ''}${alive.desktop ? ' (desktop)' : ''}${alive.pin ? ' (PIN)' : ''}${alive.setupPinInUi ? ' (PIN setup in UI)' : ''}`,
+    `Run ${runId} is already running at ${alive.url}${alive.fresh ? ' (fresh: no seed)' : ''}${alive.electron ? ' (electron)' : ''}${alive.desktop ? ' (desktop)' : ''}${alive.pin ? ' (PIN)' : ''}${alive.setupPinInUi ? ' (PIN setup in UI)' : ''}${drive === undefined ? '' : `; open ${drive} to reach its Ledger`}`,
   )
   process.exit(0)
 }
@@ -123,32 +176,42 @@ mkdirSync(paths.dataDir, { recursive: true })
 mkdirSync(paths.logsDir, { recursive: true })
 
 const started: RecordedProcess[] = []
-let aborting = false
+let aborting: Promise<never> | null = null
 
+/** Stops what the run started and exits 1. A second call, as from a repeated Ctrl-C, waits for the first. */
 async function abort(message: string): Promise<never> {
-  if (!aborting) {
-    aborting = true
-    for (const recorded of started) {
-      await stopProcess(recorded)
-    }
-    // Containers recorded for the run (none yet in a plain launch) are removed too, each on its own daemon.
-    if (existsSync(paths.runDir)) {
-      try {
-        const { errors } = await withRunLock(paths, (tracking) => removeRunContainers(paths, tracking, {}))
-        for (const error of errors) {
-          console.error(error)
-        }
-      } catch (error) {
-        console.error(error instanceof Error ? error.message : String(error))
+  aborting ??= stopEverything(message)
+  return aborting
+}
+
+async function stopEverything(message: string): Promise<never> {
+  // Every process recorded for the run, the Ledger bridge included, and those launch started itself.
+  const recorded = readProcessesFile(paths)
+  for (const recordedProcess of [...(recorded.status === 'ok' ? recorded.value : []), ...started]) {
+    await stopProcess(recordedProcess)
+  }
+  // Containers recorded for the run (none yet in a plain launch) are removed too, each on its own daemon.
+  if (existsSync(paths.runDir)) {
+    try {
+      const { errors } = await withRunLock(paths, (tracking) => removeRunContainers(paths, tracking, {}))
+      for (const error of errors) {
+        console.error(error)
       }
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
     }
   }
   return fail(`${message}\nLogs: ${paths.logsDir}\nThen run ${HELPER} cleanup --run ${runId}`)
 }
 
+// Kept for the whole launch, so a second Ctrl-C can't kill launch halfway through stopping what it started. tsx
+// SIGKILLs launch unless launch acknowledges a signal within about 60 ms; its acknowledgement goes out once the event
+// loop turns, so the abort, whose first steps block, waits for that turn.
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-  process.once(signal, () => {
-    void abort(`Launch was interrupted (${signal})`)
+  process.on(signal, () => {
+    setTimeout(() => {
+      void abort(`Launch was interrupted (${signal})`)
+    }, 10)
   })
 }
 
@@ -219,7 +282,17 @@ async function hasPageTarget(cdpPort: number, origin: string): Promise<boolean> 
   return parsed.isOk() && parsed.unwrap().some((target) => target.type === 'page' && target.url.startsWith(origin))
 }
 
-const build = buildStamp()
+// A terminal's Ctrl-C kills git too, and buildStamp throws. Yield first, so the signal is acknowledged (see above) and
+// its handler names it.
+let build: RunState['build']
+try {
+  build = buildStamp()
+} catch (error) {
+  await wait(100)
+  build = await abort(
+    `Launch was interrupted or git failed while stamping the build: ${error instanceof Error ? (error.message.split('\n')[0] ?? '') : String(error)}`,
+  )
+}
 
 if (electron) {
   let sourceApp: string
@@ -492,10 +565,22 @@ try {
     fakes: { ...fakesProcess, ...fakes },
   }
   await writeRunState(paths, state)
+  let ledger = ''
+  if (emulator === 'ledger') {
+    const ledgerStart = await startLedger(paths, {
+      model,
+      seed,
+      bridge: { mode: autoApprove ? 'auto' : 'manual', target: url },
+    })
+    const { bridge } = ledgerStart.isErr()
+      ? await abort(`The Ledger emulator did not start: ${ledgerStart.unwrapErr()}`)
+      : ledgerStart.unwrap()
+    ledger = `\n  ledger: ${model}, seed ${seed}, ${autoApprove ? 'auto-approve' : 'manual'}${bridge === undefined ? '' : `\n  open:  ${bridge.url} (reaches the Ledger; ${url} does not)`}`
+  }
   console.log(`
 Run ${runId} is ready at ${url}${fresh ? ' (fresh: no seed)' : ''}${desktop ? ' (desktop)' : ''}${pin ? ` (PIN ${VERIFY_PIN})` : ''}
   data:  ${paths.dataDir}
-  logs:  ${paths.logsDir}
+  logs:  ${paths.logsDir}${ledger}
 Next: ${fresh ? '' : `${HELPER} seed --run ${runId}\n      `}${HELPER} doctor --run ${runId}`)
 } catch (error) {
   await abort(`Launch failed: ${error instanceof Error ? error.message : String(error)}`)

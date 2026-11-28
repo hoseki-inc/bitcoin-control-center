@@ -5,6 +5,21 @@ import { type BundleProvenance, BundleProvenanceSchema, type RunState } from './
 // The pure part of `helpers/verify evidence`: what evidence.json holds and how report.md reads. evidence.ts does the
 // files and the command line.
 
+/** The emulator an attempt ran against, as it stood when the attempt began. */
+export const EmulatorProvenanceSchema = z.object({
+  device: z.string(),
+  model: z.string().nullable(),
+  seed: z.string(),
+  /** The pinned firmware and emulator image. */
+  firmware: z.string(),
+  /** `manual`, `auto`, or why there is no bridge mode to report. */
+  bridge: z.string(),
+})
+export type EmulatorProvenance = z.infer<typeof EmulatorProvenanceSchema>
+
+export const describeEmulator = (emulator: EmulatorProvenance): string =>
+  `${emulator.device}${emulator.model === null ? '' : ` ${emulator.model}`}, seed ${emulator.seed}, ${emulator.firmware}, bridge ${emulator.bridge}`
+
 export const RecordSchema = z.object({
   runId: z.string(),
   startedAt: z.string(),
@@ -33,6 +48,8 @@ export const RecordSchema = z.object({
       begunAt: z.string(),
       sentinelStartedAt: z.string(),
       abandonedAt: z.string().nullable(),
+      /** Missing on attempts begun before emulators were recorded, and on runs without one. */
+      emulator: EmulatorProvenanceSchema.optional(),
       outcome: z
         .object({
           status: z.enum(STATUSES),
@@ -198,6 +215,12 @@ export function report(record: EvidenceRecord): string {
       `${outcome.status === 'verified' ? 'Proves' : 'Would prove'}: ${attempt.proves.join(', ')}`,
       '',
     )
+    const emulator = record.attempts.find(
+      (candidate) => candidate.recipe === attempt.recipe && candidate.number === attempt.number,
+    )?.emulator
+    if (emulator !== undefined) {
+      lines.push(`Emulator: ${describeEmulator(emulator)}`, '')
+    }
     if (outcome.reason !== null) {
       lines.push(
         outcome.status === 'unreachable' ? `Missing precondition: ${outcome.reason}` : `Reason: ${outcome.reason}`,

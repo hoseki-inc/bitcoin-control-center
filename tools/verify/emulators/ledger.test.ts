@@ -1,17 +1,24 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { Ok } from '@hoseki/packages/result'
 import { describe, it } from 'vitest'
 import { EMULATOR_PRIMARY } from '../emulator-seeds'
-import type { CommandResult } from '../process'
+import { ChildEnv, type CommandResult, runCommandResult, startGroup } from '../process'
 import {
   type DockerCommandRunner,
   type DockerDaemon,
+  EVIDENCE_ROOT,
+  HELPER,
   type LedgerModel,
+  REPO_ROOT,
   type RunPaths,
   type RunState,
+  boundPort,
+  processStartTime,
   readContainers,
   readIntentsFile,
   readRunState,
@@ -32,6 +39,7 @@ import {
   type SpeculosApi,
   classifyScreen,
   drivePrompt,
+  nextAction,
   pressOnce,
 } from './ledger-driver'
 import { ELF_CACHE_KEY, dockerArch, elfCachePaths, ensureLedgerElf, sha256Hex } from './ledger-elf'
@@ -876,6 +884,550 @@ describe('startLedgerEmulator', { timeout: 15_000 }, () => {
       assert.deepEqual(readContainers(paths), [])
       assert.deepEqual(readIntentsFile(paths), { status: 'ok', value: [] })
       assert.equal(existsSync(dirname(paths.intentsFile)), true)
+    })
+  })
+})
+
+/** The folders the helper CLI uses for a run when TMPDIR is `root`, so a test and a CLI it starts share one run. */
+function cliPaths(root: string, runId: string): RunPaths {
+  const key = createHash('sha256').update(REPO_ROOT).digest('hex').slice(0, 8)
+  const paths = tempPaths(join(root, 'bcc-verify', key), runId)
+  return { ...paths, lockDir: join(root, 'bcc-verify-locks', key, `${runId}.lock`) }
+}
+
+/** A run the helper CLI can see, a `docker` on PATH that only logs and fails, and the CLI itself. */
+async function withCliRun(
+  fn: (run: {
+    paths: RunPaths
+    root: string
+    cli: (args: string[]) => CommandResult
+    dockerCalls: () => string[]
+  }) => Promise<void>,
+): Promise<void> {
+  const root = mkdtempSync(join(tmpdir(), 'verify-reserve-'))
+  try {
+    const paths = cliPaths(root, `reserve-${Math.random().toString(36).slice(2, 10)}`)
+    mkdirSync(paths.runDir, { recursive: true })
+    writeJson(paths.stateFile, runState(paths.runId))
+    const bin = join(root, 'bin')
+    const calls = join(root, 'docker-calls.log')
+    mkdirSync(bin)
+    // It knows its daemon and says every container runs; anything else fails.
+    const script = [
+      '#!/bin/sh',
+      `echo "$*" >> ${JSON.stringify(calls)}`,
+      'case "$1" in info) echo daemon-a ;; inspect) echo true ;; *) exit 99 ;; esac',
+      '',
+    ].join('\n')
+    writeFileSync(join(bin, 'docker'), script, { mode: 0o755 })
+    const env = ChildEnv.with({
+      TMPDIR: root,
+      PATH: `${bin}${delimiter}${ChildEnv.with().vars['PATH'] ?? ''}`,
+      BCC_VERIFY_CACHE_DIR: join(root, 'cache'),
+    })
+    const cli = (args: string[]): CommandResult =>
+      runCommandResult(join(REPO_ROOT, HELPER), [...args, '--run', paths.runId], { cwd: REPO_ROOT, env })
+    const dockerCalls = (): string[] =>
+      existsSync(calls) ? readFileSync(calls, 'utf8').split('\n').filter(Boolean) : []
+    await fn({ paths, root, cli, dockerCalls })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+}
+
+const said = (result: CommandResult): string => `${result.stdout}${result.stderr}`
+
+describe('Ledger start reservation', { timeout: 120_000 }, () => {
+  const start = { model: 'flex', seed: 'primary', arch: 'arm64', elfPath: '/cache/app.elf', daemon: DAEMON } as const
+
+  it('makes stop, cleanup and a second start wait while a start runs, from create to the run.json write', async () => {
+    await withCliRun(async ({ paths, cli, dockerCalls }) => {
+      const seen: Record<string, CommandResult> = {}
+      const docker = fakeDocker(Buffer.alloc(0), null, (args) => {
+        // Window one: after the create intent, before docker start, and after start before run.json names the device.
+        if (args[0] === 'create') {
+          seen['cleanup at create'] = cli(['cleanup'])
+        } else if (args[0] === 'start') {
+          seen['stop at start'] = cli(['emulator', 'stop', '--device', 'ledger'])
+        } else if (args[0] === 'port') {
+          seen['cleanup at port'] = cli(['cleanup'])
+          // Window two: a second start while this one runs.
+          seen['start at port'] = cli(['emulator', 'start', '--device', 'ledger'])
+          seen['status at port'] = cli(['emulator', 'status'])
+        }
+      })
+      const started = await startLedgerEmulator(paths, start, docker.runner, () => new FakeLedger('flex'))
+      const emulator = started.unwrap()
+      for (const name of ['cleanup at create', 'stop at start', 'cleanup at port']) {
+        const result = seen[name]
+        assert.notEqual(result?.status, 0, name)
+        assert.match(
+          result === undefined ? '' : said(result),
+          /has a emulator:ledger start in progress \(PID \d+\)/,
+          name,
+        )
+      }
+      const again = seen['start at port']
+      assert.notEqual(again?.status, 0)
+      assert.match(again === undefined ? '' : said(again), /already has a Ledger start in progress/)
+      assert.match(seen['status at port']?.stdout ?? '', /emulator:ledger: start in progress \(PID \d+/)
+      // None of them removed or made anything (status only asks the daemon who it is): the starter's container is
+      // the one run.json now names.
+      assert.deepEqual(
+        dockerCalls().filter((call) => !call.startsWith('info ') && !call.startsWith('inspect ')),
+        [],
+      )
+      assert.deepEqual(
+        readContainers(paths).map((c) => c.containerId),
+        [emulator?.containerId],
+      )
+      const state = readRunState(paths)
+      assert.deepEqual(state.status === 'ok' ? state.value.emulators : null, [emulator])
+      assert.equal(existsSync(join(paths.runDir, 'emulator-starting.json')), false)
+    })
+  })
+
+  it('refuses a duplicate start, and one while another start runs, before any ELF or Docker work', async () => {
+    await withCliRun(async ({ paths, root, cli, dockerCalls }) => {
+      writeJson(join(paths.runDir, 'emulator-starting.json'), {
+        name: 'emulator:ledger',
+        pid: process.pid,
+        startedAt: processStartTime(process.pid) ?? 'unknown',
+        reservedAt: '2026-11-27T10:00:00Z',
+      })
+      const busy = cli(['emulator', 'start', '--device', 'ledger'])
+      assert.notEqual(busy.status, 0)
+      assert.match(said(busy), /already has a Ledger start in progress \(PID \d+\)/)
+
+      rmSync(join(paths.runDir, 'emulator-starting.json'))
+      writeJson(paths.stateFile, {
+        ...runState(paths.runId),
+        emulators: [
+          {
+            device: 'ledger',
+            model: 'flex',
+            seed: 'primary',
+            containerId: 'a'.repeat(64),
+            daemon: DAEMON,
+            apiPort: 61234,
+            healthUrl: 'http://127.0.0.1:61234/events?currentscreenonly=true',
+          },
+        ],
+      })
+      const duplicate = cli(['emulator', 'start', '--device', 'ledger'])
+      assert.notEqual(duplicate.status, 0)
+      assert.match(said(duplicate), /already has a Ledger emulator; stop it first/)
+      assert.deepEqual(dockerCalls(), [])
+      assert.equal(existsSync(join(root, 'cache')), false)
+    })
+  })
+
+  it('takes over and clears a reservation whose owner died, and shows it as interrupted until then', async () => {
+    await withCliRun(async ({ paths, cli, dockerCalls }) => {
+      const reservation = join(paths.runDir, 'emulator-starting.json')
+      writeJson(reservation, { name: 'emulator:ledger', pid: 999_999, startedAt: 'never', reservedAt: 'earlier' })
+      assert.match(
+        cli(['emulator', 'status']).stdout,
+        /emulator:ledger: start interrupted \(PID 999999, since earlier\)/,
+      )
+      const stopped = cli(['emulator', 'stop', '--device', 'ledger'])
+      assert.equal(stopped.status, 0, said(stopped))
+      assert.equal(existsSync(reservation), false)
+      assert.deepEqual(dockerCalls(), [])
+
+      writeJson(reservation, { name: 'emulator:ledger', pid: 999_999, startedAt: 'never', reservedAt: 'earlier' })
+      const docker = fakeDocker(Buffer.alloc(0))
+      assert.equal((await startLedgerEmulator(paths, start, docker.runner, () => new FakeLedger('flex'))).isOk(), true)
+      assert.equal(existsSync(reservation), false)
+    })
+  })
+
+  it('shows a journaled create that is not recorded yet as pending in status', async () => {
+    await withCliRun(async ({ paths, cli, dockerCalls }) => {
+      writeJson(paths.intentsFile, [
+        {
+          name: 'emulator:ledger',
+          containerName: `bcc-verify-${paths.runId}-ledger-0123abcd`,
+          image: SPECULOS_IMAGE,
+          startedAt: '2026-11-27T10:00:00Z',
+          daemon: DAEMON,
+        },
+      ])
+      const status = cli(['emulator', 'status', '--device', 'ledger'])
+      assert.equal(status.status, 0, said(status))
+      assert.match(
+        status.stdout,
+        new RegExp(
+          `emulator:ledger: create pending \\(container bcc-verify-${paths.runId}-ledger-0123abcd, since 2026-11-27T10:00:00Z\\)`,
+        ),
+      )
+      assert.doesNotMatch(status.stdout, /No ledger emulator recorded/)
+      assert.deepEqual(dockerCalls(), [])
+    })
+  })
+
+  it('reports an invalid containers.json with a pending create as an error naming the file, through stop and cleanup', async () => {
+    await withCliRun(async ({ paths, cli, dockerCalls }) => {
+      writeFileSync(paths.containersFile, '{not json')
+      writeJson(paths.intentsFile, [
+        {
+          name: 'emulator:ledger',
+          containerName: `bcc-verify-${paths.runId}-ledger-0123abcd`,
+          image: SPECULOS_IMAGE,
+          startedAt: '2026-11-27T10:00:00Z',
+          daemon: DAEMON,
+        },
+      ])
+      for (const args of [['emulator', 'stop', '--device', 'ledger'], ['cleanup']]) {
+        const result = cli(args)
+        assert.notEqual(result.status, 0, args.join(' '))
+        assert.match(said(result), /containers\.json does not parse/, args.join(' '))
+        assert.doesNotMatch(said(result), /\n\s+at /, 'no stack trace')
+      }
+      assert.equal(readFileSync(paths.containersFile, 'utf8'), '{not json')
+      assert.equal(existsSync(paths.intentsFile), true)
+      assert.deepEqual(dockerCalls(), [])
+    })
+  })
+})
+
+/** The device, except that once anything is pressed its screen reads as `landing`. */
+function landsOn(device: FakeLedger, landing: ScreenElement[]): SpeculosApi {
+  let pressed = false
+  return {
+    screen: async () => (pressed ? landing : device.screen()),
+    screenshot: async () => device.screenshot(),
+    button: async (button) => {
+      pressed = true
+      await device.button(button)
+    },
+    finger: async (x, y, delay) => {
+      pressed = true
+      await device.finger(x, y, delay)
+    },
+  }
+}
+
+describe('Ledger driver failures', { timeout: 15_000 }, () => {
+  it("pages past the Flex's own Message content page that a long message gets", () => {
+    // As Speculos showed Control Center's ownership challenge, page 3 of 4.
+    const page = [
+      'Message content',
+      'I, the owner, affirm sole ',
+      'control of this account. ',
+      'ID=9nQurUa5DFGSQVg',
+      'VEYE9Y',
+      'Reject',
+      '3 of 4',
+    ].map((text, i) => at(text, 32, 40 + 40 * i, 300, 36))
+    assert.equal(classifyScreen('flex', page).kind, 'review')
+    assert.deepEqual(nextAction('flex', classifyScreen('flex', page), page, 'approve'), {
+      type: 'tap',
+      x: 415,
+      y: 550,
+      delay: 0.1,
+      label: 'next',
+    })
+  })
+
+  it('fails a press whose landing contradicts the button, on both models, and passes one that fits', async () => {
+    const nano = new FakeLedger('nanosp')
+    nano.begin('pubkey')
+    const back = await pressOnce(landsOn(nano, NANO_IDLE), 'nanosp', 'left', QUICK)
+    assert.ok(!back.ok)
+    assert.match(back.reason, /the nanosp shows a idle screen, which --button left can't lead to/)
+    assert.equal(nano.shots, 1)
+
+    const flex = new FakeLedger('flex')
+    flex.begin('pubkey')
+    const next = await pressOnce(landsOn(flex, FLEX_IDLE), 'flex', 'next', QUICK)
+    assert.ok(!next.ok)
+    assert.match(next.reason, /the flex shows a idle screen, which --button next can't lead to/)
+
+    const fits = new FakeLedger('flex')
+    fits.begin('pubkey')
+    const fine = await pressOnce(landsOn(fits, FLEX_PAGES.pubkey[1] ?? []), 'flex', 'next', QUICK)
+    assert.ok(fine.ok)
+    assert.equal(fine.ended.kind, 'review')
+  })
+
+  it('turns a screen read that throws into a failed drive, for drivePrompt and pressOnce', async () => {
+    const broken: SpeculosApi = {
+      screen: async () => Promise.reject(new Error('fetch failed')),
+      screenshot: async () => Promise.reject(new Error('fetch failed')),
+      button: async () => {},
+      finger: async () => {},
+    }
+    for (const model of ['flex', 'nanosp'] as const) {
+      const driven = await drivePrompt(broken, model, 'approve', QUICK)
+      assert.deepEqual(driven, {
+        ok: false,
+        trace: [],
+        reason: `could not read the ${model} screen: fetch failed`,
+        screenshot: null,
+      })
+      const pressed = await pressOnce(broken, model, model === 'flex' ? 'next' : 'right', QUICK)
+      assert.match(pressed.ok ? '' : pressed.reason, new RegExp(`could not read the ${model} screen: fetch failed`))
+    }
+  })
+
+  it('makes press, reject and screenshot exit 1 with a clear message when Speculos is gone, leaving no folder', async () => {
+    await withCliRun(async ({ paths, cli }) => {
+      // A port nothing listens on: Speculos is gone.
+      const closed = createServer()
+      await new Promise<void>((done) => {
+        closed.listen(0, '127.0.0.1', done)
+      })
+      const apiPort = boundPort(closed.address())
+      await new Promise((done) => {
+        closed.close(done)
+      })
+      const containerId = 'a'.repeat(64)
+      writeJson(paths.containersFile, [
+        { name: 'emulator:ledger', containerId, image: SPECULOS_IMAGE, startedAt: 't', daemon: DAEMON },
+      ])
+      writeJson(paths.stateFile, {
+        ...runState(paths.runId),
+        emulators: [
+          {
+            device: 'ledger',
+            model: 'flex',
+            seed: 'primary',
+            containerId,
+            daemon: DAEMON,
+            apiPort,
+            healthUrl: `http://127.0.0.1:${apiPort}/events?currentscreenonly=true`,
+          },
+        ],
+      })
+      for (const args of [['press'], ['reject']]) {
+        const result = cli(['emulator', ...args, '--device', 'ledger'])
+        assert.equal(result.status, 1, said(result))
+        assert.match(said(result), /could not read the flex screen/)
+        assert.doesNotMatch(said(result), /\n\s+at |Unhandled/)
+      }
+      const shot = cli(['emulator', 'screenshot', '--device', 'ledger'])
+      assert.equal(shot.status, 1, said(shot))
+      assert.match(said(shot), /Could not read the Ledger screen/)
+      assert.equal(existsSync(join(EVIDENCE_ROOT, paths.runId)), false)
+    })
+  })
+
+  it("adds Docker's own error to an unreadable platform", () => {
+    const failed: CommandResult = { status: 1, stdout: '', stderr: 'Cannot connect to the Docker daemon', error: null }
+    assert.match(
+      dockerArch(DAEMON, () => failed).unwrapErr() ?? '',
+      /\(docker said: Cannot connect to the Docker daemon\)/,
+    )
+  })
+})
+
+describe('bridge records in the CLI', { timeout: 60_000 }, () => {
+  /** run.json with a Ledger and a bridge record, as a finished bridged start leaves them. */
+  function bridgedRun(
+    paths: RunPaths,
+    bridge: { pid: number; startedAt: string; port: number; controlPort: number },
+  ): void {
+    const containerId = 'a'.repeat(64)
+    writeJson(paths.containersFile, [
+      { name: 'emulator:ledger', containerId, image: SPECULOS_IMAGE, startedAt: 't', daemon: DAEMON },
+    ])
+    writeJson(paths.stateFile, {
+      ...runState(paths.runId),
+      emulators: [
+        {
+          device: 'ledger',
+          model: 'flex',
+          seed: 'primary',
+          containerId,
+          daemon: DAEMON,
+          apiPort: 9,
+          healthUrl: 'http://127.0.0.1:9/events?currentscreenonly=true',
+          bridge: {
+            name: 'ledger-bridge',
+            pid: bridge.pid,
+            startedAt: bridge.startedAt,
+            port: bridge.port,
+            url: `http://127.0.0.1:${bridge.port}`,
+            controlPort: bridge.controlPort,
+            mode: 'manual',
+          },
+        },
+      ],
+    })
+    writeJson(join(paths.runDir, 'ledger-bridge.json'), {
+      pid: bridge.pid,
+      drivePort: bridge.port,
+      controlPort: bridge.controlPort,
+      token: 'b'.repeat(64),
+    })
+  }
+
+  it('still shows the container and screen in status when the bridge died, saying it does not answer', async () => {
+    await withCliRun(async ({ paths, cli }) => {
+      bridgedRun(paths, { pid: 999_999, startedAt: 'never', port: 9, controlPort: 9 })
+      const status = cli(['emulator', 'status', '--device', 'ledger'])
+      assert.equal(status.status, 0, said(status))
+      assert.match(status.stdout, /ledger: model=flex seed=primary container=a{64} \(running\)/)
+      assert.match(
+        status.stdout,
+        /bridge=http:\/\/127\.0\.0\.1:9 \(PID 999999, not answering: control port 9 is not held/,
+      )
+    })
+  })
+
+  it('never sends the bridge token to a control port the bridge does not hold, from doctor or press', async () => {
+    await withCliRun(async ({ paths, cli }) => {
+      // A listener on the recorded control port that is not in the bridge's process group.
+      const seen: Array<string | undefined> = []
+      const impostor = createServer((req, res) => {
+        seen.push(req.headers.authorization)
+        res.end('{}')
+      })
+      await new Promise<void>((done) => {
+        impostor.listen(0, '127.0.0.1', done)
+      })
+      try {
+        const port = boundPort(impostor.address())
+        // The bridge recorded as this test worker. The impostor listens in this same worker, but the worker is not its
+        // process group's leader, so the port's owner check fails and no token may be sent.
+        bridgedRun(paths, { pid: process.pid, startedAt: processStartTime(process.pid) ?? '', port, controlPort: port })
+        const doctor = cli(['doctor'])
+        assert.match(said(doctor), new RegExp(`bridge control port ${port} is not the bridge's`))
+        const press = cli(['emulator', 'press', '--device', 'ledger'])
+        assert.equal(press.status, 1)
+        assert.match(said(press), new RegExp(`control port ${port} is not held by the bridge`))
+        assert.deepEqual(
+          seen.filter((auth) => auth !== undefined),
+          [],
+        )
+      } finally {
+        impostor.close()
+      }
+    })
+  })
+
+  it('keeps a reservation whose owner can not be told apart from a reused PID, through start and stop', async () => {
+    await withCliRun(async ({ paths, cli, dockerCalls }) => {
+      // An old record with no start time, whose PID is alive: it may still be the owner, so it is not stale.
+      writeJson(join(paths.runDir, 'emulator-starting.json'), {
+        name: 'emulator:ledger',
+        pid: process.pid,
+        startedAt: 'unknown',
+        reservedAt: 'earlier',
+      })
+      const start = cli(['emulator', 'start', '--device', 'ledger'])
+      assert.notEqual(start.status, 0)
+      assert.match(said(start), /already has a Ledger start in progress/)
+      const stop = cli(['emulator', 'stop', '--device', 'ledger'])
+      assert.notEqual(stop.status, 0)
+      assert.match(said(stop), /start in progress/)
+      assert.match(cli(['emulator', 'status']).stdout, /start in progress/)
+      assert.equal(existsSync(join(paths.runDir, 'emulator-starting.json')), true)
+      assert.deepEqual(dockerCalls(), [])
+    })
+  })
+
+  it('discards the container and releases the start when the bridge fails to start', async () => {
+    await withRun(async (paths) => {
+      const docker = fakeDocker(Buffer.alloc(0))
+      const result = await startLedgerEmulator(
+        paths,
+        {
+          model: 'flex',
+          seed: 'primary',
+          arch: 'arm64',
+          elfPath: '/cache/app.elf',
+          daemon: DAEMON,
+          bridge: { mode: 'manual', target: 'http://127.0.0.1:9' },
+          launchBridge: async () => Promise.reject(new Error('processes.json does not parse')),
+        },
+        docker.runner,
+        () => new FakeLedger('flex'),
+      )
+      assert.match(result.unwrapErr() ?? '', /processes\.json does not parse; removed container/)
+      assert.equal(docker.live.size, 0)
+      assert.deepEqual(readContainers(paths), [])
+      assert.equal(existsSync(join(paths.runDir, 'emulator-starting.json')), false)
+    })
+  })
+})
+
+describe('launch on a live run', { timeout: 60_000 }, () => {
+  it('refuses a Ledger the live run does not have, naming both, and still reopens without emulator flags', async () => {
+    await withCliRun(async ({ paths, cli, dockerCalls }) => {
+      // A live run: its recorded Sentinel and fakes are this very process, so launch takes them as running.
+      const self = { pid: process.pid, startedAt: processStartTime(process.pid) ?? '' }
+      writeJson(paths.stateFile, {
+        ...runState(paths.runId),
+        sentinel: { name: 'sentinel', ...self, port: 4000 },
+        fakes: { name: 'fakes', ...self, electrumPort: 4001, mempoolPort: 4002 },
+      })
+      const wrong = cli(['launch', '--emulator', 'ledger', '--ledger-model', 'nanosp', '--emulator-seed', 'empty'])
+      assert.equal(wrong.status, 1, said(wrong))
+      assert.match(
+        said(wrong),
+        new RegExp(
+          `Run ${paths.runId} is already running with no Ledger, not the requested Ledger nanosp with seed empty\\. Launch a new run ID\\.`,
+        ),
+      )
+      const plain = cli(['launch'])
+      assert.equal(plain.status, 0, said(plain))
+      assert.match(plain.stdout, new RegExp(`Run ${paths.runId} is already running at http://127\\.0\\.0\\.1:4000`))
+      assert.deepEqual(dockerCalls(), [])
+    })
+  })
+
+  it('refuses an explicit Ledger relaunch once its bridge group is killed, and still reopens a plain one', async () => {
+    await withCliRun(async ({ paths, cli }) => {
+      const self = { pid: process.pid, startedAt: processStartTime(process.pid) ?? '' }
+      // The recorded bridge: a process group of its own, killed below as a crash or `kill` would.
+      const log = openSync(join(paths.runDir, 'bridge.log'), 'w')
+      const bridge = startGroup('sleep', ['60'], { cwd: paths.runDir, env: ChildEnv.with(), log })
+      closeSync(log)
+      const pid = bridge.pid ?? 0
+      const exited = new Promise<void>((done) => {
+        bridge.on('exit', () => {
+          done()
+        })
+      })
+      writeJson(paths.stateFile, {
+        ...runState(paths.runId),
+        sentinel: { name: 'sentinel', ...self, port: 4000 },
+        fakes: { name: 'fakes', ...self, electrumPort: 4001, mempoolPort: 4002 },
+        emulators: [
+          {
+            device: 'ledger',
+            model: 'flex',
+            seed: 'primary',
+            containerId: 'a'.repeat(64),
+            daemon: DAEMON,
+            apiPort: 9,
+            healthUrl: 'http://127.0.0.1:9/events?currentscreenonly=true',
+            bridge: {
+              name: 'ledger-bridge',
+              pid,
+              startedAt: processStartTime(pid) ?? '',
+              port: 9,
+              url: 'http://127.0.0.1:9',
+              controlPort: 9,
+              mode: 'manual',
+            },
+          },
+        ],
+      })
+      writeJson(join(paths.runDir, 'ledger-bridge.json'), { pid, drivePort: 9, controlPort: 9, token: 'b'.repeat(64) })
+      process.kill(-pid, 'SIGKILL')
+      await exited
+      const explicit = cli(['launch', '--emulator', 'ledger', '--ledger-model', 'flex', '--emulator-seed', 'primary'])
+      assert.equal(explicit.status, 1, said(explicit))
+      assert.match(
+        said(explicit),
+        /is already running a Ledger flex with seed primary whose bridge does not answer \(control port 9 is not held by the bridge .*\)\. Stop the Ledger and start it again/,
+      )
+      const plain = cli(['launch'])
+      assert.equal(plain.status, 0, said(plain))
+      assert.match(plain.stdout, /is already running at http:\/\/127\.0\.0\.1:4000/)
     })
   })
 })

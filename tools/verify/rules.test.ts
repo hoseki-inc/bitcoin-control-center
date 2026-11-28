@@ -9,6 +9,7 @@ import { z } from 'zod'
 import {
   type Attempt,
   type EmulatorProbe,
+  type LiveLedger,
   LiveRun,
   MAP_FILE,
   type Outcome,
@@ -30,6 +31,7 @@ import {
   readRecipes,
   recordProblem,
   screenshotFolder,
+  sortEvidence,
   webBuildEnv,
   withAbandoned,
   withFault,
@@ -279,7 +281,95 @@ describe('withOutcome and latestRecorded', () => {
   })
 })
 
+/** The live-run part of launchDecision's input. */
+type AliveInput = Pick<Parameters<typeof launchDecision>[0], 'alive'>
+
 describe('launchDecision', () => {
+  describe('with --emulator ledger', () => {
+    const base = { folderExists: true, evidenceExists: true, fresh: false, desktop: false, pin: false }
+    const running = (ledger: LiveLedger): AliveInput => ({
+      alive: { fresh: false, desktop: false, pin: false, ledger },
+    })
+    const flexPrimary: LiveLedger = { model: 'flex', seed: 'primary', mode: 'manual' }
+    const ask = { model: 'flex', seed: 'primary', autoApprove: false }
+
+    it('refuses a run with no Ledger, or another model or seed, naming what runs and what was asked', () => {
+      assert.deepEqual(launchDecision({ ...base, ...running(null), ledger: ask }), {
+        action: 'refuse',
+        reason:
+          'is already running with no Ledger, not the requested Ledger flex with seed primary. Launch a new run ID.',
+      })
+      assert.deepEqual(
+        launchDecision({ ...base, ...running(flexPrimary), ledger: { ...ask, model: 'nanosp', seed: 'empty' } }),
+        {
+          action: 'refuse',
+          reason:
+            'is already running a Ledger flex with seed primary, not the requested Ledger nanosp with seed empty. Launch a new run ID.',
+        },
+      )
+      const otherSeed = launchDecision({ ...base, ...running(flexPrimary), ledger: { ...ask, seed: 'secondary' } })
+      assert.match(
+        otherSeed.action === 'refuse' ? otherSeed.reason : '',
+        /Ledger flex with seed primary, not .* seed secondary/,
+      )
+      const noBridge = launchDecision({ ...base, ...running({ ...flexPrimary, mode: null }), ledger: ask })
+      assert.match(noBridge.action === 'refuse' ? noBridge.reason : '', /but no bridge/)
+    })
+
+    it('refuses --auto-approve unless the live bridge is in auto mode now', () => {
+      for (const mode of ['manual'] as const) {
+        const decision = launchDecision({
+          ...base,
+          ...running({ ...flexPrimary, mode }),
+          ledger: { ...ask, autoApprove: true },
+        })
+        assert.equal(
+          decision.action === 'refuse' ? decision.reason : '',
+          `is already running its Ledger bridge in ${mode} mode, not the requested Ledger flex with seed primary and --auto-approve. Launch a new run ID.`,
+        )
+      }
+      assert.deepEqual(
+        launchDecision({
+          ...base,
+          ...running({ ...flexPrimary, mode: 'auto' }),
+          ledger: { ...ask, autoApprove: true },
+        }),
+        { action: 'running' },
+      )
+    })
+
+    it('refuses an explicit request when the bridge is missing or does not answer, but not a plain reopen', () => {
+      const dead: LiveLedger = {
+        ...flexPrimary,
+        mode: 'unknown',
+        problem: 'control port 61118 is not held by the bridge',
+      }
+      assert.deepEqual(launchDecision({ ...base, ...running(dead), ledger: ask }), {
+        action: 'refuse',
+        reason:
+          'is already running a Ledger flex with seed primary whose bridge does not answer (control port 61118 is not held by the bridge). Stop the Ledger and start it again with emulator start --device ledger --bridge, or launch a new run ID.',
+      })
+      const noBridge = launchDecision({ ...base, ...running({ ...flexPrimary, mode: null }), ledger: ask })
+      assert.match(
+        noBridge.action === 'refuse' ? noBridge.reason : '',
+        /but no bridge, so the app can't reach it\. Stop the Ledger and start it again/,
+      )
+      // Without emulator flags, launch only reopens the run; the bridge's health is doctor's business.
+      assert.deepEqual(launchDecision({ ...base, ...running(dead) }), { action: 'running' })
+      assert.deepEqual(launchDecision({ ...base, ...running(flexPrimary), ledger: ask }), { action: 'running' })
+    })
+
+    it('accepts the same Ledger again, and any Ledger when no emulator flag is given', () => {
+      assert.deepEqual(launchDecision({ ...base, ...running(flexPrimary), ledger: ask }), { action: 'running' })
+      // A manual-mode request is satisfied by an auto bridge too: --auto-approve was not asked for.
+      assert.deepEqual(launchDecision({ ...base, ...running({ ...flexPrimary, mode: 'auto' }), ledger: ask }), {
+        action: 'running',
+      })
+      assert.deepEqual(launchDecision({ ...base, ...running(flexPrimary) }), { action: 'running' })
+      assert.deepEqual(launchDecision({ ...base, ...running(null) }), { action: 'running' })
+    })
+  })
+
   it('starts a new run', () => {
     assert.deepEqual(
       launchDecision({
@@ -596,6 +686,8 @@ describe('checkEmulatorsRule', () => {
       startedAt: 't1',
       port: 15001,
       url: 'http://127.0.0.1:15001',
+      controlPort: 15101,
+      mode: 'manual',
     },
   }
 
@@ -608,6 +700,23 @@ describe('checkEmulatorsRule', () => {
     bridgePortOwned: true,
     bridgePortHolders: [4242],
   }
+
+  it('fails a bridge whose control port, shim or queue is wrong, listing each problem', () => {
+    const [ok, detail] = checkEmulatorsRule(
+      [
+        {
+          ...healthyProbe,
+          bridgeProblems: [
+            "bridge control port 15101 is not the bridge's",
+            'an APDU has waited 42 s on the device; finish its prompt with helpers/verify emulator press|reject --device ledger',
+          ],
+        },
+      ],
+      [],
+    )
+    assert.equal(ok, false)
+    assert.match(detail, /bridge control port 15101 is not the bridge's, an APDU has waited 42 s on the device/)
+  })
 
   it('passes with none when no emulators or containers exist', () => {
     assert.deepEqual(checkEmulatorsRule([], []), [true, 'none'])
@@ -622,7 +731,10 @@ describe('checkEmulatorsRule', () => {
   it('passes when container is running, health answers 2xx, and bridge owns its port (or has no bridge)', () => {
     const [ok, detail] = checkEmulatorsRule([healthyProbe], [])
     assert.equal(ok, true)
-    assert.match(detail, new RegExp(`ledger \\(flex\\).*${CID_LEDGER.slice(0, 12)}.*bridge 15001`))
+    assert.match(
+      detail,
+      new RegExp(`ledger \\(flex\\).*${CID_LEDGER.slice(0, 12)}.*bridge http://127\\.0\\.0\\.1:15001 control 15101`),
+    )
 
     const noBridgeEmulator: EmulatorState = {
       device: 'coldcard',
@@ -749,13 +861,13 @@ describe('parseEmulatorCommand', () => {
   it('defaults Ledger start to model flex and seed primary, and accepts nanosp', () => {
     assert.deepEqual(parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger' }), {
       ok: true,
-      command: { action: 'start', device: 'ledger', seed: 'primary', model: 'flex' },
+      command: { action: 'start', device: 'ledger', seed: 'primary', model: 'flex', bridge: null },
     })
     assert.deepEqual(
       parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger', seed: 'empty', model: 'nanosp' }),
       {
         ok: true,
-        command: { action: 'start', device: 'ledger', seed: 'empty', model: 'nanosp' },
+        command: { action: 'start', device: 'ledger', seed: 'empty', model: 'nanosp', bridge: null },
       },
     )
     const badModel = parseEmulatorCommand({ ...emptyInput, action: 'start', device: 'ledger', model: 'unknown' })
@@ -871,6 +983,36 @@ describe('emulator screenshot destination', () => {
       '03-ledger-sign.png',
     )
     assert.equal(nextShotName(['09-x.png', '10-ledger-a.png'], 'b'), '11-ledger-b.png')
+    // Past 99 the number keeps growing instead of starting over at 100 and overwriting it.
+    assert.equal(nextShotName(['99-ledger-a.png'], 'b'), '100-ledger-b.png')
+    assert.equal(nextShotName(['99-ledger-a.png', '100-ledger-b.png'], 'c'), '101-ledger-c.png')
+  })
+
+  it('lists evidence in step order past 99, without renaming two-digit files', () => {
+    assert.deepEqual(sortEvidence(['100-ledger-c.png', '99-ledger-b.png', '02-home.png', 'trace.md', '01-home.png']), [
+      '01-home.png',
+      '02-home.png',
+      '99-ledger-b.png',
+      '100-ledger-c.png',
+      'trace.md',
+    ])
+  })
+
+  it('reads --bridge and --auto-approve only on a Ledger start', () => {
+    const none = { run: undefined, seed: undefined, model: undefined, button: undefined, mode: undefined }
+    const start = { ...none, action: 'start', device: 'ledger' }
+    assert.deepEqual(parseEmulatorCommand({ ...start, bridge: true }), {
+      ok: true,
+      command: { action: 'start', device: 'ledger', seed: 'primary', model: 'flex', bridge: 'manual' },
+    })
+    assert.deepEqual(parseEmulatorCommand({ ...start, bridge: true, autoApprove: true }), {
+      ok: true,
+      command: { action: 'start', device: 'ledger', seed: 'primary', model: 'flex', bridge: 'auto' },
+    })
+    const noBridge = parseEmulatorCommand({ ...start, autoApprove: true })
+    assert.match(noBridge.ok ? '' : noBridge.error, /--auto-approve needs --bridge/)
+    const onPress = parseEmulatorCommand({ ...none, action: 'press', device: 'ledger', bridge: true })
+    assert.match(onPress.ok ? '' : onPress.error, /only valid with emulator start/)
   })
 })
 

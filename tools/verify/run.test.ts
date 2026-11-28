@@ -617,6 +617,8 @@ describe('container tracking and cleanup', () => {
         startedAt: 't2',
         port: 15001,
         url: 'http://127.0.0.1:15001',
+        controlPort: 15101,
+        mode: 'manual',
       },
     }
     assert.equal(parseUnknown(EmulatorStateSchema, validEmulator).isOk(), true)
@@ -632,6 +634,16 @@ describe('container tracking and cleanup', () => {
       parseUnknown(EmulatorStateSchema, {
         ...validEmulator,
         bridge: { ...validEmulator.bridge, url: 'http://127.0.0.1:19999' },
+      }).isErr(),
+      true,
+    )
+    // A Ledger with no model is refused when run.json is read, so doctor never probes one.
+    const { model: _model, ...noModel } = validEmulator
+    assert.equal(parseUnknown(EmulatorStateSchema, noModel).isErr(), true)
+    assert.equal(
+      parseUnknown(EmulatorStateSchema, {
+        ...validEmulator,
+        bridge: { ...validEmulator.bridge, mode: 'eager' },
       }).isErr(),
       true,
     )
@@ -889,6 +901,8 @@ describe('container tracking and cleanup', () => {
               startedAt: 't2',
               port: 15001,
               url: 'http://127.0.0.1:15001',
+              controlPort: 15101,
+              mode: 'manual',
             },
           },
           {
@@ -904,6 +918,8 @@ describe('container tracking and cleanup', () => {
               startedAt: 't4',
               port: 21335,
               url: 'ws://127.0.0.1:21335/connect-ws',
+              controlPort: 21336,
+              mode: 'manual',
             },
           },
         ]),
