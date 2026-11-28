@@ -72,9 +72,13 @@ export function dockerArch(daemon: DockerDaemon, docker: DockerCommandRunner = r
   const result = docker(['version', '--format', '{{.Server.Arch}}'], daemon)
   const arch = result.stdout.trim()
   const known = LEDGER_ARCHES.find((candidate) => candidate === arch)
-  return known === undefined
-    ? Err(`Docker reports server platform ${JSON.stringify(arch)}; expected arm64 or amd64`)
-    : Ok(known)
+  if (known !== undefined) {
+    return Ok(known)
+  }
+  const stderr = result.stderr.trim()
+  return Err(
+    `Docker reports server platform ${JSON.stringify(arch)}; expected arm64 or amd64${stderr === '' ? '' : ` (docker said: ${stderr})`}`,
+  )
 }
 
 /** Fetches exactly the pinned commit into an empty folder and checks HEAD is that commit. */

@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { z } from 'zod'
+import type { BridgeMode } from './emulators/ledger-bridge'
 import { LEDGER_BUTTONS, type LedgerButton } from './emulators/ledger-driver'
 import { ChildEnv } from './process'
 import {
@@ -294,6 +295,14 @@ export function latestRecorded(attempts: Attempt[]): Array<Attempt & { outcome: 
 
 export type LaunchDecision = { action: 'start' } | { action: 'running' } | { action: 'refuse'; reason: string }
 
+/** A Ledger as launch asks for it, or as a live run has it (`mode` read from its bridge now, null without one). */
+export interface LaunchLedger {
+  model: string
+  seed: string
+}
+/** `unknown` means the bridge is recorded but doesn't answer or isn't the run's; `problem` says why. */
+export type LiveLedger = (LaunchLedger & { mode: 'manual' | 'auto' | 'unknown' | null; problem?: string }) | null
+
 /** What launch should do with a run ID, given what already exists for it. */
 export function launchDecision(run: {
   alive: {
@@ -303,6 +312,8 @@ export function launchDecision(run: {
     electron?: boolean
     setupPinInUi?: boolean
     releaseTag?: string
+    /** The run's Ledger, or null when it has none. */
+    ledger?: LiveLedger
   } | null
   folderExists: boolean
   evidenceExists: boolean
@@ -312,6 +323,8 @@ export function launchDecision(run: {
   electron?: boolean
   setupPinInUi?: boolean
   releaseTag?: string
+  /** What `--emulator ledger` asked for; undefined without the flag. */
+  ledger?: LaunchLedger & { autoApprove: boolean }
 }): LaunchDecision {
   if (run.alive !== null) {
     if (run.fresh && !run.alive.fresh) {
@@ -340,6 +353,10 @@ export function launchDecision(run: {
     if (run.releaseTag !== run.alive.releaseTag) {
       return { action: 'refuse', reason: 'is already running with a different --release-tag. Launch a new run ID.' }
     }
+    const ledgerProblem = run.ledger === undefined ? null : ledgerMismatch(run.ledger, run.alive.ledger ?? null)
+    if (ledgerProblem !== null) {
+      return { action: 'refuse', reason: ledgerProblem }
+    }
     return { action: 'running' }
   }
   if (run.folderExists) {
@@ -349,6 +366,30 @@ export function launchDecision(run: {
     return { action: 'refuse', reason: 'already has evidence from an earlier run. Use a new run ID.' }
   }
   return { action: 'start' }
+}
+
+/** Why a live run's Ledger is not the one `--emulator ledger` asked for, or null when it is. */
+function ledgerMismatch(wanted: LaunchLedger & { autoApprove: boolean }, live: LiveLedger): string | null {
+  const asked = `the requested Ledger ${wanted.model} with seed ${wanted.seed}${wanted.autoApprove ? ' and --auto-approve' : ''}`
+  const newRun = 'Launch a new run ID.'
+  if (live === null) {
+    return `is already running with no Ledger, not ${asked}. ${newRun}`
+  }
+  if (live.model !== wanted.model || live.seed !== wanted.seed) {
+    return `is already running a Ledger ${live.model} with seed ${live.seed}, not ${asked}. ${newRun}`
+  }
+  // An explicit request needs a bridge the browser can reach: one that is missing or dead can't be opened.
+  const restart = `Stop the Ledger and start it again with emulator start --device ledger --bridge, or launch a new run ID.`
+  if (live.mode === null) {
+    return `is already running a Ledger ${live.model} with seed ${live.seed} but no bridge, so the app can't reach it. ${restart}`
+  }
+  if (live.mode === 'unknown') {
+    return `is already running a Ledger ${live.model} with seed ${live.seed} whose bridge does not answer (${live.problem ?? 'no detail'}). ${restart}`
+  }
+  if (wanted.autoApprove && live.mode !== 'auto') {
+    return `is already running its Ledger bridge in ${live.mode} mode, not ${asked}. ${newRun}`
+  }
+  return null
 }
 
 export type TorMode = 'online' | 'allow-offline'
@@ -471,6 +512,8 @@ export interface EmulatorProbe {
   bridgePortHolders: number[]
   /** What a passing health check read, such as a Ledger's idle screen. */
   healthSummary?: string | undefined
+  /** What is wrong with a recorded bridge beyond its process and drive port: its control port, shim, or a stuck APDU. */
+  bridgeProblems?: readonly string[]
 }
 
 export interface ExtraContainerProbe {
@@ -525,12 +568,14 @@ export function checkEmulatorsRule(
             : `is held by PID ${probe.bridgePortHolders.join(', ')}`
         localIssues.push(`bridge port ${emulator.bridge.port} ${holderDetail}`)
       }
+      localIssues.push(...(probe.bridgeProblems ?? []))
     }
 
     if (localIssues.length > 0) {
       issues.push(`${label}: ${localIssues.join(', ')}`)
     } else {
-      const bridgeSummary = emulator.bridge !== undefined ? `, bridge ${emulator.bridge.port}` : ''
+      const bridgeSummary =
+        emulator.bridge !== undefined ? `, bridge ${emulator.bridge.url} control ${emulator.bridge.controlPort}` : ''
       const health = probe.healthSummary !== undefined ? `, ${probe.healthSummary}` : ''
       okSummaries.push(`${label} container ${emulator.containerId.slice(0, 12)} ok${health}${bridgeSummary}`)
     }
@@ -570,12 +615,21 @@ export interface EmulatorCommandInput {
   model: string | undefined
   button: string | undefined
   mode: string | undefined
+  bridge?: boolean | undefined
+  autoApprove?: boolean | undefined
   recipe?: string | undefined
   step?: string | undefined
 }
 
 export type EmulatorCommand =
-  | { action: 'start'; device: EmulatorDevice; seed: EmulatorSeedName; model: string | undefined }
+  | {
+      action: 'start'
+      device: EmulatorDevice
+      seed: EmulatorSeedName
+      model: string | undefined
+      /** The bridge's mode, or null for no bridge. */
+      bridge: BridgeMode | null
+    }
   | { action: 'stop'; device: EmulatorDevice }
   | { action: 'status'; device: EmulatorDevice | undefined }
   | { action: 'press'; device: EmulatorDevice; button: LedgerButton | undefined }
@@ -612,6 +666,12 @@ export function parseEmulatorCommand(input: EmulatorCommandInput): ParsedEmulato
   }
   if (input.model !== undefined && input.action !== 'start') {
     return { ok: false, error: '--model is only valid with emulator start' }
+  }
+  if ((input.bridge === true || input.autoApprove === true) && input.action !== 'start') {
+    return { ok: false, error: '--bridge and --auto-approve are only valid with emulator start' }
+  }
+  if (input.autoApprove === true && input.bridge !== true) {
+    return { ok: false, error: '--auto-approve needs --bridge: the bridge is what approves' }
   }
   if (input.button !== undefined && input.action !== 'press') {
     return { ok: false, error: '--button is only valid with emulator press' }
@@ -654,9 +714,13 @@ export function parseEmulatorCommand(input: EmulatorCommandInput): ParsedEmulato
         if (!isLedgerModel(model)) {
           return { ok: false, error: `Unknown Ledger --model ${model}. Expected: ${LEDGER_MODELS.join('|')}` }
         }
-        return { ok: true, command: { action: 'start', device: 'ledger', seed, model } }
+        const bridge = input.bridge === true ? (input.autoApprove === true ? 'auto' : 'manual') : null
+        return { ok: true, command: { action: 'start', device: 'ledger', seed, model, bridge } }
       }
-      return { ok: true, command: { action: 'start', device: input.device, seed, model: input.model } }
+      if (input.bridge === true) {
+        return { ok: false, error: '--bridge is only for the Ledger' }
+      }
+      return { ok: true, command: { action: 'start', device: input.device, seed, model: input.model, bridge: null } }
     }
     case 'stop':
       return { ok: true, command: { action: 'stop', device: input.device } }
@@ -714,8 +778,13 @@ export function screenshotFolder(
   return { ok: true, folder: attempt === undefined ? null : `${attempt.recipe}/attempt-${attempt.number}` }
 }
 
-/** The next `NN-ledger-<step>.png` after the numbered files already in a folder. */
+/** Evidence file names in step order: `100-…` after `99-…`, so numbering past 99 needs no renames. */
+export function sortEvidence(files: readonly string[]): string[] {
+  return [...files].sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
+}
+
+/** The next `NN-ledger-<step>.png` after the numbered files already in a folder, counting past 99 as 100. */
 export function nextShotName(files: readonly string[], step: string): string {
-  const last = Math.max(0, ...files.map((file) => Number(/^(\d{2})-/.exec(file)?.[1] ?? 0)))
+  const last = Math.max(0, ...files.map((file) => Number(/^(\d+)-/.exec(file)?.[1] ?? 0)))
   return `${String(last + 1).padStart(2, '0')}-ledger-${step}.png`
 }

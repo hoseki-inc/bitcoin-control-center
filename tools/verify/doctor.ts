@@ -3,6 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { readArgs } from './args'
 import { countAccounts, sentinelClient, signIn } from './client'
+import { SHIM_FILE, bridgeControl } from './emulators/ledger-bridge'
 import { classifyScreen, screenFromEvents } from './emulators/ledger-driver'
 import {
   type EmulatorProbe,
@@ -13,9 +14,11 @@ import {
   freshSeedCheck,
 } from './rules'
 import {
+  BridgeRecordSchema,
   type EmulatorState,
   HELPER,
   type RunState,
+  bridgeRecordFile,
   buildStamp,
   inspectTracked,
   invalidMessage,
@@ -27,6 +30,7 @@ import {
   readAppliedFaults,
   readContainersFile,
   readIntentsFile,
+  readJsonFile,
   readRunState,
   readSeedMarker,
   runPaths,
@@ -210,14 +214,21 @@ async function probeHealth(emulator: EmulatorState): Promise<{ ok: boolean; deta
     if (response.status >= 300 && response.status < 400) {
       return { ok: false, detail: `HTTP ${response.status} (redirect rejected)` }
     }
-    if (!response.ok || emulator.device !== 'ledger' || emulator.model === undefined) {
+    if (!response.ok || emulator.device !== 'ledger') {
       return { ok: response.ok, detail: `HTTP ${response.status}` }
+    }
+    const model = emulator.model === 'nanosp' || emulator.model === 'flex' ? emulator.model : null
+    if (model === null) {
+      return {
+        ok: false,
+        detail: `run.json records Ledger model ${JSON.stringify(emulator.model)}, not flex or nanosp`,
+      }
     }
     const elements = screenFromEvents(await response.text())
     if (elements === null) {
       return { ok: false, detail: 'Speculos /events did not answer a screen' }
     }
-    const screen = classifyScreen(emulator.model === 'nanosp' ? 'nanosp' : 'flex', elements)
+    const screen = classifyScreen(model, elements)
     return screen.kind === 'idle'
       ? { ok: true, detail: 'HTTP 200', summary: 'screen idle' }
       : {
@@ -227,6 +238,45 @@ async function probeHealth(emulator: EmulatorState): Promise<{ ok: boolean; deta
   } catch (error) {
     return { ok: false, detail: error instanceof Error ? error.message : String(error) }
   }
+}
+
+const STUCK_APDU_SECONDS = 10
+
+/** A live bridge's control port, token record, shim and queue: what else must hold for a browser to drive the Ledger. */
+async function probeBridge(bridge: NonNullable<EmulatorState['bridge']>): Promise<string[]> {
+  const problems: string[] = []
+  const record = readJsonFile(BridgeRecordSchema, bridgeRecordFile(paths))
+  if (!portOwnedBy(bridge.controlPort, bridge.pid)) {
+    // The token goes only to the bridge's own port.
+    problems.push(`bridge control port ${bridge.controlPort} is not the bridge's`)
+  } else if (
+    record.status !== 'ok' ||
+    record.value.pid !== bridge.pid ||
+    record.value.controlPort !== bridge.controlPort
+  ) {
+    problems.push(`${bridgeRecordFile(paths)} is missing or names another bridge`)
+  } else {
+    try {
+      const { inFlight } = await bridgeControl(record.value, 3_000).status()
+      // An APDU answers in well under a second unless it waits on a prompt nobody has decided.
+      if (inFlight !== null && inFlight.seconds >= STUCK_APDU_SECONDS) {
+        problems.push(
+          `an APDU has waited ${inFlight.seconds} s on the device; finish its prompt with ${HELPER} emulator press|reject --device ledger`,
+        )
+      }
+    } catch (error) {
+      problems.push(`bridge control API: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+  try {
+    const shim = await fetch(`${bridge.url}${SHIM_FILE}`, { redirect: 'manual', signal: AbortSignal.timeout(3_000) })
+    if (!shim.ok || !(await shim.text()).includes('bcc-verify.webhid-shim')) {
+      problems.push(`the drive proxy does not serve the WebHID shim (HTTP ${shim.status})`)
+    }
+  } catch (error) {
+    problems.push(`the drive proxy did not answer: ${error instanceof Error ? error.message : String(error)}`)
+  }
+  return problems
 }
 
 async function checkEmulators(state: RunState | null): Promise<void> {
@@ -268,6 +318,7 @@ async function checkEmulators(state: RunState | null): Promise<void> {
       bridgeAlive,
       bridgePortOwned,
       bridgePortHolders,
+      bridgeProblems: emulator.bridge !== undefined && bridgeAlive === true ? await probeBridge(emulator.bridge) : [],
     })
   }
 

@@ -89,7 +89,8 @@ const NANO_REVIEW = /^(?:Review message|Confirm public key|Path|Message \(\d+\/\
 const NANO_APPROVE = new Set(['Sign message', 'Approve public key'])
 const NANO_REJECT = new Set(['Reject message', 'Reject operation'])
 const RESULTS = new Set(['Public key approved', 'Public key rejected', 'Message signed', 'Message rejected'])
-const FLEX_REVIEW = new Set(['Review message', 'Confirm public key', 'Path'])
+// A message too long to share the Path page gets a page of its own, headed "Message content".
+const FLEX_REVIEW = new Set(['Review message', 'Confirm public key', 'Path', 'Message content'])
 
 function kindOf(model: LedgerModel, texts: readonly string[]): ScreenKind {
   const has = (text: string): boolean => texts.includes(text)
@@ -274,6 +275,11 @@ export interface DriveOptions {
   /** How long one action may take to change the screen. */
   stepTimeoutMs?: number
   maxSteps?: number
+  /**
+   * Asked after each screen read and right before each press until the decision is made; false calls the drive off
+   * before it presses again, as when the page that sent the prompt goes away or a person takes over.
+   */
+  shouldContinue?: () => boolean
 }
 
 export type DriveResult =
@@ -300,9 +306,29 @@ export async function drivePrompt(
   api: SpeculosApi,
   model: LedgerModel,
   decision: Decision,
-  { promptTimeoutMs = 5_000, stepTimeoutMs = 8_000, maxSteps = 40 }: DriveOptions = {},
+  options: DriveOptions = {},
 ): Promise<DriveResult> {
   const trace: string[] = []
+  return carefully(model, trace, async () => driveSteps(api, model, decision, trace, options))
+}
+
+/** A drive whose screen read failed (Speculos gone, a non-JSON answer) becomes a failure instead of a rejection. */
+async function carefully(model: LedgerModel, trace: string[], run: () => Promise<DriveResult>): Promise<DriveResult> {
+  try {
+    return await run()
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error)
+    return { ok: false, trace, reason: `could not read the ${model} screen: ${detail}`, screenshot: null }
+  }
+}
+
+async function driveSteps(
+  api: SpeculosApi,
+  model: LedgerModel,
+  decision: Decision,
+  trace: string[],
+  { promptTimeoutMs = 5_000, stepTimeoutMs = 8_000, maxSteps = 40, shouldContinue = () => true }: DriveOptions,
+): Promise<DriveResult> {
   const stop = async (reason: string): Promise<DriveResult> => ({
     ok: false,
     trace,
@@ -310,10 +336,18 @@ export async function drivePrompt(
     screenshot: await api.screenshot().catch(() => null),
   })
   let decided = false
+  const calledOff = (): DriveResult | null =>
+    !decided && !shouldContinue()
+      ? { ok: false, trace, reason: `the ${decision} drive was called off before its next press`, screenshot: null }
+      : null
   let steps = 0
   let waitDeadline = Date.now() + promptTimeoutMs
   while (steps < maxSteps) {
     const elements = await api.screen()
+    const offAfterRead = calledOff()
+    if (offAfterRead !== null) {
+      return offAfterRead
+    }
     const screen = classifyScreen(model, elements)
     // A redraw can show a blank or partial frame, so an unknown screen is waited out before it stops the driver. A
     // Nano reject menu after the decision means the deciding press didn't take; it gets the same wait.
@@ -349,6 +383,10 @@ export async function drivePrompt(
       }
       await sleep(POLL_MS)
       continue
+    }
+    const offBeforePress = calledOff()
+    if (offBeforePress !== null) {
+      return offBeforePress
     }
     trace.push(`${JSON.stringify(screen.texts)} -> ${describeAction(action)}`)
     await perform(api, action)
@@ -388,16 +426,41 @@ function singleAction(
 }
 
 /**
+ * The screens each single press can lead to. A Nano's right steps to the next page, which after the approve page is
+ * the reject menu; left steps back; both decides, leaving a result, idle, or the next prompt. On a Flex, Next leads to
+ * the next page, Approve to the result (or the next prompt), and dismissing a result to idle or the next prompt.
+ */
+export const BUTTON_LANDINGS: Readonly<Record<LedgerButton, ReadonlySet<ScreenKind>>> = {
+  right: new Set(['review', 'approve', 'reject']),
+  left: new Set(['review', 'approve']),
+  both: new Set(['idle', 'result', 'review']),
+  next: new Set(['review', 'approve']),
+  approve: new Set(['idle', 'result', 'review']),
+  dismiss: new Set(['idle', 'review']),
+}
+
+/**
  * Presses one button, or taps one Flex control, on the prompt on screen. Waits briefly for a prompt when the device is
- * idle, and refuses a button that model doesn't have or a tap that doesn't fit the screen.
+ * idle, refuses a button that model doesn't have or a tap that doesn't fit the screen, and fails when the screen it
+ * lands on is one that press can't lead to.
  */
 export async function pressOnce(
   api: SpeculosApi,
   model: LedgerModel,
   button: LedgerButton,
-  { promptTimeoutMs = 5_000, stepTimeoutMs = 8_000 }: DriveOptions = {},
+  options: DriveOptions = {},
 ): Promise<DriveResult> {
   const trace: string[] = []
+  return carefully(model, trace, async () => pressStep(api, model, button, trace, options))
+}
+
+async function pressStep(
+  api: SpeculosApi,
+  model: LedgerModel,
+  button: LedgerButton,
+  trace: string[],
+  { promptTimeoutMs = 5_000, stepTimeoutMs = 8_000 }: DriveOptions,
+): Promise<DriveResult> {
   const stop = async (reason: string): Promise<DriveResult> => ({
     ok: false,
     trace,
@@ -430,11 +493,16 @@ export async function pressOnce(
         return stop(`the ${model} screen did not change after ${describeAction(action)}`)
       }
       const landed = await settledScreen(api, model, Date.now() + stepTimeoutMs)
-      return landed.kind === 'unknown'
-        ? stop(
-            `after ${describeAction(action)} the ${model} shows a screen the driver doesn't handle: ${JSON.stringify(landed.texts)}`,
+      if (landed.kind === 'unknown') {
+        return stop(
+          `after ${describeAction(action)} the ${model} shows a screen the driver doesn't handle: ${JSON.stringify(landed.texts)}`,
+        )
+      }
+      return BUTTON_LANDINGS[button].has(landed.kind)
+        ? { ok: true, trace, ended: landed }
+        : stop(
+            `after ${describeAction(action)} the ${model} shows a ${landed.kind} screen, which --button ${button} can't lead to: ${JSON.stringify(landed.texts)}`,
           )
-        : { ok: true, trace, ended: landed }
     }
     if (Date.now() > deadline) {
       return stop(`no prompt appeared on the ${model} within ${promptTimeoutMs} ms`)

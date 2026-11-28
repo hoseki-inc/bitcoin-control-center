@@ -271,6 +271,37 @@ describe('report', () => {
     assert.match(text, /^- \[desktop-shell\/attempt-1\/trace\.md\]\(desktop-shell\/attempt-1\/trace\.md\)$/m)
   })
 
+  it('names the emulator an attempt began against, and reads back through the schema', () => {
+    const record: EvidenceRecord = {
+      ...recordFor(runState()),
+      attempts: [
+        {
+          recipe: 'add-ledger',
+          number: 1,
+          feature: 'add-ledger',
+          proves: ['connect'],
+          begunAt: '2026-11-27T10:06:00.000Z',
+          sentinelStartedAt: 'x',
+          abandonedAt: null,
+          emulator: {
+            device: 'ledger',
+            model: 'flex',
+            seed: 'primary',
+            firmware: 'app-bitcoin 2.5.1 (44ecd041) on Speculos 0.27.4 (56c7ec84c903)',
+            bridge: 'manual',
+          },
+          outcome: { status: 'verified', reason: null, recordedAt: '2026-11-27T10:07:00.000Z', artifacts: [] },
+        },
+      ],
+    }
+    assert.deepEqual(parseUnknown(RecordSchema, JSON.parse(JSON.stringify(record))).unwrap(), record)
+    assert.match(
+      report(record),
+      /^Emulator: ledger flex, seed primary, app-bitcoin 2\.5\.1 \(44ecd041\) on Speculos 0\.27\.4 \([0-9a-f]{12}\), bridge manual$/m,
+    )
+    assert.doesNotMatch(report(recordFor(runState())), /Emulator:/)
+  })
+
   it('marks a pass after a failed first attempt as flaky and keeps the failure', () => {
     const attempt = (number: number, status: 'verified' | 'failed', reason: string | null) => ({
       recipe: 'statements',

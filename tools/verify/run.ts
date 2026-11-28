@@ -149,6 +149,29 @@ const ContainerIntentSchema = z.object({
 export type ContainerIntent = z.infer<typeof ContainerIntentSchema>
 const ContainerIntentListSchema = z.array(ContainerIntentSchema)
 
+/**
+ * A device start in progress, written under the run's lock before any ELF or Docker work and removed in the same lock
+ * section that registers the device in run.json, or once a failed start has rolled back. While its owner lives, stop
+ * and cleanup leave the run alone and a second start is refused; a dead owner's reservation is stale and gets cleared.
+ */
+const ReservationSchema = z.object({
+  name: z.string().min(1),
+  pid: z.number().int().positive(),
+  startedAt: z.string().min(1),
+  reservedAt: z.string(),
+})
+export type Reservation = z.infer<typeof ReservationSchema>
+
+/** What the Ledger bridge writes once it listens: its ports and the control port's bearer token. */
+export const BridgeRecordSchema = z.object({
+  /** The bridge's process group: the PID its starter recorded. */
+  pid: z.number().int().positive(),
+  drivePort: z.number().int().positive(),
+  controlPort: z.number().int().positive(),
+  token: z.string().regex(/^[0-9a-f]{64}$/),
+})
+export type BridgeRecord = z.infer<typeof BridgeRecordSchema>
+
 export const EmulatorStateSchema = z
   .object({
     device: z.enum(EMULATOR_DEVICES),
@@ -159,9 +182,13 @@ export const EmulatorStateSchema = z
     daemon: DockerDaemonSchema.optional(),
     apiPort: z.number().int().positive(),
     healthUrl: z.string().url(),
+    /** The Ledger bridge: `port` and `url` are the drive proxy a browser opens, `controlPort` its token-guarded API. */
     bridge: ProcessSchema.extend({
       port: z.number().int().positive(),
       url: z.string().url(),
+      controlPort: z.number().int().positive(),
+      /** The mode it started in; a manual press or reject turns auto-approve off, which only the bridge knows. */
+      mode: z.enum(['manual', 'auto']),
     }).optional(),
   })
   .superRefine((value, ctx) => {
@@ -449,6 +476,63 @@ function readIntents(paths: RunPaths): ContainerIntent[] {
   return result.status === 'ok' ? result.value : []
 }
 
+/** Where a run's device start reservation lives. */
+export function reservationFile(paths: RunPaths): string {
+  return join(paths.runDir, 'emulator-starting.json')
+}
+
+/** Where the Ledger bridge writes its ports and token, readable only by this user. */
+export function bridgeRecordFile(paths: RunPaths): string {
+  return join(paths.runDir, 'ledger-bridge.json')
+}
+
+export function readReservation(paths: RunPaths): JsonFile<Reservation> {
+  return readJsonFile(ReservationSchema, reservationFile(paths))
+}
+
+/**
+ * Whether the reservation's owner may still be starting. Only a proven exit, or a known start time that differs, makes
+ * the reservation stale: an inconclusive check, or an old record without a start time, keeps it.
+ */
+export function reservationOwnerAlive(reservation: Reservation): boolean {
+  const identity = processIdentity(reservation.pid)
+  if (identity.state !== 'running') {
+    return identity.state === 'unknown'
+  }
+  return reservation.startedAt === 'unknown' || identity.startedAt === reservation.startedAt
+}
+
+let ownStart: string | null | undefined
+
+/** This process's start time, read once, or null when `ps` can't say. */
+export function ownStartedAt(): string | null {
+  if (ownStart === undefined) {
+    const identity = processIdentity(process.pid)
+    ownStart = identity.state === 'running' ? identity.startedAt : null
+  }
+  return ownStart
+}
+
+/** True when this very process wrote the reservation: the same PID and the same start time. */
+export function ownsReservation(reservation: Reservation): boolean {
+  return reservation.pid === process.pid && reservation.startedAt === ownStartedAt()
+}
+
+/**
+ * Why stop or cleanup must leave the run alone: a start by another process that still runs. A stale reservation, or
+ * one this process holds, is no reason. Read under the run's lock.
+ */
+export function liveStartProblem(paths: RunPaths): string | null {
+  const found = readReservation(paths)
+  if (found.status === 'invalid') {
+    return `${invalidMessage(found)}; delete it once no emulator start is running`
+  }
+  if (found.status === 'missing' || ownsReservation(found.value) || !reservationOwnerAlive(found.value)) {
+    return null
+  }
+  return `Run ${paths.runId} has a ${found.value.name} start in progress (PID ${found.value.pid}); wait for it to finish, then try again`
+}
+
 /**
  * Read-modify-write access to a run's tracking files, handed out only inside `withRunLock`. Every write refuses once
  * the lock is released or cleanup has removed the run folder, so a late writer can never recreate a removed run.
@@ -467,6 +551,8 @@ export interface RunTracking {
   writeSeedMarker: (file: string, marker: SeedMarker) => void
   /** Writes the faults the fakes should apply. */
   writeFaults: (faults: Faults) => void
+  /** Writes or clears the device start reservation. */
+  writeReservation: (reservation: Reservation | null) => void
 }
 
 interface TrackingHandle {
@@ -538,6 +624,16 @@ function trackingFor(paths: RunPaths): TrackingHandle {
     writeFaults: (faults) => {
       write(paths.faultsFile, faults)
     },
+    writeReservation: (reservation) => {
+      if (reservation !== null) {
+        write(reservationFile(paths), reservation)
+      } else if (existsSync(reservationFile(paths))) {
+        if (!open) {
+          throw new Error(`Refusing to clear the start reservation without holding ${paths.lockDir}`)
+        }
+        rmSync(reservationFile(paths), { force: true })
+      }
+    },
   }
   return {
     tracking,
@@ -605,6 +701,8 @@ type JsonRecord =
   | RecordedContainer[]
   | ContainerIntent[]
   | Faults
+  | Reservation
+  | BridgeRecord
   | z.infer<typeof FakesRecordSchema>
 
 /** Writes through a sibling temp file and a rename, so readers see the old file or the new one, never half of one. */
@@ -708,10 +806,15 @@ export function listeners(port: number): number[] {
   return lines('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'])
 }
 
+/** The process group a process runs in, or null once it has exited. */
+export function processGroup(pid: number): number | null {
+  return lines('ps', ['-o', 'pgid=', '-p', String(pid)])[0] ?? null
+}
+
 /** Launch starts each process as its own group leader, so its children share the leader's PID as their group. */
 export function portOwnedBy(port: number, leader: number): boolean {
   const pids = listeners(port)
-  return pids.length > 0 && pids.every((pid) => lines('ps', ['-o', 'pgid=', '-p', String(pid)])[0] === leader)
+  return pids.length > 0 && pids.every((pid) => processGroup(pid) === leader)
 }
 
 export async function wait(ms: number): Promise<void> {
@@ -872,6 +975,74 @@ function signalGroup(leader: number, signal: NodeJS.Signals): void {
   } catch {
     // The group exited between the check and the signal.
   }
+}
+
+/** Members of the group still running: a zombie waiting for its parent to reap it runs nothing. */
+function liveGroupMembers(leader: number): number[] {
+  const pids = processGroupPids(leader)
+  if (pids.length === 0) {
+    return []
+  }
+  const states = runCommandResult('ps', ['-o', 'pid=,stat=', '-p', pids.join(',')], { env: ChildEnv.with() })
+  return states.stdout
+    .split('\n')
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([pid, stat]) => pid !== undefined && pid !== '' && stat !== undefined && !stat.startsWith('Z'))
+    .map(([pid]) => Number(pid))
+}
+
+/** True while a recorded group still runs as the one recorded: its leader, or members left behind by its leader. */
+function recordedGroupRuns(recorded: RecordedProcess): boolean {
+  const leaderStart = processStartTime(recorded.pid)
+  const same = leaderStart === recorded.startedAt || leaderStart === null
+  return same && liveGroupMembers(recorded.pid).length > 0
+}
+
+/**
+ * Stops each recorded process group once (a PID and start time recorded twice counts once; the same PID with another
+ * start time is another process) and returns those still running a few seconds later, which the caller must not
+ * forget.
+ */
+export async function stopRecordedGroups(
+  records: readonly RecordedProcess[],
+  stop: (recorded: RecordedProcess) => Promise<void> = stopProcess,
+): Promise<RecordedProcess[]> {
+  const unique = records.filter(
+    (recorded, index) =>
+      records.findIndex((other) => other.pid === recorded.pid && other.startedAt === recorded.startedAt) === index,
+  )
+  for (const recorded of unique) {
+    await stop(recorded)
+  }
+  let running = unique.filter(recordedGroupRuns)
+  for (let waited = 0; waited < 3_000 && running.length > 0; waited += 200) {
+    await wait(200)
+    running = running.filter(recordedGroupRuns)
+  }
+  return running
+}
+
+/**
+ * Stops a process group this very process started, by its leader's PID alone: SIGTERM, then SIGKILL after 10 s. Only
+ * for a group whose start this call witnessed, since it can't tell a reused PID apart. True once the group has no
+ * members left.
+ */
+export async function stopOwnGroup(leader: number): Promise<boolean> {
+  const empty = (): boolean => processGroupPids(leader).length === 0
+  if (empty()) {
+    return true
+  }
+  signalGroup(leader, 'SIGTERM')
+  for (let waited = 0; waited < 10_000 && !empty(); waited += 200) {
+    await wait(200)
+  }
+  if (!empty()) {
+    signalGroup(leader, 'SIGKILL')
+    for (let waited = 0; waited < 2_000 && !empty(); waited += 100) {
+      await wait(100)
+    }
+  }
+  return empty()
 }
 
 export interface CleanQuitResult {
@@ -1348,6 +1519,11 @@ export function removeRunContainers(
   tracking: RunTracking,
   { select = () => true, remove = removeContainer, docker = runDocker, log = console.log }: RemoveContainersOptions,
 ): RemovedContainers {
+  // An interrupted create can't be recorded into a journal that doesn't parse, so nothing is touched until it is fixed.
+  const before = readContainersFile(paths)
+  if (before.status === 'invalid') {
+    return { results: [], errors: [`${invalidMessage(before)}; keeping ${paths.runDir}`] }
+  }
   const errors = resolveIntents(paths, tracking, docker, select)
   const containersFile = readContainersFile(paths)
   const stateResult = readRunState(paths)
@@ -1539,8 +1715,19 @@ async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: Clean
   const evidenceRoot = deps.evidenceRoot ?? EVIDENCE_ROOT
   const log = deps.log ?? console.log
 
+  const busy = liveStartProblem(paths)
+  if (busy !== null) {
+    log(busy)
+    return {
+      ok: false,
+      errors: [busy],
+      stoppedProcesses: [],
+      removedContainers: [],
+      keptLogsDir: null,
+      removedRunDir: false,
+    }
+  }
   const stateResult = readRunState(paths)
-  const containersFile = readContainersFile(paths)
   const processesFile = readProcessesFile(paths)
   const errors: string[] = []
   if (stateResult.status === 'invalid') {
@@ -1551,10 +1738,9 @@ async function cleanupLocked(paths: RunPaths, tracking: RunTracking, deps: Clean
       )
     }
   }
-  for (const journal of [containersFile, processesFile]) {
-    if (journal.status === 'invalid') {
-      errors.push(`${invalidMessage(journal)}; keeping ${paths.runDir}`)
-    }
+  // An invalid containers.json is reported by the container removal below.
+  if (processesFile.status === 'invalid') {
+    errors.push(`${invalidMessage(processesFile)}; keeping ${paths.runDir}`)
   }
   const state = stateResult.status === 'ok' ? stateResult.value : null
 
